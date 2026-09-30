@@ -8,3 +8,6 @@ create table if not exists public.ac_handoff (
 alter table public.ac_handoff enable row level security;
 revoke all on public.ac_handoff from anon, authenticated;
 create index if not exists ac_handoff_created_idx on public.ac_handoff (created_at);
+grant all on public.ac_handoff to service_role;
+-- muat ulang cache skema API agar tabel langsung terbaca
+notify pgrst, 'reload schema';

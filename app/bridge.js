@@ -151,6 +151,7 @@
     if (r.ok && j && j.ok) {
       if (!j.strava) return 'Secret STRAVA_CLIENT_ID belum diisi di Supabase › Edge Functions › Secrets.';
       if (!j.service) return 'Service role key tidak tersedia untuk Edge Function. Coba deploy ulang fungsi "strava-callback".';
+      if (j.table === false) return 'Tabel login belum dibuat. Buka Supabase › SQL Editor, tempel isi file supabase/migrations/20261001000000_strava_login.sql, lalu Run.';
       try { var p = await fetch(base + 'proxy?config=1', { headers: h, cache: 'no-store' }); if (p.status === 404) return 'Fungsi "proxy" tidak ditemukan di Supabase. Buat Edge Function bernama persis "proxy" (isi dari supabase/functions/proxy/index.ts) dan matikan "Verify JWT".'; } catch (e) {}
     }
     return '';

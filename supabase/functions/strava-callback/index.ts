@@ -81,7 +81,7 @@ async function sessionFor(athlete: Record<string, unknown>) {
 
 async function saveHandoff(code: string, payload: unknown) {
   const res = await fetch(BASE + '/rest/v1/ac_handoff', { method: 'POST', headers: { ...adminHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify([{ code, payload }]) });
-  if (!res.ok) throw new Error('Gagal menyimpan sesi sementara (' + res.status + '). Sudah jalankan SQL terbaru?');
+  if (!res.ok) throw new Error(res.status === 404 ? 'Tabel ac_handoff belum ada. Jalankan SQL 20261001000000_strava_login.sql di Supabase › SQL Editor, lalu coba lagi.' : 'Gagal menyimpan sesi sementara (' + res.status + ').');
 }
 async function takeHandoff(code: string) {
   const q = BASE + '/rest/v1/ac_handoff?code=eq.' + encodeURIComponent(code);
@@ -100,7 +100,11 @@ Deno.serve(async (req) => {
   const u = new URL(req.url), q = u.searchParams;
 
   // Cek dari aplikasi: fungsi ada & versi terbaru
-  if (q.has('ping')) return json({ ok: true, v: 2, strava: !!env('STRAVA_CLIENT_ID'), service: !!SERVICE });
+  if (q.has('ping')) {
+    let table = false;
+    if (SERVICE) { try { const t = await fetch(BASE + '/rest/v1/ac_handoff?select=code&limit=1', { headers: adminHeaders(false) }); table = t.ok; } catch { /* abaikan */ } }
+    return json({ ok: true, v: 2, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table });
+  }
 
   // Aplikasi mengambil hasil login
   if (req.method === 'POST' && q.has('redeem')) {
