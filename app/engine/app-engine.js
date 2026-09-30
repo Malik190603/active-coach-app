@@ -102,3 +102,11 @@ function appCurrentStrava() {
   for (var i = 0; i < rows.length; i++) if (String(rows[i][0]) === String(id)) sid = String(rows[i][4] || '');
   return { access_token: a.stravaAccessToken || '', refresh_token: a.stravaRefreshToken, expires_at: Number(a.stravaExpiresAt || 0), athlete: { id: sid } };
 }
+
+/* Token akses Strava yang masih berlaku (untuk mencabut izin saat putus/hapus akun). */
+function appStravaAccessToken() {
+  var id = PropertiesService.getScriptProperties().getProperty('APP_ATHLETE_ID'), a = id ? athleteById(id) : null;
+  if (!a || (!a.stravaAccessToken && !a.stravaRefreshToken)) return '';
+  if (!a.stravaAccessToken || a.stravaExpiresAt < Math.floor(Date.now() / 1000) + 60) { try { return refreshStravaToken(id); } catch (e) { return a.stravaAccessToken || ''; } }
+  return a.stravaAccessToken;
+}

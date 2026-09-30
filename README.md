@@ -73,6 +73,7 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 - **Sinkron:** otomatis dan senyap saat aplikasi dibuka atau kembali aktif (maks. tiap 20 menit). Bisa juga tarik layar ke bawah, atau ketuk ikon sinkron → *Sinkronkan sekarang*.
 - **Peta:** tombol lapis untuk gaya peta (Standar, Satelit, Topo, Terang, Gelap), tombol layar penuh, dan pusatkan rute. Kalau satu server peta gagal, aplikasi otomatis pindah ke server cadangan.
 - **Studio:** Berbagi → Studio. 16 template (stiker transparan, minimalis, angka raksasa, rute neon, struk, poster finisher, split per KM, profil elevasi, kartu kaca, Now Playing, notifikasi, rekap minggu, sampul majalah, polaroid, data lengkap, peta rute). Latar transparan/foto/warna/peta sungguhan, warna aksen otomatis dari foto, pilihan data, privasi rute, ukuran Story/Feed/Kotak, caption + hashtag otomatis. Tombol **Bagikan** membuka menu Android (Instagram, WhatsApp, Simpan).
+- **Putuskan Strava / Hapus akun:** *Putuskan Strava* mencabut izin di Strava dan menghapus token. **Profil → Hapus akun & data** menghapus akun dan seluruh data secara permanen (butuh `strava-callback` versi terbaru). Kebijakan privasi ada di `PRIVACY.md`.
 - **Cadangan:** buka **Profil → Cadangkan data** untuk menyimpan salinan lengkap (.json). Pulihkan lewat **Profil → Pulihkan dari cadangan**.
 - **Laporan PDF dan kartu Wrapped:** tombol unduh akan membuka menu *Simpan / Bagikan* Android.
 

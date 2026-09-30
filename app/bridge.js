@@ -21,6 +21,7 @@
   function note(t) { try { if (typeof toast === 'function') toast(t); } catch (e) {} }
   function loader(t) { try { if (typeof showGlobalLoader === 'function') showGlobalLoader(t); } catch (e) {} }
   function unloader() { try { if (typeof hideGlobalLoader === 'function') hideGlobalLoader(); } catch (e) {} }
+  var PRIVACY_URL = (window.ACX_CONFIG && window.ACX_CONFIG.privacyUrl) || 'https://github.com/Malik190603/active-coach-app/blob/main/PRIVACY.md';
   var domReady = new Promise(function (ok) { if (document.readyState !== 'loading') ok(); else document.addEventListener('DOMContentLoaded', ok); });
 
   /* ------------------------------ getaran halus (haptics) ------------------------------ */
@@ -122,7 +123,7 @@
     ls.setAttribute('data-state', state);
     var btn = $('#stravaLoginBtn'), lbl = $('#stravaLoginLabel'), steps = $('#lgSteps'), cancel = $('#lgCancel');
     if (btn) btn.disabled = state === 'working';
-    if (lbl) lbl.textContent = state === 'waiting' ? 'Menunggu izin Strava…' : state === 'working' ? (opts.label || 'Menyiapkan…') : state === 'error' ? 'Coba lagi dengan Strava' : 'Masuk dengan Strava';
+    if (lbl) lbl.textContent = state === 'waiting' ? 'Menunggu izin Strava…' : state === 'working' ? (opts.label || 'Menyiapkan…') : state === 'error' ? 'Connect with Strava' : 'Connect with Strava';
     if (steps) {
       steps.hidden = state !== 'working';
       var order = ['auth', 'account', 'sync'], at = order.indexOf(opts.step || 'auth');
@@ -401,6 +402,8 @@
     var btn = $('#stravaLoginBtn'); if (btn) btn.onclick = startStravaLogin;
     var c = $('#lgCancel'); if (c) c.onclick = cancelStravaLogin;
     var foot = $('.lg-bottom .auth-foot');
+    var legal = $('.lg-legal-t');
+    if (legal && !$('#lgPrivacy')) { legal.insertAdjacentHTML('beforeend', ' <a href="#" id="lgPrivacy">Kebijakan privasi</a>'); $('#lgPrivacy').onclick = function (e) { e.preventDefault(); window.open(PRIVACY_URL, '_blank'); }; }
     if (foot && !$('#acxServerLink')) { foot.insertAdjacentHTML('beforebegin', '<button type="button" class="acx-server-link" id="acxServerLink">Pengaturan server</button>'); $('#acxServerLink').onclick = function () { toggleServerPanel(!$('#acxServer')); }; }
     // karusel fitur: geser manual atau otomatis tiap 5 detik
     var track = $('#lgSlides'), dots = [].slice.call(document.querySelectorAll('#lgDots button')), idx = 0, timer = null, touching = false;
@@ -429,7 +432,12 @@
       '<div class="acx-row as-static"><span class="acx-row-ic tone-teal icon"><svg><use href="#i-layers"/></svg></span><span class="acx-row-text"><b>Penyimpanan</b><small id="acxSyncState">Tersinkron dengan server</small><small>' + esc(hostName) + '</small></span></div>' +
       '<button type="button" class="acx-row" id="acxImportRow"><span class="acx-row-ic tone-green icon"><svg><use href="#i-download"/></svg></span><span class="acx-row-text"><b>Pulihkan dari cadangan</b><small>File .json dari Cadangkan data / Google Sheets lama</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxExportRow"><span class="acx-row-ic tone-indigo icon"><svg><use href="#i-share"/></svg></span><span class="acx-row-text"><b>Cadangkan data</b><small>Simpan salinan lengkap (.json)</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
+      '<button type="button" class="acx-row" id="acxPrivacyRow"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-shield"/></svg></span><span class="acx-row-text"><b>Privasi & data</b><small>Kebijakan privasi · Powered by Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
+      '<button type="button" class="acx-row" id="acxDeleteRow"><span class="acx-row-ic tone-red icon"><svg><use href="#i-trash"/></svg></span><span class="acx-row-text"><b style="color:var(--acx-red)">Hapus akun & data</b><small>Hapus permanen dari server & cabut izin Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
+      '<p class="acx-powered">Powered by Strava · Active Coach tidak berafiliasi dengan Strava.</p>' +
       '<input type="file" id="acxImportFile" accept=".json,application/json,text/plain" hidden>');
+    $('#acxDeleteRow').onclick = deleteAccountFlow;
+    $('#acxPrivacyRow').onclick = function () { window.open(PRIVACY_URL, '_blank'); };
     paintSyncState();
     $('#acxImportRow').onclick = function () { $('#acxImportFile').value = ''; $('#acxImportFile').click(); };
     $('#acxImportFile').onchange = async function (e) {
@@ -470,6 +478,41 @@
       } catch (x) { unloader(); note('Gagal membuat cadangan: ' + x.message); }
     };
     var rl = $('#reloadBtn small'); if (rl) rl.textContent = 'Ambil ulang data terbaru dari server';
+  }
+  /* ---------- putuskan Strava (cabut izin) & hapus akun ---------- */
+  async function freshSession() {
+    var s = currentSession || LS.get('acx_session'); if (!s) return null;
+    if (s.expires_at && s.expires_at * 1000 < Date.now() + 60000 && s.refresh_token) {
+      var c = cfg();
+      try { var r = await fetch(c.url + '/auth/v1/token?grant_type=refresh_token', { method: 'POST', headers: { apikey: c.anonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh_token: s.refresh_token }) }); if (r.ok) { var j = await r.json(); s = { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: j.expires_at || Math.floor(Date.now() / 1000) + (j.expires_in || 3600), user: j.user || s.user }; currentSession = s; LS.set('acx_session', s); if (W) W.postMessage({ type: 'session', session: s }); } } catch (e) {}
+    }
+    return s;
+  }
+  async function callAuthFn(kind, accessToken, userToken) {
+    var c = cfg(), h = redeemHeaders(c); if (userToken) h.Authorization = 'Bearer ' + userToken;
+    var r = await fetch(c.url + '/functions/v1/strava-callback?' + kind + '=1', { method: 'POST', headers: h, body: JSON.stringify({ access_token: accessToken || '' }) });
+    var j = {}; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(j.error || ('Server menolak (' + r.status + ')'));
+    return j;
+  }
+  async function disconnectStravaFlow() {
+    if (!confirm('Putuskan Strava? Izin Active Coach di akun Strava-mu akan dicabut dan sinkron berhenti. Data yang sudah ada tetap tersimpan.')) return;
+    loader('Memutus Strava…');
+    try { var tok = await callEngine('appStravaAccessToken', []); if (tok) await callAuthFn('deauth', tok).catch(function () {}); await callEngine('disconnectStrava', [SESSION.athleteId]); unloader(); note('Strava diputus & izin dicabut'); if (typeof loadStrava === 'function') loadStrava(); }
+    catch (e) { unloader(); note('Gagal memutus Strava: ' + e.message); }
+  }
+  async function deleteAccountFlow() {
+    if (!confirm('Hapus akun Active Coach beserta SEMUA data (aktivitas, plan, garasi, foto) dari server? Tindakan ini tidak bisa dibatalkan.')) return;
+    if (!confirm('Yakin? Ketuk OK sekali lagi untuk menghapus permanen. Izin Strava juga akan dicabut.')) return;
+    loader('Menghapus akun & data…');
+    try {
+      var tok = ''; try { tok = await callEngine('appStravaAccessToken', []); } catch (e) {}
+      var s = await freshSession();
+      await callAuthFn('delete', tok, s && s.access_token);
+      try { await send({ type: 'wipeCache' }); } catch (e) {}
+      Object.keys(localStorage).forEach(function (k) { if (/^acx_(session|legacy_session|auth_nonce|last_sync)|^acxStudio:/.test(k)) LS.del(k); });
+      unloader(); forceLoggedOut(); note('Akun & semua data sudah dihapus');
+    } catch (e) { unloader(); note('Gagal menghapus akun: ' + e.message); }
   }
   function paintAccount() {
     var el = $('#acxAccountName'); if (!el || !currentSession) return;
@@ -563,6 +606,7 @@
       var ss = syncStrava;
       window.syncStrava = async function () { var r = await ss.apply(this, arguments); markSynced(); return r; };
     }
+    if (typeof disconnectStrava === 'function') window.disconnectStrava = disconnectStravaFlow;
     if (typeof connectStrava === 'function') {
       window.connectStrava = function (s) { if (!s || !s.configured || !s.authUrl) return note('Server belum punya STRAVA_CLIENT_ID. Isi di Supabase › Edge Functions › Secrets.'); window.open(s.authUrl, '_blank'); };
     }

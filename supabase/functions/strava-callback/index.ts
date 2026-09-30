@@ -106,6 +106,25 @@ Deno.serve(async (req) => {
     return json({ ok: true, v: 2, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table });
   }
 
+  // Cabut izin Strava (Putuskan Strava) & hapus akun beserta semua data
+  if (req.method === 'POST' && (q.has('deauth') || q.has('delete'))) {
+    let b: { access_token?: string } = {};
+    try { b = await req.json(); } catch { /* kosong */ }
+    let revoked = false;
+    if (b.access_token) {
+      try { const r = await fetch(STRAVA + '/oauth/deauthorize', { method: 'POST', headers: { Authorization: 'Bearer ' + b.access_token } }); revoked = r.ok || r.status === 401; } catch { /* abaikan */ }
+    }
+    if (q.has('deauth')) return json({ ok: true, revoked });
+    const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+    if (!token || !SERVICE) return json({ error: 'Belum login' }, 401);
+    const who = await fetch(BASE + '/auth/v1/user', { headers: { apikey: ANON || SERVICE, Authorization: 'Bearer ' + token } });
+    const user = await readJson(who);
+    if (!who.ok || !user.id) return json({ error: 'Sesi tidak valid, masuk lagi lalu ulangi.' }, 401);
+    const del = await fetch(BASE + '/auth/v1/admin/users/' + user.id, { method: 'DELETE', headers: adminHeaders(false) });
+    if (!del.ok) return json({ error: 'Gagal menghapus akun (' + del.status + ')' }, 500);
+    return json({ ok: true, revoked, deleted: true });
+  }
+
   // Aplikasi mengambil hasil login
   if (req.method === 'POST' && q.has('redeem')) {
     let b: { code?: string; nonce?: string } = {};
