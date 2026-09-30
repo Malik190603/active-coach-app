@@ -94,15 +94,9 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 
 Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Aplikasi (mulai v1.1.11) memeriksa rilis terbaru saat dibuka / kembali aktif (tiap 3 jam) dan menampilkan lembar **Versi baru tersedia** dengan tombol unduh langsung ke APK terbaru. Pengguna bisa memilih *Nanti saja*; awali judul commit dengan `[WAJIB]` untuk rilis yang harus dipasang (tombol *Nanti* disembunyikan). Cek manual: **Profil → Periksa pembaruan**.
 
-## Kunci rilis (tanda tangan APK pribadi)
+## Tanda tangan APK
 
-Secara bawaan APK ditandatangani kunci debug yang ada di repo. Supaya tidak ada orang lain yang bisa membuat "update palsu", pakai kunci rilis pribadi:
-
-1. Buka **Settings → Secrets and variables → Actions → tab Secrets → New repository secret**, lalu buat 4 secret:
-   `RELEASE_KEYSTORE_B64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` (isinya dari file kunci yang kamu simpan).
-2. Jalankan ulang workflow (**Actions → Build APK Android → Run workflow**). Log langkah "Kunci tanda tangan" akan menulis *Memakai kunci rilis pribadi*.
-3. **Sekali saja:** uninstall Active Coach versi lama di HP, lalu pasang APK baru. Data aman di server — cukup *Connect with Strava* lagi. Update berikutnya bisa langsung dipasang menimpa.
-4. Simpan file kunci & sandinya baik-baik (mis. Google Drive pribadi). Kalau hilang, update berikutnya harus uninstall lagi.
+Semua APK ditandatangani dengan kunci yang sama (`signing/debug.keystore`), jadi setiap versi baru bisa langsung dipasang **menimpa** versi lama tanpa uninstall — datamu tetap ada. Jangan ganti atau hapus file kunci ini; kalau kuncinya berubah, Android akan menolak update dan aplikasi harus di-uninstall dulu.
 
 ## Webhook Strava (aktivitas baru langsung masuk)
 
