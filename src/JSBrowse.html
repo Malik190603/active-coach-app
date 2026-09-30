@@ -196,7 +196,7 @@ function syncRangeSegs(){let r=window.__dashRange||'week';$$('[data-dash-range]'
 let GARAGE_ENTRY='garage';
 function renderGarageSub(sub){
   if(sub==='bikes'){let host=$('#garageHost');if(!host)return;if(host.dataset.mounted==='bikegarage'||host.dataset.mounted==='bikeservice'){if(GARAGE_UI.entry!==(GARAGE_ENTRY==='service'?'service':'garage')){mountRenderer(GARAGE_ENTRY==='service'?'bikeservice':'bikegarage',host)}else{GARAGE_UI.active=true;garageRender({})}}else mountRenderer(GARAGE_ENTRY==='service'?'bikeservice':'bikegarage',host)}
-  else{let bb=$('#garageBackBtn');if(bb)bb.hidden=true;let t=$('#garageTitle');if(t)t.textContent='Garasi';let k=$('#garageKicker');if(k)k.textContent=sub==='shoes'?'Umur sepatu lari & rotasi':'Hemat bensin, ongkos & CO₂';mountRenderer(sub==='shoes'?'shoes':'commute',sub==='shoes'?$('#shoesHost'):$('#commuteHost'))}
+  else{let bb=$('#garageBackBtn');if(bb)bb.hidden=true;let t=$('#garageTitle');if(t)t.textContent='Gear';let k=$('#garageKicker');if(k)k.textContent=sub==='shoes'?'Umur sepatu lari & rotasi':'Hemat bensin, ongkos & CO₂';mountRenderer(sub==='shoes'?'shoes':'commute',sub==='shoes'?$('#shoesHost'):$('#commuteHost'))}
 }
 
 function ensureProfileExtras(){
@@ -253,7 +253,7 @@ const FEATURE_GROUPS=[
     {detail:'intensity'},{detail:'decoupling'},{detail:'hravg'},{detail:'hrmax'},{detail:'runform'},
     {detail:'powercurve'},{detail:'climbs'},{detail:'wind'},{detail:'records'},{detail:'badges'},{detail:'trophies'}
   ]},
-  {title:'Garasi',tab:'garage',rows:[
+  {title:'Gear',tab:'garage',rows:[
     {detail:'bikegarage',go:'garage',sub:'bikes'},{detail:'bikeservice'},
     {detail:'shoes',go:'garage',sub:'shoes'},{detail:'commute',go:'garage',sub:'commute'}
   ]},
@@ -347,7 +347,7 @@ function renderSharing(){
   let box=$('#shareRecent');
   if(box){
     box.innerHTML=recent.map(x=>'<button type="button" class="acx-row acx-share-row" data-share-activity="'+esc(x.id)+'">'+
-      '<span class="acx-share-thumb">'+((!hide&&x.polyline)?svgRouteThumb(x.polyline,96,96):'<span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>')+'</span>'+
+      '<span class="acx-share-thumb">'+((!hide&&x.polyline)?svgRouteThumb(x.polyline,96,96):'<span class="icon"><svg><use href="#'+sportIconId(x.sport,x.sportType)+'"/></svg></span>')+'</span>'+
       '<span class="acx-row-text"><b>'+esc(x.title)+'</b><small>'+esc(fmtDateShort(x.date))+' · '+(x.distance?x.distance.toFixed(1)+' km · ':'')+duration(x.minutes)+'</small></span>'+
       '<span class="acx-share-cta"><span class="icon"><svg><use href="#i-image"/></svg></span>Kartu</span></button>').join('')||
       '<div class="acx-card acx-empty-sm">Belum ada aktivitas untuk dibagikan.</div>';

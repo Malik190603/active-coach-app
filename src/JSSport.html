@@ -1,0 +1,62 @@
+<script>
+'use strict';
+/* =====================================================================
+   Kosakata olahraga universal: label Indonesia, ikon, warna & satuan untuk
+   semua jenis aktivitas Strava (bukan hanya sepeda/lari).
+   ===================================================================== */
+const SPORT_META=[
+  {re:/^(ride|virtualride|ebikeride|mountainbikeride|gravelride|emountainbikeride|velomobile|handcycle)$/i,label:'Bersepeda',short:'Sepeda',verb:'Gowes',icon:'i-bike',color:'#fc4c02',tags:'#gowes #cycling #sepeda #cyclingindonesia'},
+  {re:/^(run|trailrun|virtualrun)$/i,label:'Lari',short:'Lari',verb:'Lari',icon:'i-shoe',color:'#ff2d78',tags:'#lari #running #runnerindonesia #larisehat'},
+  {re:/^walk$/i,label:'Jalan kaki',short:'Jalan',verb:'Jalan kaki',icon:'i-walk',color:'#16a34a',tags:'#jalankaki #walking #sehat'},
+  {re:/^hike$/i,label:'Hiking',short:'Hiking',verb:'Hiking',icon:'i-hike',color:'#65a30d',tags:'#hiking #pendakian #naikgunung'},
+  {re:/^swim$/i,label:'Renang',short:'Renang',verb:'Berenang',icon:'i-swim',color:'#0ea5e9',tags:'#renang #swimming #swimmer',swim:true},
+  {re:/^(weighttraining|crossfit|workout|hiit|highintensityintervaltraining)$/i,label:'Latihan beban',short:'Gym',verb:'Latihan',icon:'i-dumbbell',color:'#8b5cf6',tags:'#gym #fitness #workout'},
+  {re:/^(yoga|pilates)$/i,label:'Yoga',short:'Yoga',verb:'Yoga',icon:'i-yoga',color:'#ec4899',tags:'#yoga #mindfulness #sehat'},
+  {re:/^(soccer|football|futsal|basketball|volleyball)$/i,label:'Olahraga tim',short:'Tim',verb:'Main',icon:'i-ball',color:'#f59e0b',tags:'#olahraga #futsal #sepakbola'},
+  {re:/^(badminton|tennis|tabletennis|squash|pickleball|racquetball|padel)$/i,label:'Raket',short:'Raket',verb:'Main',icon:'i-racket',color:'#14b8a6',tags:'#badminton #tenis #olahraga'},
+  {re:/^(rowing|virtualrow|kayaking|canoeing|standuppaddling|surfing|kitesurf|windsurf|sail)$/i,label:'Dayung & air',short:'Air',verb:'Mendayung',icon:'i-row',color:'#0284c7',tags:'#dayung #kayak #paddling'},
+  {re:/^(elliptical|stairstepper)$/i,label:'Kardio',short:'Kardio',verb:'Kardio',icon:'i-pulse',color:'#ef4444',tags:'#kardio #fitness'}
+];
+function sportInfo(sportOrLog,type){
+  let sport=sportOrLog,st=type;if(sportOrLog&&typeof sportOrLog==='object'){sport=sportOrLog.sport;st=sportOrLog.sportType}
+  st=String(st||'').replace(/\s+/g,'');
+  let m=st&&SPORT_META.find(x=>x.re.test(st));
+  if(!m&&sport==='Cycling')m=SPORT_META[0];if(!m&&sport==='Running')m=SPORT_META[1];
+  return m||{label:st?st.replace(/([a-z])([A-Z])/g,'$1 $2'):'Aktivitas',short:'Lainnya',verb:'Latihan',icon:'i-pulse',color:'#14b8a6',tags:'#olahraga #workout'};
+}
+/* ikon per jenis olahraga (menggantikan versi sepeda/lari saja) */
+function sportIconId(sport,type){return sportInfo(sport,type).icon}
+/* olahraga dominan 90 hari terakhir → dipakai untuk default tampilan */
+function dominantSport(){
+  let since=dateKey(new Date(Date.now()-90*864e5)),c={Cycling:0,Running:0,Other:0};
+  (DATA.logs||[]).forEach(l=>{if(l.date>=since)c[l.sport in c?l.sport:'Other']+=(l.minutes||0)});
+  let best=Object.keys(c).sort((a,b)=>c[b]-c[a])[0];return c[best]>0?best:'Cycling';
+}
+/* Gear: buka sub-tab yang paling relevan untuk olahraga utama pengguna (sekali, jika belum pernah memilih) */
+function sportAdaptDefaults(){
+  try{
+    let saved={};try{saved=JSON.parse(localStorage.getItem('acxSubs')||'{}')}catch(e){}
+    if(!saved.garage&&typeof SUB_STATE!=='undefined'){let d=dominantSport();SUB_STATE.garage=d==='Running'?'shoes':'bikes';if(d==='Running'){SUB_STATE.performance=SUB_STATE.performance||'fitness'}}
+  }catch(e){}
+}
+/* =====================================================================
+   Transisi halaman halus: halaman baru masuk dengan geser (halaman push)
+   atau fade lembut (antar tab). DOM tetap diganti seketika agar andal.
+   ===================================================================== */
+(function(){
+  try{
+    if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+    document.documentElement.classList.add('has-pgx');
+    const PUSH=['detail','profile','overlay-editor'],orig=switchPage,CLS=['pg-fwd','pg-back','pg-fade'];
+    window.switchPage=function(page,opts){
+      let from=currentPageView(),res=orig(page,opts),to=currentPageView();
+      if(to&&to!==from){
+        let el=document.querySelector('.page[data-page-view="'+to+'"]');
+        if(el){let c=PUSH.indexOf(to)>=0&&PUSH.indexOf(from)<0?'pg-fwd':PUSH.indexOf(from)>=0&&PUSH.indexOf(to)<0?'pg-back':'pg-fade';
+          el.classList.remove(...CLS);void el.offsetWidth;el.classList.add(c);clearTimeout(el.__pgT);el.__pgT=setTimeout(()=>el.classList.remove(c),460)}
+      }
+      return res;
+    };
+  }catch(e){}
+})();
+</script>

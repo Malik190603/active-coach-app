@@ -8,7 +8,7 @@ function obDone(){try{return !!localStorage.getItem('acx_onb_'+currentAthleteId(
 function obMark(){try{localStorage.setItem('acx_onb_'+currentAthleteId(),String(Date.now()))}catch(e){}}
 function obOpen(opts){
   opts=opts||{};if(document.getElementById('obSheet'))return;
-  let st={step:0,sport:'both',ride:100,run:20,hrMax:'',hrRest:'',ftp:'',hard1:'Rabu',hard2:'Sabtu',notif:true,time:'06:00'};
+  let st={step:0,sport:'both',ride:100,run:20,mins:300,hrMax:'',hrRest:'',ftp:'',hard1:'Rabu',hard2:'Sabtu',notif:true,time:'06:00'};
   let prof=(DATA&&DATA.profile)||{};if(prof.goalCyclingKm)st.ride=+prof.goalCyclingKm;if(prof.goalRunningKm)st.run=+prof.goalRunningKm;if(prof.hariHard1)st.hard1=prof.hariHard1;if(prof.hariHard2)st.hard2=prof.hariHard2;
   let box=document.createElement('div');box.className='ob';box.id='obSheet';document.body.appendChild(box);
   let days=['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
@@ -17,13 +17,14 @@ function obOpen(opts){
     let s=st.step,first=(prof.nama||SESSION.nama||'Atlet').split(' ')[0];
     let body=[
       `<span class="ob-emoji">👋</span><h2>Halo, ${esc(first)}!</h2><p>Tiga pertanyaan singkat supaya coach langsung pas untukmu. ${opts.syncing?'<b>Aktivitas Strava-mu sedang diimpor di latar belakang.</b>':''}</p>
-       <div class="ob-label">Fokus olahraga</div>${`<div class="ob-seg" data-ob="sport">${[['ride','🚴 Sepeda'],['run','🏃 Lari'],['both','Keduanya']].map(o=>`<button type="button" class="${st.sport===o[0]?'on':''}" data-v="${o[0]}">${o[1]}</button>`).join('')}</div>`}
-       ${st.sport!=='run'?'<div class="ob-label">Target sepeda per minggu</div>'+chips('ride',[50,100,150,200,300],st.ride,' km'):''}
-       ${st.sport!=='ride'?'<div class="ob-label">Target lari per minggu</div>'+chips('run',[10,20,30,40,60],st.run,' km'):''}`,
+       <div class="ob-label">Fokus olahraga</div>${`<div class="ob-seg" data-ob="sport">${[['ride','🚴 Sepeda'],['run','🏃 Lari'],['both','Keduanya'],['other','🏊 Lainnya']].map(o=>`<button type="button" class="${st.sport===o[0]?'on':''}" data-v="${o[0]}">${o[1]}</button>`).join('')}</div>`}
+       ${st.sport==='ride'||st.sport==='both'?'<div class="ob-label">Target sepeda per minggu</div>'+chips('ride',[50,100,150,200,300],st.ride,' km'):''}
+       ${st.sport==='run'||st.sport==='both'?'<div class="ob-label">Target lari per minggu</div>'+chips('run',[10,20,30,40,60],st.run,' km'):''}
+       ${st.sport==='other'?'<div class="ob-label">Target waktu latihan per minggu</div>'+chips('mins',[150,210,300,420,600],st.mins,' mnt')+'<p class="ob-hint">Jalan kaki, renang, gym, yoga, hiking — semua aktivitas Strava dihitung.</p>':''}`,
       `<span class="ob-emoji">❤️</span><h2>Detak jantung & power</h2><p>Kosongkan kalau belum tahu — Active Coach akan memperkirakannya otomatis dari aktivitasmu.</p>
        <div class="ob-fields"><label>HR maks<input type="number" inputmode="numeric" data-f="hrMax" placeholder="Otomatis" value="${st.hrMax}"><em>bpm</em></label>
        <label>HR istirahat<input type="number" inputmode="numeric" data-f="hrRest" placeholder="Otomatis" value="${st.hrRest}"><em>bpm</em></label>
-       ${st.sport!=='run'?`<label>FTP<input type="number" inputmode="numeric" data-f="ftp" placeholder="Otomatis" value="${st.ftp}"><em>watt</em></label>`:''}</div>`,
+       ${st.sport==='ride'||st.sport==='both'?`<label>FTP<input type="number" inputmode="numeric" data-f="ftp" placeholder="Otomatis" value="${st.ftp}"><em>watt</em></label>`:''}</div>`,
       `<span class="ob-emoji">📅</span><h2>Jadwal & pengingat</h2><p>Coach menaruh 2 sesi berat per minggu di hari pilihanmu, lalu mengingatkanmu setiap pagi.</p>
        <div class="ob-label">Sesi berat 1</div>${chips('hard1',days,st.hard1)}
        <div class="ob-label">Sesi berat 2</div>${chips('hard2',days,st.hard2)}
@@ -41,7 +42,7 @@ function obOpen(opts){
   function close(){box.classList.add('out');setTimeout(()=>box.remove(),260)}
   async function finish(){
     obMark();
-    let data={goalCyclingKm:st.sport==='run'?'':st.ride,goalRunningKm:st.sport==='ride'?'':st.run,hariHard1:st.hard1,hariHard2:st.hard2===st.hard1?(st.hard1==='Minggu'?'Sabtu':'Minggu'):st.hard2};
+    let data={goalCyclingKm:(st.sport==='ride'||st.sport==='both')?st.ride:'',goalRunningKm:(st.sport==='run'||st.sport==='both')?st.run:'',goalMinutes:st.sport==='other'?st.mins:'',hariHard1:st.hard1,hariHard2:st.hard2===st.hard1?(st.hard1==='Minggu'?'Sabtu':'Minggu'):st.hard2};
     if(st.hrMax)data.hrMaxOverride=st.hrMax;if(st.hrRest)data.hrRestOverride=st.hrRest;if(st.ftp)data.ftpOverride=st.ftp;
     close();toast('Siap! Coach menyesuaikan plan untukmu');
     gs('saveTrainingSettings',data,currentAthleteId()).then(d=>{if(d&&d.logs)DATA=d;try{renderPageContent(currentPageView())}catch(e){}}).catch(()=>{});

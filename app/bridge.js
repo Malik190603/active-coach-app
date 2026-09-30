@@ -347,6 +347,22 @@
   }
   /* Bagikan gambar (dipakai Overlay Studio): Android → lembar bagikan (Instagram, WhatsApp, Galeri…);
      browser → Web Share API bila ada, kalau tidak diunduh. */
+  /* Simpan gambar/video ke Galeri (album "Active Coach"); di browser: unduh file */
+  function blobToDataUrl(blob) { return new Promise(function (ok, no) { var r = new FileReader(); r.onload = function () { ok(String(r.result)); }; r.onerror = no; r.readAsDataURL(blob); }); }
+  async function saveMedia(blob, name) {
+    if (NATIVE && P.Media) {
+      var isVideo = /^video\//.test(blob.type || '') || /\.(mp4|webm)$/i.test(name);
+      var base = (await P.Media.getAlbumsPath()).path, album = base + '/Active Coach';
+      try { await P.Media.createAlbum({ name: 'Active Coach' }); } catch (e) {}
+      var dataUrl = await blobToDataUrl(blob);
+      if (isVideo && !/^data:video\//.test(dataUrl)) dataUrl = dataUrl.replace(/^data:[^;]*;/, 'data:video/' + (/webm$/i.test(name) ? 'webm' : 'mp4') + ';');
+      await P.Media[isVideo ? 'saveVideo' : 'savePhoto']({ path: dataUrl, albumIdentifier: album, fileName: name.replace(/\.[^.]+$/, '') });
+      return true;
+    }
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; _click.call(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    return true;
+  }
   async function shareImage(blob, name, text) {
     if (NATIVE && P.Filesystem && P.Share) return saveAndShare(blob, name, text);
     try {
@@ -516,8 +532,35 @@
     var j = await r.json(), apk = (j.assets || []).find(function (a) { return /\.apk$/i.test(a.name || ''); });
     return { version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /^\s*(##\s*Yang baru\s*)?\[WAJIB\]/m.test(j.body || '') };
   }
+  function splitNotes(md) {
+    var s = String(md || '').replace(/\r/g, ''), i = s.search(/^## Catatan developer/m);
+    return { user: i >= 0 ? s.slice(0, i) : s, dev: i >= 0 ? s.slice(i).replace(/^## Catatan developer\s*/m, '') : '' };
+  }
+  function mdLines(md, max) {
+    return esc(md).replace(/^## (.*)$/gm, '<b class="upd-h">$1</b>').replace(/^[-*] (.*)$/gm, '<span class="upd-li">$1</span>').split('\n').filter(function (l) { return l.trim() && !/Unduh file \.apk/i.test(l); }).slice(0, max || 16).join('<br>');
+  }
+  function isAdminUser() { try { return typeof FB_ADMIN !== 'undefined' && FB_ADMIN; } catch (e) { return false; } }
   function notesHtml(md) {
-    return esc(md).replace(/^## (.*)$/gm, '<b>$1</b>').replace(/^[-*] (.*)$/gm, '• $1').split('\n').filter(function (l) { return l.trim() && !/Unduh file \.apk/i.test(l); }).slice(0, 14).join('<br>');
+    var n = splitNotes(md), html = mdLines(n.user, 16) || 'Perbaikan & peningkatan terbaru.';
+    if (n.dev.trim() && isAdminUser()) html += '<details class="upd-dev"><summary>Catatan developer (hanya terlihat olehmu)</summary><div>' + mdLines(n.dev, 30) + '</div></details>';
+    return html;
+  }
+  /* "Yang baru" — tampil sekali setelah aplikasi diperbarui */
+  async function showWhatsNew() {
+    var cur = currentVersion(), seen = LS.get('acx_seen_version');
+    if (!NATIVE || !cur || cur === '0') return;
+    if (!seen) { LS.set('acx_seen_version', cur); return; }
+    if (seen === cur || !verNewer(cur, seen)) return;
+    LS.set('acx_seen_version', cur);
+    try {
+      var repo = (window.ACX_CONFIG && window.ACX_CONFIG.updateRepo) || 'Malik190603/active-coach-app';
+      var r = await fetch('https://api.github.com/repos/' + repo + '/releases/tags/v' + cur, { cache: 'no-store' }); if (!r.ok) return;
+      var j = await r.json(), box = document.createElement('div'); box.className = 'st-sheet upd-sheet'; box.id = 'wnSheet';
+      box.innerHTML = '<div class="st-sheet-box"><div class="upd-hero"><span class="upd-ic wn"><svg viewBox="0 0 24 24"><path d="M12 3l2.2 5.6L20 9.3l-4.4 3.9 1.3 5.8L12 16l-4.9 3 1.3-5.8L4 9.3l5.8-.7z"/></svg></span><div><h3>Yang baru di versi ' + esc(cur) + '</h3><small>Aplikasi berhasil diperbarui</small></div></div><div class="upd-notes">' + notesHtml(j.body) + '</div><button type="button" class="acx-btn upd-go" id="wnOk">Mantap, lanjut!</button></div>';
+      document.body.appendChild(box);
+      var close = function () { box.classList.add('out'); setTimeout(function () { box.remove(); }, 220); };
+      $('#wnOk').onclick = close; box.onclick = function (e) { if (e.target === box) close(); };
+    } catch (e) {}
   }
   /* Pembaruan WAJIB: layar penuh, aplikasi tidak bisa dipakai sampai versi terbaru terpasang.
      APK diunduh di dalam aplikasi (dengan progres) lalu penginstal Android dibuka langsung. */
@@ -762,6 +805,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     initLoginUi(); injectProfileRows();
     checkForUpdate(false);
+    setTimeout(showWhatsNew, 7000);
     try { if (typeof nfInit === 'function') nfInit(); } catch (e) {}
     if (typeof logoutAthlete === 'function') {
       __origLogout = logoutAthlete;
@@ -835,5 +879,5 @@
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
-  window.ACX = { rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { saveMedia: saveMedia, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

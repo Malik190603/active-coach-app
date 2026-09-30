@@ -406,4 +406,40 @@ html[data-view="desktop"] .ob{align-items:center}html[data-view="desktop"] .ob-b
 .fb-actions button.del{color:var(--acx-red);margin-left:auto}
 .fb-mine{margin-top:14px}.fb-mine-title{font-size:12px;font-weight:800;color:var(--acx-text-3);text-transform:uppercase;letter-spacing:.6px;margin:0 0 8px}
 .fb-item.mine p{font-size:13.5px}
+.ob-hint{margin:10px 0 0;font-size:12.5px;color:var(--acx-text-3)}
+.ob-seg{flex-wrap:wrap}.ob-seg button{min-width:30%}
+
+/* ---------------------------- TRANSISI HALUS ---------------------------- */
+html.has-pgx .acx-page{animation:none!important}
+.page.pg-fwd{animation:pgFwd .36s cubic-bezier(.22,1,.36,1) both}
+.page.pg-back{animation:pgBack .34s cubic-bezier(.22,1,.36,1) both}
+.page.pg-fade{animation:pgFade .3s cubic-bezier(.22,1,.36,1) both}
+@keyframes pgFwd{from{opacity:0;transform:translate3d(24%,0,0)}}
+@keyframes pgBack{from{opacity:0;transform:translate3d(-10%,0,0)}}
+@keyframes pgFade{from{opacity:0;transform:translate3d(0,8px,0)}}
+
+.acx-page:not([hidden])>.acx-card,.acx-page:not([hidden])>article,.acx-page:not([hidden])>section,.acx-page:not([hidden])>.acx-list{animation:cardIn .42s var(--ease-out) both}
+.acx-page:not([hidden])>*:nth-child(2){animation-delay:.03s}.acx-page:not([hidden])>*:nth-child(3){animation-delay:.06s}.acx-page:not([hidden])>*:nth-child(4){animation-delay:.09s}.acx-page:not([hidden])>*:nth-child(5){animation-delay:.12s}.acx-page:not([hidden])>*:nth-child(n+6){animation-delay:.15s}
+@keyframes cardIn{from{opacity:0;transform:translateY(10px)}}
+.popup-overlay:not([hidden]){animation:fadeIn .22s ease}
+.popup-overlay:not([hidden]) .popup-box{animation:sheetUp .42s cubic-bezier(.22,1,.36,1)}
+.modal.show .detail-box{animation:sheetUp .42s cubic-bezier(.22,1,.36,1)}
+.acx-btn,.btn,.sub-tab,.acx-subtab,.seg-item,.chip,.st-cat,.st-chip,.ob-chips button{transition:transform .16s var(--ease-out),background-color .2s,color .2s,box-shadow .2s,opacity .2s}
+.acx-btn:active,.btn:active,.sub-tab:active,.acx-subtab:active,.seg-item:active,.st-chip:active,.ob-chips button:active{transform:scale(.96)}
+.acx-card[role=button]:active,.acx-tile:active{transform:scale(.985)}
+.acx-subpill{transition:transform .38s cubic-bezier(.34,1.3,.64,1),width .38s cubic-bezier(.34,1.3,.64,1)!important}
+body{overscroll-behavior-y:none}
+.upd-h{color:var(--acx-text)}.upd-card .upd-h{color:#fff}
+.upd-li{display:inline-block;padding-left:14px;position:relative}.upd-li:before{content:"•";position:absolute;left:2px}
+.upd-dev{margin-top:12px;padding-top:10px;border-top:1px dashed var(--acx-line-2)}
+.upd-dev summary{cursor:pointer;font-weight:800;font-size:12.5px;color:var(--acx-violet)}
+.upd-dev div{margin-top:8px;font-size:12.5px;opacity:.85}
+.upd-ic.wn{background:linear-gradient(135deg,#f59e0b,#ec4899)}
+.st-quick{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px}
+.st-quick .st-video-btn{margin-top:0}
+.st-save-btn{background:var(--acx-text)!important;color:var(--acx-bg)!important;border-color:transparent!important}
+.st-save-btn .icon{color:inherit!important}
+.st-video-btn.is-busy{opacity:.6;pointer-events:none}
+.st-vid-prev{width:100%;max-height:52vh;border-radius:18px;background:#000;object-fit:contain;display:block}
+.st-vid-actions{display:flex;gap:8px;margin-top:12px}.st-vid-actions .acx-btn{flex:1;height:48px;justify-content:center;display:inline-flex;align-items:center;gap:8px}
 </style>

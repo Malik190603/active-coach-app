@@ -296,8 +296,8 @@ function renderDashLast(){
   let hide=DATA.privacy&&DATA.privacy.hideRoutes,thumb=(!hide&&x.polyline)?svgRouteThumb(x.polyline,220,150):'';
   let stats=[x.distance?['Jarak',x.distance.toFixed(1),'km']:null,['Waktu',durationShort(x.minutes),''],x.elevation?['Elevasi',Math.round(x.elevation),'m']:null,x.avgHr?['HR',Math.round(x.avgHr),'bpm']:(x.avgPower?['Power',Math.round(x.avgPower),'W']:null)].filter(Boolean).slice(0,4);
   box.innerHTML='<article class="acx-card acx-last" data-id="'+esc(x.id)+'" role="button" tabindex="0">'+
-    '<div class="acx-last-map'+(thumb?'':' is-empty')+'">'+(thumb||'<span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>')+'</div>'+
-    '<div class="acx-last-body"><span class="acx-eyebrow"><span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>'+esc(x.sport||'Aktivitas')+' · '+esc(fmtDate(x.date))+'</span><b class="acx-last-title">'+esc(x.title||'Aktivitas')+'</b>'+
+    '<div class="acx-last-map'+(thumb?'':' is-empty')+'">'+(thumb||'<span class="icon"><svg><use href="#'+sportIconId(x.sport,x.sportType)+'"/></svg></span>')+'</div>'+
+    '<div class="acx-last-body"><span class="acx-eyebrow"><span class="icon"><svg><use href="#'+sportIconId(x.sport,x.sportType)+'"/></svg></span>'+esc(x.sport||'Aktivitas')+' · '+esc(fmtDate(x.date))+'</span><b class="acx-last-title">'+esc(x.title||'Aktivitas')+'</b>'+
     '<div class="acx-last-stats">'+stats.map(s=>'<div><small>'+s[0]+'</small><b>'+esc(s[1])+'<span>'+s[2]+'</span></b></div>').join('')+'</div></div></article>';
   let card=box.querySelector('[data-id]');if(card)card.onclick=()=>showDetail(card.dataset.id);
 }

@@ -70,7 +70,7 @@ function stMetric(D,k){
   switch(k){
     case 'distance':return {k,label:'Jarak',value:stDist(D.distance),unit:'km'};
     case 'time':return {k,label:'Waktu',value:stTime(D.minutes),unit:''};
-    case 'pace':return {k,label:'Pace',value:stPace(D.pace),unit:'/km'};
+    case 'pace':return D.isSwim?{k,label:'Pace',value:stPace(D.pace/10),unit:'/100m'}:{k,label:'Pace',value:stPace(D.pace),unit:'/km'};
     case 'speed':return {k,label:'Kecepatan',value:stNum(D.speed,1),unit:'km/j'};
     case 'elev':return {k,label:'Elevasi',value:Math.round(D.elev).toLocaleString('id-ID'),unit:'m'};
     case 'hr':return {k,label:'Detak rata²',value:String(Math.round(D.hr)),unit:'bpm'};
@@ -85,7 +85,9 @@ function stSmartMetrics(D){
   let out=[];
   if(D.isRun)out=['distance','pace','time','elev','hr','cadence','kcal'];
   else if(D.isRide)out=['distance','speed','time','elev','power','hr','kcal','maxspeed'];
-  else out=[D.distance>0.2?'distance':'time','time','hr','kcal','elev'];
+  else if(D.isSwim)out=['distance','pace','time','hr','kcal'];
+  else if(D.distance>0.3)out=['distance','time','elev','hr','kcal','speed'];
+  else out=['time','hr','kcal'];
   if(!D.isRun&&D.elev<40)out=out.filter(k=>k!=='elev').concat(['elev']);
   return out.filter((k,i)=>out.indexOf(k)===i&&ST_METRICS[k].ok(D));
 }
@@ -147,7 +149,7 @@ function stData(x){
   let raw=(!hide&&x.polyline)?decodePolyline(x.polyline):[];
   let pts=ST.trim?stTrimRoute(raw,200):raw;
   let D={x,id:x.id,title:(ST.title||x.title||'Aktivitas').trim(),sub:ST.sub||'',name,first:String(name).split(' ')[0],
-    sport:x.sport,isRun,isRide,sportLabel:isRun?'LARI':isRide?'BERSEPEDA':String(x.sportType||x.sport||'AKTIVITAS').toUpperCase(),verb:isRun?'Lari':isRide?'Gowes':'Latihan',
+    sport:x.sport,isRun,isRide,isSwim:!!sportInfo(x).swim,sportLabel:sportInfo(x).label.toUpperCase(),verb:sportInfo(x).verb,tags:sportInfo(x).tags,sportIcon:sportInfo(x).icon,
     date:dt,dateStr:ST_DAYS[dt.getDay()]+', '+dt.getDate()+' '+ST_MON[dt.getMonth()]+' '+dt.getFullYear(),dateShort:dt.getDate()+' '+ST_MON[dt.getMonth()].slice(0,3)+' '+dt.getFullYear(),
     distance:x.distance||0,minutes:x.minutes||0,pace:x.avgPace||(x.distance>0&&x.minutes>0?x.minutes/x.distance:0),speed:x.avgSpeed||(x.minutes>0?x.distance/(x.minutes/60):0),
     elev:x.elevation||0,hr:x.avgHr||0,maxHr:x.maxHr||0,kcal:x.calories||0,power:x.avgPower||0,cadence:x.avgCadence||0,maxSpeed:x.maxSpeed||0,
@@ -155,7 +157,7 @@ function stData(x){
   let meta=x.stravaId&&ST_META[x.stravaId];D.sec=meta&&meta.movingTime?meta.movingTime:Math.round(D.minutes*60);
   let hm=meta&&String(meta.startLocal||'').match(/T(\d\d):(\d\d)/);D.startHM=hm?hm[1]+':'+hm[2]:'';D.hour=hm?+hm[1]:-1;
   D.partOfDay=D.hour<0?'':D.hour<10?'pagi':D.hour<15?'siang':D.hour<18?'sore':'malam';
-  if(!isRun)D.pace=0;if(isRun&&!x.avgPace&&D.pace)D.pace=D.pace;
+  if(!isRun&&!D.isSwim)D.pace=0;if(isRun&&!x.avgPace&&D.pace)D.pace=D.pace;
   let keys=(ST.metrics&&ST.metrics.length?ST.metrics:stSmartMetrics(D)).filter(k=>ST_METRICS[k]&&ST_METRICS[k].ok(D));
   if(!keys.length)keys=stSmartMetrics(D);
   D.metrics=keys.map(k=>stMetric(D,k)).filter(Boolean);

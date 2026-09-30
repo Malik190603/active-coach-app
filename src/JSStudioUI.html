@@ -143,13 +143,13 @@ function stSetTpl(k){if(ST.tpl===k){return}ST.tpl=k;ST.dx=0;ST.dy=0;ST.scale=1;s
 
 /* ---------------------------- caption pintar ---------------------------- */
 function stCaption(D,v){
-  let em=D.isRun?['🏃','🔥','💨','👟']:D.isRide?['🚴','⚡','🌄','💨']:['💪','🔥','✨','⚡'];
-  let dist=D.distance>0?stDist(D.distance)+' km':stTime(D.minutes),perf=D.isRun&&D.pace?'pace '+stPace(D.pace)+'/km':(D.speed&&D.distance>0?'rata-rata '+stNum(D.speed,1)+' km/j':'');
+  let em=D.isRun?['🏃','🔥','💨','👟']:D.isRide?['🚴','⚡','🌄','💨']:D.isSwim?['🏊','💧','🌊','💪']:/Jalan|Hiking/.test(D.verb)?['🚶','🌿','⛰️','☀️']:['💪','🔥','✨','⚡'];
+  let dist=D.distance>0?stDist(D.distance)+' km':stTime(D.minutes),perf=D.isSwim&&D.pace?'pace '+stPace(D.pace/10)+'/100m':D.isRun&&D.pace?'pace '+stPace(D.pace)+'/km':(D.speed&&D.distance>0?'rata-rata '+stNum(D.speed,1)+' km/j':'');
   let day=D.dateStr.split(',')[0];
   let open=[D.title+' ✅',D.verb+(D.partOfDay?' '+D.partOfDay:'')+' '+dist+' hari ini '+em[0],'Satu lagi di catatan: '+dist+' '+em[1],day+' yang produktif — '+dist+' '+em[0],'Hasil hari ini: '+dist+' '+em[2]];
   let mid=[dist+' dalam '+stTime(D.minutes)+(perf?', '+perf:'')+'.',(perf?perf.charAt(0).toUpperCase()+perf.slice(1)+' · ':'')+(D.elev>30?'naik '+Math.round(D.elev)+' m · ':'')+stTime(D.minutes)+' bergerak.',(D.elev>150?'Tanjakan '+Math.round(D.elev)+' m dilibas. ':'')+stTime(D.minutes)+' penuh fokus'+(D.hr?', detak rata-rata '+Math.round(D.hr)+' bpm':'')+'.'];
   let close=['Konsisten > sempurna.','Sedikit demi sedikit, lama-lama jadi bukit.','Besok lanjut lagi 💪','Progress, bukan perfection.','Yang penting gerak dulu.','Terima kasih, kaki 🙏'];
-  let tags=D.isRun?'#lari #running #runnerindonesia #larisehat #strava #activecoach':D.isRide?'#gowes #cycling #sepeda #cyclingindonesia #roadbike #strava #activecoach':'#olahraga #workout #sehat #strava #activecoach';
+  let tags=(D.tags||'#olahraga #workout')+' #strava #activecoach';
   return [open[v%open.length],mid[v%mid.length]+(D.badge?'\n🏅 '+D.badge+'!':''),close[v%close.length],'',tags].join('\n');
 }
 function stCurrentCaption(){let ta=$('#stCaption');if(ta&&ta.value.trim())return ta.value.trim();let x=stActivity();return x?stCaption(stDataCached(x),ST_CAPTION_V):''}
@@ -230,7 +230,7 @@ function stBindPane(host){
 function stActLabel(){
   let b=$('#stActBtn');if(!b)return;let x=stActivity();
   if(!x){b.innerHTML='<span class="st-act-ic icon"><svg><use href="#i-list"/></svg></span><span class="st-act-t"><b>Pilih aktivitas</b><small>Belum ada aktivitas</small></span>';return}
-  b.innerHTML=`<span class="st-act-ic tone-${x.sport==='Running'?'pink':x.sport==='Cycling'?'coral':'teal'} icon"><svg><use href="#${sportIconId(x.sport)}"/></svg></span><span class="st-act-t"><b>${esc(x.title)}</b><small>${esc(fmtDateShort(x.date))}${x.distance?' · '+x.distance.toFixed(1)+' km':''} · ${esc(duration(x.minutes))}</small></span><span class="st-act-chev">Ganti<span class="icon"><svg><use href="#i-chevron"/></svg></span></span>`;
+  b.innerHTML=`<span class="st-act-ic tone-${x.sport==='Running'?'pink':x.sport==='Cycling'?'coral':'teal'} icon"><svg><use href="#${sportIconId(x.sport,x.sportType)}"/></svg></span><span class="st-act-t"><b>${esc(x.title)}</b><small>${esc(fmtDateShort(x.date))}${x.distance?' · '+x.distance.toFixed(1)+' km':''} · ${esc(duration(x.minutes))}</small></span><span class="st-act-chev">Ganti<span class="icon"><svg><use href="#i-chevron"/></svg></span></span>`;
 }
 function stOpenPicker(){
   let logs=stLogsSorted().slice(0,120),hide=DATA.privacy&&DATA.privacy.hideRoutes;
@@ -238,7 +238,7 @@ function stOpenPicker(){
   box.innerHTML=`<div class="st-sheet-box"><div class="sheet-handle"><i></i></div><div class="st-sheet-head"><h3>Pilih aktivitas</h3><button type="button" class="sheet-close" data-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button></div><label class="st-search"><span class="icon"><svg><use href="#i-search"/></svg></span><input type="search" placeholder="Cari judul, tanggal, olahraga…" id="stSearch"></label><div class="st-sheet-list" id="stSheetList"></div></div>`;
   document.body.appendChild(box);
   let paint=(qv)=>{qv=(qv||'').toLowerCase();let items=logs.filter(l=>!qv||(l.title+' '+l.date+' '+l.sport+' '+fmtDateShort(l.date)).toLowerCase().indexOf(qv)>=0).slice(0,80);
-    $('#stSheetList').innerHTML=items.map(l=>`<button type="button" class="st-sheet-row${String(l.id)===String(ST.act)?' on':''}" data-id="${esc(l.id)}"><span class="st-sheet-thumb">${(!hide&&l.polyline)?svgRouteThumb(l.polyline,72,72):`<span class="icon"><svg><use href="#${sportIconId(l.sport)}"/></svg></span>`}</span><span class="st-sheet-t"><b>${esc(l.title)}</b><small>${esc(fmtDateShort(l.date))} · ${l.distance?l.distance.toFixed(1)+' km · ':''}${esc(duration(l.minutes))}</small></span>${String(l.id)===String(ST.act)?'<span class="st-sheet-check icon"><svg><use href="#i-check"/></svg></span>':''}</button>`).join('')||'<p class="st-note" style="text-align:center;padding:24px">Tidak ada aktivitas yang cocok.</p>';
+    $('#stSheetList').innerHTML=items.map(l=>`<button type="button" class="st-sheet-row${String(l.id)===String(ST.act)?' on':''}" data-id="${esc(l.id)}"><span class="st-sheet-thumb">${(!hide&&l.polyline)?svgRouteThumb(l.polyline,72,72):`<span class="icon"><svg><use href="#${sportIconId(l.sport,l.sportType)}"/></svg></span>`}</span><span class="st-sheet-t"><b>${esc(l.title)}</b><small>${esc(fmtDateShort(l.date))} · ${l.distance?l.distance.toFixed(1)+' km · ':''}${esc(duration(l.minutes))}</small></span>${String(l.id)===String(ST.act)?'<span class="st-sheet-check icon"><svg><use href="#i-check"/></svg></span>':''}</button>`).join('')||'<p class="st-note" style="text-align:center;padding:24px">Tidak ada aktivitas yang cocok.</p>';
     $('#stSheetList').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{close();stSelectActivity(b.dataset.id)})};
   let close=()=>{box.classList.add('out');setTimeout(()=>box.remove(),220)};
   box.onclick=e=>{if(e.target===box||e.target.closest('[data-x]'))close()};
@@ -253,6 +253,21 @@ async function stFetchStreams(){
 }
 
 /* ---------------------------- ekspor & bagikan ---------------------------- */
+async function stRenderBlob(){
+  await stFonts();
+  let tpl=stTpl(),f=stFmt(),bg=stEffBg(tpl);
+  if(bg.mode==='map'){let m=stMapFor(tpl,f.w,f.h,stStyleFor(tpl,f.w,f.h,1).acc);let t0=Date.now();while(m&&m.pending&&Date.now()-t0<15000)await new Promise(r=>setTimeout(r,200))}
+  let cv=document.createElement('canvas');cv.width=f.w;cv.height=f.h;stRender(cv.getContext('2d'),f.w,f.h,1);
+  let blob=await new Promise(ok=>cv.toBlob(ok,'image/png'));if(!blob)throw new Error('Gagal membuat gambar');return blob;
+}
+function stFileName(ext){let x=stActivity()||{};return 'activecoach-'+stTpl().k+'-'+String(x.date||'').slice(0,10)+'-'+Date.now().toString(36).slice(-4)+'.'+ext}
+async function stSave(){
+  if(!stActivity()){toast('Pilih aktivitas dulu');return}
+  let btns=[$('#stSave'),$('#stSave2')];btns.forEach(b=>{if(b){b.disabled=true;b.classList.add('is-busy')}});
+  try{let blob=await stRenderBlob();await ACX.saveMedia(blob,stFileName('png'));if(window.acxHaptic)acxHaptic('success');toast(ACX.native?'Tersimpan di Galeri › album Active Coach ✓':'Gambar diunduh ✓')}
+  catch(e){toast('Gagal menyimpan: '+(e.message||e))}
+  btns.forEach(b=>{if(b){b.disabled=false;b.classList.remove('is-busy')}});
+}
 async function stExport(){
   let x=stActivity();if(!x){toast('Pilih aktivitas dulu');return}
   let btn=$('#stShare'),top=$('#stShareTop');[btn,top].forEach(b=>{if(b){b.disabled=true;b.classList.add('is-busy')}});
@@ -292,11 +307,24 @@ async function stExportVideo(){
     rec.stop();await done;stream.getTracks().forEach(tr=>tr.stop());
     let blob=new Blob(chunks,{type:mime.split(';')[0]});if(!blob.size)throw new Error('Video kosong');
     let ext=/mp4/.test(mime)?'mp4':'webm',name='activecoach-'+tpl.k+'-'+String(x.date||'').slice(0,10)+'.'+ext;
-    let ok=window.ACX&&ACX.shareImage?await ACX.shareImage(blob,name,stCurrentCaption()):true;
-    if(ok){if(window.acxHaptic)acxHaptic('success');toast(ext==='mp4'?'Video siap dibagikan':'Video (WebM) siap — sebagian aplikasi butuh MP4')}
+    stVideoReady(blob,name,ext);
   }catch(e){toast('Gagal membuat video: '+(e.message||e))}
   ST_ANIM=null;if(ov)ov.hidden=true;if(btn)btn.disabled=false;stDraw();
 }
+function stVideoReady(blob,name,ext){
+  let box=document.createElement('div');box.className='st-sheet';box.id='stVidSheet';
+  let url=URL.createObjectURL(blob);
+  box.innerHTML=`<div class="st-sheet-box"><div class="sheet-handle"><i></i></div><div class="st-sheet-head"><h3>Video siap 🎬</h3><button type="button" class="sheet-close" data-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button></div>
+    <video class="st-vid-prev" src="${url}" autoplay muted loop playsinline></video>
+    <div class="st-vid-actions"><button type="button" class="acx-btn st-btn-ghost" id="stVidSave"><span class="icon"><svg><use href="#i-download"/></svg></span>Simpan ke Galeri</button><button type="button" class="acx-btn st-btn-main" id="stVidShare"><span class="icon"><svg><use href="#i-share"/></svg></span>Bagikan</button></div>
+    ${ext!=='mp4'?'<p class="st-note" style="margin-top:10px">Format WebM — sebagian aplikasi butuh MP4.</p>':''}</div>`;
+  document.body.appendChild(box);
+  let close=()=>{box.classList.add('out');setTimeout(()=>{box.remove();URL.revokeObjectURL(url)},220)};
+  box.onclick=e=>{if(e.target===box||e.target.closest('[data-x]'))close()};
+  box.querySelector('#stVidSave').onclick=async()=>{try{await ACX.saveMedia(blob,name);if(window.acxHaptic)acxHaptic('success');toast(ACX.native?'Video tersimpan di Galeri › album Active Coach ✓':'Video diunduh ✓')}catch(e){toast('Gagal menyimpan: '+(e.message||e))}};
+  box.querySelector('#stVidShare').onclick=async()=>{let ok=await ACX.shareImage(blob,name,stCurrentCaption());if(ok&&window.acxHaptic)acxHaptic('success')};
+}
+window.ACX_BACK=window.ACX_BACK||[];ACX_BACK.push(()=>{let s=document.getElementById('stVidSheet');if(s){s.remove();return true}return false});
 let ST_FONT_P=null;
 function stFonts(){if(ST_FONTS_OK||!document.fonts)return Promise.resolve();if(ST_FONT_P)return ST_FONT_P;
   let list=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','900 40px Inter','300 40px Inter','400 40px Anton',"400 40px 'Bebas Neue'","400 40px 'Space Mono'","700 40px 'Space Mono'","900 40px 'Playfair Display'","italic 900 40px 'Playfair Display'",'700 40px Caveat','600 40px Caveat'];
@@ -327,6 +355,7 @@ function studioInit(){
   ['stShare','stShareTop'].forEach(id=>{let b=$('#'+id);if(b)b.onclick=stExport});
   let cc=$('#stCopyCaption');if(cc)cc.onclick=()=>stCopy(stCurrentCaption());
   let vb=$('#stVideo');if(vb)vb.onclick=stExportVideo;
+  ['stSave','stSave2'].forEach(id=>{let b=$('#'+id);if(b)b.onclick=stSave});
   stBindStage();
   window.addEventListener('resize',()=>{if(currentPageView()!=='overlay-editor')return;clearTimeout(window.__stRz);window.__stRz=setTimeout(()=>{stSizeStage();stDraw()},120)});
   document.addEventListener('acx:theme',()=>{if(currentPageView()==='overlay-editor')stDraw()});

@@ -32,7 +32,7 @@ function initials(name){let n=(name||'A').trim().split(/\s+/);return ((n[0]?.[0]
 function decodePolyline(str){let pts=[],i=0,lat=0,lng=0;while(i<str.length){let b,shift=0,res=0;do{b=str.charCodeAt(i++)-63;res|=(b&31)<<shift;shift+=5}while(b>=32);lat+=(res&1)?~(res>>1):res>>1;shift=0;res=0;do{b=str.charCodeAt(i++)-63;res|=(b&31)<<shift;shift+=5}while(b>=32);lng+=(res&1)?~(res>>1):res>>1;pts.push([lat/1e5,lng/1e5])}return pts}
 function svgRouteThumb(polyline,w,h){let pts=decodePolyline(polyline||'');if(pts.length<2)return '';let lats=pts.map(p=>p[0]),lngs=pts.map(p=>p[1]),minLat=Math.min(...lats),maxLat=Math.max(...lats),minLng=Math.min(...lngs),maxLng=Math.max(...lngs),pad=10,scale=Math.min((w-pad*2)/(maxLng-minLng||1e-4),(h-pad*2)/(maxLat-minLat||1e-4));let pointsStr=pts.map(p=>(pad+(p[1]-minLng)*scale).toFixed(1)+','+(h-pad-(p[0]-minLat)*scale).toFixed(1)).join(' ');return `<svg viewBox="0 0 ${w} ${h}" xmlns="http:\/\/www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><rect width="${w}" height="${h}" fill="#e9edf1"/><polyline points="${pointsStr}" fill="none" stroke="${COLOR.orange}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>`}
 function sportIconId(sport){return sport==='Running'?'i-shoe':sport==='Cycling'?'i-bike':'i-pulse'}
-function miniMap(x){let ic='<span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>';if(!x.polyline)return `<div class="mini-map empty">${ic}</div>`;let svg=svgRouteThumb(x.polyline,320,180);return svg?`<div class="mini-map">${svg}</div>`:`<div class="mini-map empty">${ic}</div>`}
+function miniMap(x){let ic='<span class="icon"><svg><use href="#'+sportIconId(x.sport,x.sportType)+'"/></svg></span>';if(!x.polyline)return `<div class="mini-map empty">${ic}</div>`;let svg=svgRouteThumb(x.polyline,320,180);return svg?`<div class="mini-map">${svg}</div>`:`<div class="mini-map empty">${ic}</div>`}
 let detailMap=null;
 function initDetailMap(polyline,sport){let el=document.getElementById('mapContainer');if(!el)return;if(detailMap){try{detailMap.remove()}catch(e){}detailMap=null}let pts=decodePolyline(polyline||'');if(pts.length<2){el.innerHTML='<div class="acx-map-empty"><span class="icon"><svg><use href="#i-map"/></svg></span>Tidak ada data rute GPS</div>';return}
   try{
@@ -81,7 +81,7 @@ function initHeatmap(sport){
     if(!heatMap||!acxAlive(heatMap)||heatMap.getContainer()!==el){if(heatMap){try{heatMap.remove()}catch(e){}}heatMap=acxMap(el,{canvas:true});heatMap.on('unload',()=>{heatMap=null;heatLayer=null})}
     if(heatLayer){heatMap.removeLayer(heatLayer);heatLayer=null}
     let totalKm=0,list=[];
-    items.forEach(x=>{let pts=decodePolyline(x.polyline);if(pts.length<2)return;totalKm+=x.distance||0;list.push({pts,sport:x.sport,id:x.id,onClick:it=>{if(typeof showDetail==='function')showDetail(it.id)}})});
+    items.forEach(x=>{let pts=decodePolyline(x.polyline);if(pts.length<2)return;totalKm+=x.distance||0;list.push({pts,sport:x.sport,color:x.sport==='Other'?sportInfo(x).color:undefined,id:x.id,onClick:it=>{if(typeof showDetail==='function')showDetail(it.id)}})});
     heatLayer=acxHeat(heatMap,list);
     let summary=$('#heatmapSummary');if(summary)summary.textContent=items.length?items.length+' rute · '+Math.round(totalKm).toLocaleString('id-ID')+' km':'Belum ada rute GPS';
     let lg=$('#heatmapLegend');if(lg){let c=items.filter(x=>x.sport==='Cycling').length,r=items.filter(x=>x.sport==='Running').length,o=items.length-c-r;lg.innerHTML=(c?`<span><i style="background:${ACX_SPORT_COLOR.Cycling}"></i>Sepeda ${c}</span>`:'')+(r?`<span><i style="background:${ACX_SPORT_COLOR.Running}"></i>Lari ${r}</span>`:'')+(o?`<span><i style="background:${ACX_SPORT_COLOR.Other}"></i>Lainnya ${o}</span>`:'')}
@@ -228,7 +228,7 @@ function weeklyBuckets(logs,weeks){let monday=startOfWeek(new Date()),out=[];for
 function statDelta(cur,prev){if(!prev)return '<span class="stat-delta flat">baru</span>';let pct=Math.round((cur-prev)/prev*100);if(Math.abs(pct)<1)return '<span class="stat-delta flat">= mgg lalu</span>';return pct>0?`<span class="stat-delta up">▲ ${pct}%</span>`:`<span class="stat-delta down">▼ ${Math.abs(pct)}%</span>`}
 
 const TAB_PAGES=['dashboard','training','performance','garage','sharing'];
-const TAB_LABEL={dashboard:'Hari Ini',training:'Latihan',performance:'Performa',garage:'Garasi',sharing:'Berbagi',profile:'Profil','overlay-editor':'Overlay Studio'};
+const TAB_LABEL={dashboard:'Hari Ini',training:'Latihan',performance:'Performa',garage:'Gear',sharing:'Berbagi',profile:'Profil','overlay-editor':'Studio'};
 const TAB_SUBS={training:['plan','calendar','activities','routes'],performance:['fitness','intensity','speed','records'],garage:['bikes','shoes','commute']};
 const PAGE_ALIAS={plan:['training','plan'],calendar:['training','calendar'],activities:['training','activities'],routes:['training','routes'],progress:['performance','fitness'],browse:['dashboard',''],fitness:['performance','fitness'],speed:['performance','speed'],bikes:['garage','bikes']};
 let SUB_STATE={training:'plan',performance:'fitness',garage:'bikes'},ACTIVE_TAB='dashboard';

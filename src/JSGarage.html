@@ -200,7 +200,7 @@ function garageProSafe(fn,...args){try{return typeof window[fn]==='function'?(wi
 function garageRefresh(opts){let v=currentPageView();if(GARAGE_UI.active&&(v==='detail'||(v==='garage'&&SUB_STATE.garage==='bikes')))garageRender(opts)}
 function garageSetHeader(){
   let svc=GARAGE_UI.entry==='service',b=GARAGE_UI.bikeId?bikeById(GARAGE_UI.bikeId):null;
-  if(currentPageView()==='garage'){let t=$('#garageTitle'),k=$('#garageKicker'),bb=$('#garageBackBtn');if(t)t.textContent=b?b.name:'Garasi';if(k)k.textContent=b?'Odometer, part, servis & ride sepeda ini':(svc?'Pilih sepeda untuk jadwal servis':'Sepeda, sepatu & perawatan');if(bb){bb.hidden=!b;bb.onclick=()=>garageBackToPicker()}let nav=document.querySelector('[data-subnav="garage"]');if(nav)nav.classList.toggle('is-collapsed',!!b);return}
+  if(currentPageView()==='garage'){let t=$('#garageTitle'),k=$('#garageKicker'),bb=$('#garageBackBtn');if(t)t.textContent=b?b.name:'Gear';if(k)k.textContent=b?'Odometer, part, servis & ride sepeda ini':(svc?'Pilih sepeda untuk jadwal servis':'Sepeda, sepatu & perawatan');if(bb){bb.hidden=!b;bb.onclick=()=>garageBackToPicker()}let nav=document.querySelector('[data-subnav="garage"]');if(nav)nav.classList.toggle('is-collapsed',!!b);return}
   $('#detailPageEyebrow').textContent=svc?'Bengkel':'Garasi';
   $('#detailPageTitle').textContent=b?b.name:(svc?'Bengkel sepeda':'Garasi sepeda');
   $('#detailPageSubtitle').textContent=b?'Odometer, part, servis, dan ride sepeda ini — semuanya otomatis dari Strava.':(svc?'Pilih sepeda dulu untuk melihat jadwal servis dan riwayat bengkelnya.':'Pilih sepeda dulu. Km tiap sepeda dihitung otomatis dari ride Strava.');

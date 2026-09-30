@@ -266,7 +266,7 @@ const ST_TPLS=[
   if(S.photo){let im=S.photo,sc=Math.max(iw/im.width,iw/im.height),dw=im.width*sc,dh=im.height*sc;ctx.drawImage(im,ix+(iw-dw)/2,iy+(iw-dh)*((ST.bg.fy||50)/100),dw,dh)}
   else{let g=ctx.createLinearGradient(ix,iy,ix+iw,iy+iw);g.addColorStop(0,S.acc);g.addColorStop(1,shade(S.acc,-.6));ctx.fillStyle=g;ctx.fillRect(ix,iy,iw,iw);if(!drawRoute(ctx,D,{x:ix+60,y:iy+60,w:iw-120,h:iw-120},{color:'#fff',width:10,glow:20,glowColor:'#fff',markers:true}))stNoRoute(ctx,D,{x:ix,y:iy+iw*.25,w:iw,h:iw*.5},S,'#fff')}
   ctx.restore();ctx.strokeStyle='rgba(0,0,0,.08)';ctx.strokeRect(ix,iy,iw,iw);
-  T(ctx,D.title+(D.isRun?' 🏃':D.isRide?' 🚴':' ✨'),x+fw/2,iy+iw+104,{font:F(700,70,'hand'),color:'#23232a',align:'center',max:fw-60});
+  T(ctx,D.title+(D.isRun?' 🏃':D.isRide?' 🚴':D.isSwim?' 🏊':' ✨'),x+fw/2,iy+iw+104,{font:F(700,70,'hand'),color:'#23232a',align:'center',max:fw-60});
   T(ctx,D.metrics.slice(0,2).map(m=>m.value+(m.unit?' '+m.unit:'')).join(' · ')+'  ✦  '+D.dateShort,x+fw/2,iy+iw+172,{font:F(600,48,'hand'),color:'#55555f',align:'center',max:fw-60});
   ctx.save();ctx.translate(x+fw/2,y-6);ctx.rotate(-.06);ctx.fillStyle='rgba(255,240,200,.72)';ctx.fillRect(-110,-26,220,60);ctx.restore();
   ctx.restore();
