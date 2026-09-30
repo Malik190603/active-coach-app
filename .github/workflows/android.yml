@@ -47,12 +47,8 @@ jobs:
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: npm run build
 
-      - name: Kunci tanda tangan
-        # Selalu kunci yang sama (signing/debug.keystore) supaya setiap APK baru bisa
-        # langsung dipasang menimpa versi lama tanpa uninstall.
-        run: mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
-
       - name: Siapkan proyek Android
+        # prepare-android menulis signingConfig tetap (signing/debug.keystore) ke build.gradle
         env:
           VERSION_CODE: ${{ github.run_number }}
         run: npm run android:prepare
@@ -60,6 +56,17 @@ jobs:
       - name: Build APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Pastikan tanda tangan sama dengan versi sebelumnya
+        # Gagal (dan tidak rilis) bila APK tidak ditandatangani kunci tetap,
+        # supaya pengguna tidak pernah perlu uninstall untuk update.
+        run: |
+          EXPECTED=350be8974a9244ca94f1528cc06b69a3485c5b1eea17139e8c921d4d6665c6d3
+          SIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$SIGNER" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee certs.txt
+          GOT=$(grep -m1 -i "certificate SHA-256 digest" certs.txt | awk '{print $NF}' | tr 'A-F' 'a-f')
+          echo "SHA-256 APK: $GOT"
+          if [ "$GOT" != "$EXPECTED" ]; then echo "::error::APK ditandatangani kunci lain ($GOT). Rilis dibatalkan."; exit 1; fi
 
       - name: Beri nama file
         run: |

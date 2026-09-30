@@ -46,8 +46,27 @@ const code = Number(process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER ||
 const versionName = (process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER) ? pkg.version.split('.').slice(0, 2).join('.') + '.' + code : pkg.version;
 gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode ' + code).replace(/versionName\s+"[^"]*"/, 'versionName "' + versionName + '"');
 console.log('Versi aplikasi: ' + versionName + ' (kode ' + code + ')');
+// Tanda tangan TETAP: semua APK (debug) ditandatangani kunci signing/debug.keystore di repo,
+// ditulis eksplisit di build.gradle (tidak bergantung ~/.android yang bisa berbeda di runner CI).
+// Kunci yang sama = update selalu bisa dipasang menimpa versi lama tanpa uninstall.
+const keystore = path.join(ROOT, 'signing', 'debug.keystore');
+if (!fs.existsSync(keystore)) throw new Error('signing/debug.keystore tidak ditemukan — jangan hapus file kunci ini');
+if (!gradle.includes('/* ac-fixed-signing */')) {
+  gradle = gradle.replace(/android \{/, `android {
+    /* ac-fixed-signing */
+    signingConfigs {
+        debug {
+            storeFile file(${JSON.stringify(keystore.split(path.sep).join('/'))})
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }`);
+  gradle = gradle.replace(/buildTypes \{/, 'buildTypes {\n        debug {\n            signingConfig signingConfigs.debug\n        }');
+  console.log('Tanda tangan tetap: ' + keystore);
+}
 // Tanda tangan rilis: dipakai bila kunci rilis tersedia (GitHub Secrets → RELEASE_KEYSTORE_PATH dst.)
-if (process.env.RELEASE_KEYSTORE_PATH && !gradle.includes('signingConfigs {')) {
+if (process.env.RELEASE_KEYSTORE_PATH && !gradle.includes("signingConfig signingConfigs.release")) {
   gradle = gradle.replace(/android \{/, `android {
     signingConfigs {
         release {

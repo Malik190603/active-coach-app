@@ -104,7 +104,9 @@ Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan com
 
 ## Tanda tangan APK
 
-Semua APK ditandatangani dengan kunci yang sama (`signing/debug.keystore`), jadi setiap versi baru bisa langsung dipasang **menimpa** versi lama tanpa uninstall — datamu tetap ada. Jangan ganti atau hapus file kunci ini; kalau kuncinya berubah, Android akan menolak update dan aplikasi harus di-uninstall dulu.
+Semua APK sejak v1.1.18 ditandatangani dengan kunci yang sama (`signing/debug.keystore`). Kunci ini ditulis langsung di `android/app/build.gradle` oleh `scripts/prepare-android.mjs`, dan workflow GitHub memeriksa sidik jari SHA-256 setiap APK (`350be897…c6d3`) — kalau berbeda, rilis dibatalkan. Jadi setiap versi baru selalu bisa dipasang **menimpa** versi lama tanpa uninstall. Jangan ganti atau hapus file kunci ini.
+
+> Versi v1.1.17 dan sebelumnya tidak sengaja ditandatangani kunci acak per build. Pengguna versi tersebut perlu hapus aplikasi **satu kali** lalu memasang v1.1.18+; data latihan tetap aman di server (cukup login Strava lagi). Setelah itu update selalu menimpa.
 
 ## Webhook Strava (aktivitas baru langsung masuk)
 
