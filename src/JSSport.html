@@ -53,6 +53,7 @@ function sportAdaptDefaults(){
       if(to&&to!==from){
         let el=document.querySelector('.page[data-page-view="'+to+'"]');
         if(el){let c=PUSH.indexOf(to)>=0&&PUSH.indexOf(from)<0?'pg-fwd':PUSH.indexOf(from)>=0&&PUSH.indexOf(to)<0?'pg-back':'pg-fade';
+          let back=c==='pg-back'||!!(opts&&opts.restoreScroll),R=document.documentElement;R.classList.toggle('is-back',back);clearTimeout(R.__bk);if(back)R.__bk=setTimeout(()=>R.classList.remove('is-back'),520);
           el.classList.remove(...CLS);void el.offsetWidth;el.classList.add(c);clearTimeout(el.__pgT);el.__pgT=setTimeout(()=>el.classList.remove(c),460)}
       }
       return res;

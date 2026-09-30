@@ -108,7 +108,7 @@
     if (!r || !r.ok) throw new Error((r && r.error) || 'Profil atlet tidak ditemukan.');
     return r;
   }
-  function forceLoggedOut() {
+  function forceLoggedOut() { try { if (typeof ACX_SNAP !== 'undefined') ACX_SNAP.clear(); } catch (e) {}
     LS.del('acx_session'); currentSession = null;
     stopWorker('Keluar');
     try { if (typeof __origLogout === 'function') __origLogout(); } catch (e) {}
@@ -707,6 +707,29 @@
       }
     } catch (e) { console.warn('Sinkron otomatis gagal', e && e.message); }
     root.classList.remove('is-syncing'); autoBusy = false;
+    syncStravaPhoto(false);
+  }
+  /* Foto profil selalu mengikuti Strava (dicek maks. tiap 6 jam, atau manual dari Pengaturan). */
+  var photoBusy = false;
+  async function syncStravaPhoto(manual) {
+    if (photoBusy || !engineReady || typeof SESSION === 'undefined' || !SESSION.athleteId) return;
+    var k = 'acx_photo_sync_' + SESSION.athleteId;
+    if (!manual && Date.now() - (LS.get(k) || 0) < 6 * 3600000) return;
+    if (navigator.onLine === false) { if (manual) note('Sedang offline'); return; }
+    photoBusy = true;
+    try {
+      var r = await callEngine('appSyncStravaProfile', []);
+      if (r && r.ok) {
+        LS.set(k, Date.now());
+        if (typeof DATA !== 'undefined' && DATA && DATA.profile) DATA.profile.profilePhoto = r.photo;
+        var nm = (typeof DATA !== 'undefined' && DATA && DATA.profile && DATA.profile.nama) || SESSION.nama || 'Athlete';
+        if (typeof setAvatarEls === 'function') setAvatarEls(nm, r.photo);
+        var pv = document.getElementById('settingsPhotoPreview');
+        if (pv) { pv.style.backgroundImage = r.photo ? "url('" + r.photo + "')" : ''; pv.classList.toggle('has-photo', !!r.photo); pv.textContent = r.photo ? '' : (typeof initials === 'function' ? initials(nm) : 'AC'); }
+        if (manual) note(r.changed ? 'Foto profil diperbarui dari Strava ✓' : 'Foto sudah sama dengan Strava ✓');
+      } else if (manual) note('Gagal mengambil foto Strava. Coba lagi.');
+    } catch (e) { if (manual) note('Gagal mengambil foto Strava. Coba lagi.'); }
+    photoBusy = false;
   }
   /* ---------- webhook Strava: aktivitas baru langsung masuk, izin dicabut terdeteksi ---------- */
   async function userRest(method, path) {
@@ -879,5 +902,5 @@
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
-  window.ACX = { saveMedia: saveMedia, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

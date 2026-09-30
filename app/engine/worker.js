@@ -267,17 +267,30 @@ self.onmessage = function (ev) {
         CFG = m.cfg; SES = m.session; E.tz = m.tz || E.tz; E.email = (SES.user && SES.user.email) || '';
         var fromCache = await loadWorkspace();
         ensureCode();
-        var cfg = null;
-        try {
-          await refreshAsync();
-          var r = await fetch(CFG.url + '/functions/v1/proxy?config=1', { headers: authHeaders(false) });
-          if (r.ok) cfg = await r.json();
-        } catch (e) { log('config offline', e); }
-        if (cfg) runCall('appEnsureConfig', [cfg]);
-        else if (E.db.props.STRAVA_REDIRECT_URI) E.redirectUri = E.db.props.STRAVA_REDIRECT_URI;
-        post({ type: 'ready', id: m.id, fromCache: fromCache, online: !!cfg });
-        scheduleFlush(1500);
-        if (fromCache) remoteCheck().then(function (n) { if (n) post({ type: 'remoteUpdate', count: n }); }).catch(function (e) { post({ type: 'sync', state: 'offline', error: String(e && e.message || e) }); });
+        if (E.db.props.STRAVA_REDIRECT_URI) E.redirectUri = E.db.props.STRAVA_REDIRECT_URI;
+        async function netConfig(direct) {
+          var cfg = null;
+          try {
+            await refreshAsync();
+            var r = await fetch(CFG.url + '/functions/v1/proxy?config=1', { headers: authHeaders(false) });
+            if (r.ok) cfg = await r.json();
+          } catch (e) { log('config offline', e); }
+          if (cfg) { if (direct) runCall('appEnsureConfig', [cfg]); else await enqueue(async function () { runCall('appEnsureConfig', [cfg]); }); }
+          return cfg;
+        }
+        if (fromCache && E.db.props.STRAVA_CLIENT_ID) {
+          // Buka instan dari cache HP; token, konfigurasi & data server diperbarui di latar belakang.
+          post({ type: 'ready', id: m.id, fromCache: true, online: navigator.onLine !== false });
+          netConfig().then(function () {
+            scheduleFlush(1500);
+            return remoteCheck().then(function (n) { if (n) post({ type: 'remoteUpdate', count: n }); });
+          }).catch(function (e) { post({ type: 'sync', state: 'offline', error: String(e && e.message || e) }); });
+        } else {
+          var cfg = await netConfig(true);
+          post({ type: 'ready', id: m.id, fromCache: fromCache, online: !!cfg });
+          scheduleFlush(1500);
+          if (fromCache) remoteCheck().then(function (n) { if (n) post({ type: 'remoteUpdate', count: n }); }).catch(function (e) { post({ type: 'sync', state: 'offline', error: String(e && e.message || e) }); });
+        }
       } catch (e) { post({ type: 'ready', id: m.id, error: String(e && e.message || e) }); }
     });
     return;

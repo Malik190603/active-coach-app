@@ -261,7 +261,7 @@ async function stRenderBlob(){
   let blob=await new Promise(ok=>cv.toBlob(ok,'image/png'));if(!blob)throw new Error('Gagal membuat gambar');return blob;
 }
 function stFileName(ext){let x=stActivity()||{};return 'activecoach-'+stTpl().k+'-'+String(x.date||'').slice(0,10)+'-'+Date.now().toString(36).slice(-4)+'.'+ext}
-async function stSave(){
+async function stSaveImage(){
   if(!stActivity()){toast('Pilih aktivitas dulu');return}
   let btns=[$('#stSave'),$('#stSave2')];btns.forEach(b=>{if(b){b.disabled=true;b.classList.add('is-busy')}});
   try{let blob=await stRenderBlob();await ACX.saveMedia(blob,stFileName('png'));if(window.acxHaptic)acxHaptic('success');toast(ACX.native?'Tersimpan di Galeri › album Active Coach ✓':'Gambar diunduh ✓')}
@@ -355,7 +355,7 @@ function studioInit(){
   ['stShare','stShareTop'].forEach(id=>{let b=$('#'+id);if(b)b.onclick=stExport});
   let cc=$('#stCopyCaption');if(cc)cc.onclick=()=>stCopy(stCurrentCaption());
   let vb=$('#stVideo');if(vb)vb.onclick=stExportVideo;
-  ['stSave','stSave2'].forEach(id=>{let b=$('#'+id);if(b)b.onclick=stSave});
+  ["stSave","stSave2"].forEach(id=>{let b=$("#"+id);if(b)b.onclick=stSaveImage});
   stBindStage();
   window.addEventListener('resize',()=>{if(currentPageView()!=='overlay-editor')return;clearTimeout(window.__stRz);window.__stRz=setTimeout(()=>{stSizeStage();stDraw()},120)});
   document.addEventListener('acx:theme',()=>{if(currentPageView()==='overlay-editor')stDraw()});

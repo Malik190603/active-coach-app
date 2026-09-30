@@ -161,11 +161,12 @@
 
     <main class="content acx-content" id="scrollRoot">
       <div class="ptr-indicator" id="ptrIndicator"><span class="ptr-spinner"></span><span id="ptrLabel">Tarik untuk sinkronkan</span></div>
-      <div id="loading" class="loading-skeleton acx-skel">
-        <div class="skel skel-profile"></div>
-        <div class="skel skel-panel"></div>
-        <div class="skel-grid"><div class="skel skel-metric"></div><div class="skel skel-metric"></div><div class="skel skel-metric"></div><div class="skel skel-metric"></div></div>
-        <div class="skel skel-panel"></div>
+      <div id="loading" class="loading-skeleton acx-skel sk-page" role="status" aria-label="Memuat">
+        <div class="sk-head"><div><i class="sk sk-line w30"></i><i class="sk sk-title"></i></div><div class="sk-btns"><i class="sk sk-round"></i><i class="sk sk-round"></i><i class="sk sk-round"></i></div></div>
+        <div class="sk-card sk-hero"><div class="sk-row"><i class="sk sk-ring"></i><div class="sk-col"><i class="sk sk-line w40"></i><i class="sk sk-line w80 lg"></i><i class="sk sk-line w60"></i></div></div><div class="sk-row sk-chips"><i class="sk sk-chip"></i><i class="sk sk-chip"></i><i class="sk sk-chip"></i></div></div>
+        <div class="sk-grid"><div class="sk-card"><i class="sk sk-line w50"></i><i class="sk sk-line w70 lg"></i><i class="sk sk-line w40"></i></div><div class="sk-card"><i class="sk sk-line w50"></i><i class="sk sk-line w70 lg"></i><i class="sk sk-line w40"></i></div></div>
+        <div class="sk-card sk-act"><i class="sk sk-map"></i><div class="sk-col"><i class="sk sk-line w40"></i><i class="sk sk-line w70 lg"></i><div class="sk-row sk-stats"><i class="sk sk-line"></i><i class="sk sk-line"></i><i class="sk sk-line"></i></div></div></div>
+        <div class="sk-card sk-list"><div class="sk-row"><i class="sk sk-sq"></i><div class="sk-col"><i class="sk sk-line w60"></i><i class="sk sk-line w40"></i></div></div><div class="sk-row"><i class="sk sk-sq"></i><div class="sk-col"><i class="sk sk-line w70"></i><i class="sk sk-line w30"></i></div></div></div>
       </div>
       <div id="app" hidden>
 
@@ -553,8 +554,8 @@
                   <div class="acx-pad"><p class="muted">Coach menjadwalkan 2 sesi berat per minggu pada hari ini.</p><form id="scheduleForm" class="settings-form"><div class="two"><label>Sesi berat 1<select name="hariHard1"><option>Senin</option><option>Selasa</option><option>Rabu</option><option>Kamis</option><option>Jumat</option><option>Sabtu</option><option>Minggu</option></select></label><label>Sesi berat 2 (long)<select name="hariHard2"><option>Senin</option><option>Selasa</option><option>Rabu</option><option>Kamis</option><option>Jumat</option><option>Sabtu</option><option>Minggu</option></select></label></div><button class="btn primary">Simpan jadwal</button></form></div></details>
                 <details class="acx-row-details"><summary class="acx-row"><span class="acx-row-ic tone-green icon"><svg><use href="#i-target"/></svg></span><span class="acx-row-text"><b>Target &amp; catatan</b><small>Target mingguan, berat badan, catatan</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></summary>
                   <div class="acx-pad"><form id="goalsForm" class="settings-form"><div class="zone-inputs"><label>Target cycling (km/minggu)<input type="number" name="goalCyclingKm" min="0" placeholder="100"></label><label>Target running (km/minggu)<input type="number" name="goalRunningKm" min="0" placeholder="10"></label><label>Target durasi (menit/minggu)<input type="number" name="goalMinutes" min="0" placeholder="300"></label><label>Target elevasi (m/minggu)<input type="number" name="goalElevation" min="0" placeholder="1000"></label><label>Target sesi (minggu)<input type="number" name="goalSessions" min="0" placeholder="4"></label><label>Berat badan (kg)<input type="number" name="weightKg" min="0" step="0.1" placeholder="Opsional"></label></div><label>Catatan personal<textarea name="personalNote" rows="3" placeholder="Tujuan latihan, race goal, atau catatan coach..."></textarea></label><button class="btn primary">Simpan target &amp; catatan</button></form></div></details>
-                <details class="acx-row-details"><summary class="acx-row"><span class="acx-row-ic tone-pink icon"><svg><use href="#i-camera"/></svg></span><span class="acx-row-text"><b>Foto profil</b><small>Foto persegi, diperkecil otomatis</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></summary>
-                  <div class="acx-pad photo-setting"><span class="profile-avatar" id="settingsPhotoPreview">AC</span><div><input type="file" id="profilePhotoInput" accept="image/&#42;"><button class="link-btn" id="removeProfilePhoto" type="button">Hapus foto</button></div></div></details>
+                <details class="acx-row-details"><summary class="acx-row"><span class="acx-row-ic tone-pink icon"><svg><use href="#i-camera"/></svg></span><span class="acx-row-text"><b>Foto profil</b><small>Otomatis mengikuti foto Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></summary>
+                  <div class="acx-pad photo-setting"><span class="profile-avatar" id="settingsPhotoPreview">AC</span><div class="photo-strava"><p class="muted">Foto profilmu disinkronkan langsung dari Strava. Ganti foto di aplikasi Strava, lalu ketuk tombol di bawah.</p><button class="acx-btn st-btn-ghost" id="syncStravaPhoto" type="button">Perbarui dari Strava</button></div></div></details>
               </div>
 
               <h3 class="acx-group-title">Privasi</h3>
@@ -610,7 +611,7 @@
     </div>
   </div>
 
-  <div id="globalLoader" class="global-loader" hidden><span class="global-spinner"></span><span id="globalLoaderText">Memuat…</span></div>
+  <div id="globalLoader" class="global-loader acx-gl" hidden role="status" aria-live="polite"><div class="acx-gl-bar"><i></i></div><div class="acx-gl-pill"><span class="acx-gl-spin"></span><span id="globalLoaderText">Memuat…</span></div></div>
   <div class="modal" id="modal"><div class="detail-box" id="detailBox"><div class="sheet-handle" id="sheetHandle"><i></i></div><button type="button" class="sheet-close" data-close aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button><div id="detailContent"></div></div></div>
   <div class="toast" id="toast"></div>
   <div class="compare-bar" id="compareBar" hidden><span id="compareBarText">0/2 aktivitas dipilih</span><div class="compare-bar-actions"><button type="button" class="btn secondary" id="compareClear">Batal</button><button type="button" class="btn primary" id="compareGo" disabled>Bandingkan</button></div></div>

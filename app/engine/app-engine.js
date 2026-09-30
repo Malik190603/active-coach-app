@@ -77,9 +77,31 @@ function appApplyStravaLogin(strava) {
   var prof = profileMap(SpreadsheetApp.getActiveSpreadsheet(), id);
   if (name && (!prof.nama || prof.nama === 'Cyclist' || prof.nama === 'Athlete')) appSetProfileKey_(id, 'nama', name);
   var avatar = String(ath.profile || ath.profile_medium || '');
-  if (/^https:\/\//.test(avatar) && !/avatar\/athlete\/large/.test(avatar) && !prof.profilePhoto) appSetProfileKey_(id, 'profilePhoto', avatar);
+  appApplyStravaPhoto_(id, avatar, prof);
   var logs = readAthleteLogs(SpreadsheetApp.getActiveSpreadsheet(), id);
   return { ok: true, athleteId: id, nama: (athleteById(id) || {}).nama || name, needsFirstSync: !logs.length, scopeOk: /activity:read_all/.test(String(strava.scope || 'activity:read_all')) };
+}
+
+/* Foto profil selalu mengikuti foto Strava (foto bawaan Strava → inisial nama). */
+function appApplyStravaPhoto_(id, avatar, prof) {
+  avatar = String(avatar || '');
+  var photo = /^https:\/\//.test(avatar) && !/avatar\/athlete\/(large|medium)\.png/.test(avatar) ? avatar : '';
+  prof = prof || profileMap(SpreadsheetApp.getActiveSpreadsheet(), id);
+  if (String(prof.profilePhoto || '') === photo) return false;
+  appSetProfileKey_(id, 'profilePhoto', photo);
+  return true;
+}
+function appSyncStravaProfile() {
+  var id = PropertiesService.getScriptProperties().getProperty('APP_ATHLETE_ID');
+  if (!id) return { ok: false };
+  var tok = appStravaAccessToken();
+  if (!tok) return { ok: false };
+  var r = UrlFetchApp.fetch('https://www.strava.com/api/v3/athlete', { headers: { Authorization: 'Bearer ' + tok }, muteHttpExceptions: true });
+  if (r.getResponseCode() !== 200) return { ok: false, code: r.getResponseCode() };
+  var ath = JSON.parse(r.getContentText() || '{}');
+  var changed = appApplyStravaPhoto_(id, ath.profile || ath.profile_medium || '');
+  var prof = profileMap(SpreadsheetApp.getActiveSpreadsheet(), id);
+  return { ok: true, changed: changed, photo: String(prof.profilePhoto || '') };
 }
 
 /* Pilih profil atlet yang tertaut ke akun Strava ini (kalau data berisi beberapa atlet). */

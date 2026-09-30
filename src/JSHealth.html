@@ -293,7 +293,7 @@ function renderDashLast(){
   let box=$('#dashLastActivity');if(!box)return;
   let x=(DATA.logs||[]).slice().sort((a,b)=>a.date<b.date?1:(a.date>b.date?-1:0))[0];
   if(!x){box.innerHTML='<article class="acx-card acx-empty"><span class="acx-empty-ic icon"><svg><use href="#i-sync"/></svg></span><div><b>Belum ada aktivitas</b><p>Hubungkan dan sinkronkan Strava untuk mengisi dashboard.</p></div><button type="button" class="acx-btn" data-empty-action="sync">Sinkronkan</button></article>';return}
-  let hide=DATA.privacy&&DATA.privacy.hideRoutes,thumb=(!hide&&x.polyline)?svgRouteThumb(x.polyline,220,150):'';
+  let hide=DATA.privacy&&DATA.privacy.hideRoutes,thumb=(!hide&&x.polyline)?(typeof acxStaticMap==='function'?acxStaticMap(x.polyline,120,120,{color:sportInfo(x).color,pad:.16}):svgRouteThumb(x.polyline,220,150)):'';
   let stats=[x.distance?['Jarak',x.distance.toFixed(1),'km']:null,['Waktu',durationShort(x.minutes),''],x.elevation?['Elevasi',Math.round(x.elevation),'m']:null,x.avgHr?['HR',Math.round(x.avgHr),'bpm']:(x.avgPower?['Power',Math.round(x.avgPower),'W']:null)].filter(Boolean).slice(0,4);
   box.innerHTML='<article class="acx-card acx-last" data-id="'+esc(x.id)+'" role="button" tabindex="0">'+
     '<div class="acx-last-map'+(thumb?'':' is-empty')+'">'+(thumb||'<span class="icon"><svg><use href="#'+sportIconId(x.sport,x.sportType)+'"/></svg></span>')+'</div>'+
