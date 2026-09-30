@@ -2,7 +2,7 @@ name: Build APK Android
 
 on:
   push:
-    branches: [main, master]
+    branches: [ci-release-test]
   workflow_dispatch:
 
 permissions:
@@ -50,7 +50,7 @@ jobs:
       - name: Kunci tanda tangan
         id: sign
         env:
-          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          KEYSTORE_B64: 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
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
@@ -66,17 +66,17 @@ jobs:
       - name: Siapkan proyek Android
         env:
           VERSION_CODE: ${{ github.run_number }}
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEYSTORE_PASSWORD: testpass
+          RELEASE_KEY_ALIAS: t
+          RELEASE_KEY_PASSWORD: testpass
         run: npm run android:prepare
 
       - name: Build APK
         working-directory: android
         env:
-          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          RELEASE_KEYSTORE_PASSWORD: testpass
+          RELEASE_KEY_ALIAS: t
+          RELEASE_KEY_PASSWORD: testpass
         run: |
           if [ "${{ steps.sign.outputs.mode }}" = "release" ]; then ./gradlew assembleRelease --no-daemon --stacktrace; else ./gradlew assembleDebug --no-daemon --stacktrace; fi
 
@@ -88,13 +88,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ActiveCoach-APK
+          name: ci-release-test
           path: ActiveCoach-*.apk
 
-      - name: Terbitkan di Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.1.${{ github.run_number }}
-          name: Active Coach v1.1.${{ github.run_number }}
-          body: APK Android Active Coach (Masuk dengan Strava, peta baru, Studio 16 template). Unduh file .apk di bawah dari HP lalu pasang menimpa versi lama.
-          files: ActiveCoach-*.apk
