@@ -1,0 +1,217 @@
+<script>
+'use strict';
+/* =====================================================================
+   STUDIO — kartu story/feed dari aktivitas. Semua template digambar di canvas
+   (pratinjau = hasil ekspor), latar transparan/foto/warna/peta, data pintar,
+   caption & hashtag otomatis, privasi rute, geser & cubit untuk atur posisi.
+   ===================================================================== */
+const SF={ui:'Inter',disp:'Anton',cond:"'Bebas Neue'",mono:"'Space Mono'",serif:"'Playfair Display'",hand:'Caveat'};
+const ST_FORMATS={story:{w:1080,h:1920,name:'Story 9:16'},feed:{w:1080,h:1350,name:'Feed 4:5'},square:{w:1080,h:1080,name:'Kotak 1:1'}};
+const ST_BGS={
+  strava:{n:'Strava',g:['#ff6a1a','#fc4c02','#b83200'],dark:true},
+  sunset:{n:'Senja',g:['#ff8a3d','#ff2d78','#6d28d9'],dark:true},
+  midnight:{n:'Malam',g:['#141a33','#0b0f1f','#1d1147'],dark:true},
+  noir:{n:'Noir',g:['#1a1a1d','#0a0a0b','#000000'],dark:true},
+  ocean:{n:'Samudra',g:['#22d3ee','#2563eb','#1e1b4b'],dark:true},
+  forest:{n:'Hutan',g:['#34d399','#047857','#022c22'],dark:true},
+  grape:{n:'Anggur',g:['#c084fc','#7c3aed','#2e1065'],dark:true},
+  paper:{n:'Kertas',g:['#faf6ef','#f1ebe0','#e7dfd2'],dark:false},
+  blush:{n:'Blush',g:['#fff1f2','#fecdd3','#fbcfe8'],dark:false},
+  lime:{n:'Lime',g:['#f7fee7','#d9f99d','#a3e635'],dark:false}
+};
+const ST_ACCENTS=['auto','#fc4c02','#ff2d78','#facc15','#22c55e','#06b6d4','#3b82f6','#a855f7','#ffffff','#111111'];
+const ST_METRICS={
+  distance:{n:'Jarak',ok:D=>D.distance>0},
+  time:{n:'Waktu',ok:D=>D.minutes>0},
+  pace:{n:'Pace',ok:D=>D.pace>0},
+  speed:{n:'Kecepatan',ok:D=>D.speed>0},
+  elev:{n:'Elevasi',ok:D=>D.elev>0},
+  hr:{n:'Detak jantung',ok:D=>D.hr>0},
+  kcal:{n:'Kalori',ok:D=>D.kcal>0},
+  power:{n:'Power',ok:D=>D.power>0},
+  cadence:{n:'Cadence',ok:D=>D.cadence>0},
+  maxspeed:{n:'Kec. maks',ok:D=>D.maxSpeed>0}
+};
+const ST_CATS=[['all','Semua'],['sticker','Stiker'],['trend','Tren'],['photo','Foto'],['data','Data'],['route','Rute']];
+const ST_ICON={
+  pin:'M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21Z M12 12.2a2.6 2.6 0 1 0 0-5.2 2.6 2.6 0 0 0 0 5.2Z',
+  clock:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z M12 7v5l3.2 2',
+  bolt:'M13 2 4.5 13.5H11L10 22l8.5-11.5H12L13 2Z',
+  mountain:'M2.5 19.5 9 8l4 6.5 2.5-3.5 6 8.5Z',
+  heart:'M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20Z',
+  flame:'M12 21c3.9 0 6.5-2.6 6.5-6.3 0-3.7-2.8-6-4.3-9.2-.5 2.4-1.7 3.6-3.2 4.5.2-2.1-.6-4.3-2.3-6-.3 3.6-3.2 5.8-3.2 10.4C5.5 18.3 8.1 21 12 21Z',
+  gauge:'M4.5 17a8.5 8.5 0 1 1 15 0 M12 13l4-4.5',
+  cad:'M12 3a9 9 0 1 0 9 9 M12 12l6-6 M16 3h5v5',
+  speed:'M4 16a8 8 0 0 1 16 0 M12 16l4.5-6',
+  play:'M8 5.5v13l10.5-6.5Z',prev:'M7 6v12 M19 6 9.5 12 19 18Z',next:'M17 6v12 M5 6l9.5 6L5 18Z',
+  shuffle:'M3 7h3.5c4.5 0 6.5 10 11 10H21 M18 14l3 3-3 3 M3 17h3.5c1.8 0 3-1.5 4.2-3.5 M13.5 9.5c1.2-1.5 2.4-2.5 4-2.5H21 M18 4l3 3-3 3',
+  repeat:'M17 2l3 3-3 3 M4 11V9a4 4 0 0 1 4-4h12 M7 22l-3-3 3-3 M20 13v2a4 4 0 0 1-4 4H4',
+  heartO:'M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.3a4.3 4.3 0 0 1 7.5 2.5C19.5 15.4 12 20 12 20Z',
+  run:'M13.5 5.5a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6Z M8 21l3-6.5 3 2.5v5 M6.5 11.5 9.5 8l3.5 1 2.5 3.5 3 .5 M11 14.5l1.5-5',
+  ride:'M5.5 18.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M18.5 18.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z M5.5 15l4-6.5h5l4 6.5 M9.5 8.5 12 15h6.5 M13 5.5h3'
+};
+const ST_METRIC_ICON={distance:'pin',time:'clock',pace:'bolt',speed:'speed',elev:'mountain',hr:'heart',kcal:'flame',power:'gauge',cadence:'cad',maxspeed:'speed'};
+
+let ST_META={},ST=null,ST_PHOTO=null,ST_PHOTO_INFO=null,ST_STREAMS={},ST_MAPCACHE={},ST_PANE='tpl',ST_CAT='all',ST_THUMB_KEY='',ST_RAF=0,ST_CAPTION_V=0,ST_FONTS_OK=false,ST_BOUND=false;
+function stDefaults(){return {act:'',tpl:'sticker',fmt:'story',bg:{mode:'auto',color:'sunset',dim:28,fy:50,map:'voyager'},bgLock:false,accent:'auto',text:'auto',metrics:null,scale:1,dx:0,dy:0,title:'',sub:'',showName:true,brand:true,trim:true,safe:false}}
+function stKey(){return 'acxStudio:'+(typeof currentAthleteId==='function'?currentAthleteId():'')}
+function stLoad(){let d=stDefaults();try{let s=JSON.parse(localStorage.getItem(stKey())||'null');if(s&&typeof s==='object'){d=Object.assign(d,s);d.bg=Object.assign(stDefaults().bg,s.bg||{});if(d.bg.mode==='photo')d.bg.mode='auto'}}catch(e){}if(!ST_FORMATS[d.fmt])d.fmt='story';if(!ST_TPLS.some(t=>t.k===d.tpl))d.tpl='sticker';return d}
+function stSave(){try{localStorage.setItem(stKey(),JSON.stringify(ST))}catch(e){}}
+
+/* ---------------------------- format angka & data ---------------------------- */
+function stNum(v,d){return (Math.round(v*Math.pow(10,d))/Math.pow(10,d)).toFixed(d)}
+function stDist(km){return km>=100?stNum(km,0):km>=10?stNum(km,1):stNum(km,2)}
+function stTime(min){min=Math.round(min||0);let h=Math.floor(min/60),m=min%60;return h?h+'j '+String(m).padStart(2,'0')+'m':m+'m'}
+function stClock(min,sec){let t=sec?Math.round(sec):Math.round((min||0)*60),h=Math.floor(t/3600),m=Math.floor(t%3600/60),s=t%60;return h?h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'):m+':'+String(s).padStart(2,'0')}
+function stPace(p){if(!p||!isFinite(p))return '-';let m=Math.floor(p),s=Math.round((p-m)*60);if(s===60){m++;s=0}return m+':'+String(s).padStart(2,'0')}
+const ST_DAYS=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'],ST_MON=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function stDateObj(s){let d=new Date(String(s||'').slice(0,10)+'T12:00:00');return isNaN(d)?new Date():d}
+function stMetric(D,k){
+  switch(k){
+    case 'distance':return {k,label:'Jarak',value:stDist(D.distance),unit:'km'};
+    case 'time':return {k,label:'Waktu',value:stTime(D.minutes),unit:''};
+    case 'pace':return {k,label:'Pace',value:stPace(D.pace),unit:'/km'};
+    case 'speed':return {k,label:'Kecepatan',value:stNum(D.speed,1),unit:'km/j'};
+    case 'elev':return {k,label:'Elevasi',value:Math.round(D.elev).toLocaleString('id-ID'),unit:'m'};
+    case 'hr':return {k,label:'Detak rata²',value:String(Math.round(D.hr)),unit:'bpm'};
+    case 'kcal':return {k,label:'Kalori',value:Math.round(D.kcal).toLocaleString('id-ID'),unit:'kcal'};
+    case 'power':return {k,label:'Power',value:String(Math.round(D.power)),unit:'W'};
+    case 'cadence':return {k,label:'Cadence',value:String(Math.round(D.cadence)),unit:D.isRun?'spm':'rpm'};
+    case 'maxspeed':return {k,label:'Kec. maks',value:stNum(D.maxSpeed,1),unit:'km/j'};
+  }
+  return null;
+}
+function stSmartMetrics(D){
+  let out=[];
+  if(D.isRun)out=['distance','pace','time','elev','hr','cadence','kcal'];
+  else if(D.isRide)out=['distance','speed','time','elev','power','hr','kcal','maxspeed'];
+  else out=[D.distance>0.2?'distance':'time','time','hr','kcal','elev'];
+  if(!D.isRun&&D.elev<40)out=out.filter(k=>k!=='elev').concat(['elev']);
+  return out.filter((k,i)=>out.indexOf(k)===i&&ST_METRICS[k].ok(D));
+}
+function stTrimRoute(pts,m){
+  if(!pts||pts.length<8||!m)return pts||[];
+  let cut=(arr)=>{let d=0;for(let i=1;i<arr.length;i++){d+=acxHaversine(arr[i-1],arr[i]);if(d>=m)return i}return 0};
+  let a=cut(pts),b=cut(pts.slice().reverse());
+  if(a+b>=pts.length-4)return pts;
+  return pts.slice(a,pts.length-b);
+}
+function personalRecordLabel(x){
+  let r=DATA.records||{},labels=[];
+  [['runPace','PR Pace'],['cyclingSpeed','PR Kecepatan'],['maxSpeed','Kecepatan maks tertinggi'],['elevation','PR Elevasi'],['sprint','Sprint tercepat'],['power','PR Power'],['calories','PR Kalori'],['longest','Aktivitas terpanjang']].forEach(m=>{let rec=r[m[0]];if(rec&&rec.id&&String(rec.id)===String(x.id))labels.push(m[1])});
+  return labels.length?labels.slice(0,2).join(' · '):'';
+}
+function stBadge(x){
+  try{
+    let logs=(DATA.logs||[]).filter(l=>l.sport===x.sport&&l.date<=x.date),d30=dateKey(new Date(stDateObj(x.date).getTime()-30*864e5)),d90=dateKey(new Date(stDateObj(x.date).getTime()-90*864e5));
+    let pr=typeof personalRecordLabel==='function'?personalRecordLabel(x):'';if(pr)return pr;
+    if(x.distance>0&&logs.length>4&&logs.every(l=>l.distance<=x.distance))return 'Jarak terjauh sepanjang masa';
+    let m30=logs.filter(l=>l.date>=d30);
+    if(x.distance>0&&m30.length>2&&m30.every(l=>l.distance<=x.distance))return 'Terjauh 30 hari terakhir';
+    if(x.sport==='Running'&&x.avgPace>0&&x.distance>=3){let m90=logs.filter(l=>l.date>=d90&&l.distance>=3&&l.avgPace>0);if(m90.length>2&&m90.every(l=>l.avgPace>=x.avgPace))return 'Pace tercepat 90 hari'}
+    if(x.elevation>100&&m30.length>2&&m30.every(l=>l.elevation<=x.elevation))return 'Tanjakan terbanyak bulan ini';
+    let days=new Set((DATA.logs||[]).map(l=>l.date)),c=stDateObj(x.date),streak=0;while(days.has(dateKey(c))&&streak<60){streak++;c.setDate(c.getDate()-1)}
+    if(streak>=3)return 'Hari ke-'+streak+' berturut-turut';
+    let mon=startOfWeek(stDateObj(x.date)),wk=(DATA.logs||[]).filter(l=>l.date>=dateKey(mon)&&l.date<=x.date).length;
+    if(wk>=2)return 'Sesi ke-'+wk+' minggu ini';
+  }catch(e){}
+  return '';
+}
+function stWeek(x){
+  let mon=startOfWeek(stDateObj(x.date)),days=[],tot={km:0,min:0,elev:0,n:0};
+  for(let i=0;i<7;i++){let d=new Date(mon);d.setDate(mon.getDate()+i);let k=dateKey(d),items=(DATA.logs||[]).filter(l=>l.date===k);let km=items.reduce((s,l)=>s+(l.distance||0),0);days.push({k,label:['Sen','Sel','Rab','Kam','Jum','Sab','Min'][i],km,min:items.reduce((s,l)=>s+(l.minutes||0),0),on:k===x.date,n:items.length});tot.km+=km;tot.min+=days[i].min;tot.elev+=items.reduce((s,l)=>s+(l.elevation||0),0);tot.n+=items.length}
+  let sun=new Date(mon);sun.setDate(mon.getDate()+6);
+  return {days,tot,range:mon.getDate()+' '+ST_MON[mon.getMonth()].slice(0,3)+' – '+sun.getDate()+' '+ST_MON[sun.getMonth()].slice(0,3)+' '+sun.getFullYear()};
+}
+function stSplits(x){
+  let s=x&&x.stravaId&&ST_STREAMS[x.stravaId];if(!s)return null;
+  let dist=(s.distance&&s.distance.data)||[],time=(s.time&&s.time.data)||[],mov=(s.moving&&s.moving.data)||null;
+  if(dist.length<2||time.length<2)return null;
+  let total=dist[dist.length-1]/1000;if(total<0.5)return null;
+  let unit=total>60?5:1,out=[],last=0,lastT=time[0],idx=0;
+  let movingTime=i=>time[i];
+  if(mov&&mov.length===time.length){let acc=0,arr=[0];for(let i=1;i<time.length;i++){if(mov[i])acc+=time[i]-time[i-1];arr.push(acc)}movingTime=i=>arr[i];lastT=0}
+  for(let km=unit;km<=Math.floor(total/unit)*unit;km+=unit){while(idx<dist.length-1&&dist[idx]<km*1000)idx++;let t=movingTime(idx),seg=t-lastT;if(seg>0)out.push({km,sec:seg,len:unit,speed:unit/seg*3600,pace:seg/60/unit});lastT=t;last=km}
+  let rem=total-last;if(rem>unit*0.25){let t=movingTime(time.length-1),seg=t-lastT;if(seg>0)out.push({km:+total.toFixed(1),sec:seg,len:rem,speed:rem/seg*3600,pace:seg/60/rem,partial:true})}
+  return out.length?{unit,list:out}:null;
+}
+function stSeries(x,key,n){
+  let s=x&&x.stravaId&&ST_STREAMS[x.stravaId],arr=s&&s[key]&&s[key].data;if(!arr||arr.length<8)return null;
+  n=n||240;let out=[];for(let i=0;i<n;i++)out.push(arr[Math.round(i*(arr.length-1)/(n-1))]);
+  let dist=s.distance&&s.distance.data;return {v:out,min:Math.min.apply(null,out),max:Math.max.apply(null,out),total:dist?dist[dist.length-1]/1000:0};
+}
+function stData(x){
+  let p=DATA.profile||{},name=p.nama||(typeof SESSION!=='undefined'&&SESSION.nama)||'Atlet';
+  let isRun=x.sport==='Running',isRide=x.sport==='Cycling',dt=stDateObj(x.date);
+  let hide=!!(DATA.privacy&&DATA.privacy.hideRoutes);
+  let raw=(!hide&&x.polyline)?decodePolyline(x.polyline):[];
+  let pts=ST.trim?stTrimRoute(raw,200):raw;
+  let D={x,id:x.id,title:(ST.title||x.title||'Aktivitas').trim(),sub:ST.sub||'',name,first:String(name).split(' ')[0],
+    sport:x.sport,isRun,isRide,sportLabel:isRun?'LARI':isRide?'BERSEPEDA':String(x.sportType||x.sport||'AKTIVITAS').toUpperCase(),verb:isRun?'Lari':isRide?'Gowes':'Latihan',
+    date:dt,dateStr:ST_DAYS[dt.getDay()]+', '+dt.getDate()+' '+ST_MON[dt.getMonth()]+' '+dt.getFullYear(),dateShort:dt.getDate()+' '+ST_MON[dt.getMonth()].slice(0,3)+' '+dt.getFullYear(),
+    distance:x.distance||0,minutes:x.minutes||0,pace:x.avgPace||(x.distance>0&&x.minutes>0?x.minutes/x.distance:0),speed:x.avgSpeed||(x.minutes>0?x.distance/(x.minutes/60):0),
+    elev:x.elevation||0,hr:x.avgHr||0,maxHr:x.maxHr||0,kcal:x.calories||0,power:x.avgPower||0,cadence:x.avgCadence||0,maxSpeed:x.maxSpeed||0,
+    pts:acxDecimate(pts,900),hasRoute:pts.length>1,badge:stBadge(x)};
+  let meta=x.stravaId&&ST_META[x.stravaId];D.sec=meta&&meta.movingTime?meta.movingTime:Math.round(D.minutes*60);
+  let hm=meta&&String(meta.startLocal||'').match(/T(\d\d):(\d\d)/);D.startHM=hm?hm[1]+':'+hm[2]:'';D.hour=hm?+hm[1]:-1;
+  D.partOfDay=D.hour<0?'':D.hour<10?'pagi':D.hour<15?'siang':D.hour<18?'sore':'malam';
+  if(!isRun)D.pace=0;if(isRun&&!x.avgPace&&D.pace)D.pace=D.pace;
+  let keys=(ST.metrics&&ST.metrics.length?ST.metrics:stSmartMetrics(D)).filter(k=>ST_METRICS[k]&&ST_METRICS[k].ok(D));
+  if(!keys.length)keys=stSmartMetrics(D);
+  D.metrics=keys.map(k=>stMetric(D,k)).filter(Boolean);
+  D.splits=stSplits(x);D.alt=stSeries(x,'altitude');D.hrS=stSeries(x,'heartrate');
+  return D;
+}
+
+/* ---------------------------- helper canvas ---------------------------- */
+function F(w,px,fam,style){return (style?style+' ':'')+w+' '+Math.max(1,Math.round(px))+'px '+(SF[fam]||fam)+', Inter, system-ui, sans-serif'}
+function rr(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function sh(ctx,on,blur,alpha,oy){if(on){ctx.shadowColor='rgba(0,0,0,'+(alpha==null?.45:alpha)+')';ctx.shadowBlur=blur==null?18:blur;ctx.shadowOffsetX=0;ctx.shadowOffsetY=oy==null?3:oy}else{ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0}}
+function T(ctx,s,x,y,o){o=o||{};ctx.font=o.font||F(700,40,'ui');ctx.fillStyle=o.color||'#fff';ctx.textAlign=o.align||'left';ctx.textBaseline=o.base||'alphabetic';
+  s=String(s==null?'':s);if(o.max&&ctx.measureText(s).width>o.max){while(s.length>1&&ctx.measureText(s+'…').width>o.max)s=s.slice(0,-1);s=s.trim()+'…'}
+  if(o.spacing){let chars=[...s],w=chars.reduce((a,c)=>a+ctx.measureText(c).width,0)+o.spacing*(chars.length-1),sx=o.align==='center'?x-w/2:o.align==='right'?x-w:x;ctx.textAlign='left';chars.forEach(c=>{if(o.stroke){ctx.strokeText(c,sx,y)}else ctx.fillText(c,sx,y);sx+=ctx.measureText(c).width+o.spacing});return w}
+  if(o.stroke){ctx.strokeText(s,x,y)}else ctx.fillText(s,x,y);return ctx.measureText(s).width}
+function TW(ctx,s,font,spacing){ctx.font=font;let w=ctx.measureText(String(s)).width;return spacing?w+spacing*(String(s).length-1):w}
+function fitPx(ctx,s,maxW,w,fam,maxPx,minPx,style){let px=maxPx;ctx.font=F(w,px,fam,style);let m=ctx.measureText(String(s)).width;if(m>maxW)px=Math.max(minPx||10,px*maxW/m);return px}
+function wrapLines(ctx,s,maxW,maxLines){let words=String(s||'').split(/\s+/),lines=[],cur='';words.forEach(w=>{let t=cur?cur+' '+w:w;if(ctx.measureText(t).width>maxW&&cur){lines.push(cur);cur=w}else cur=t});if(cur)lines.push(cur);if(maxLines&&lines.length>maxLines){lines=lines.slice(0,maxLines);let l=lines[maxLines-1];while(l.length>1&&ctx.measureText(l+'…').width>maxW)l=l.slice(0,-1);lines[maxLines-1]=l.trim()+'…'}return lines}
+function icon(ctx,k,x,y,size,color,width,fill){let p=ST_ICON[k];if(!p)return;ctx.save();ctx.translate(x,y);ctx.scale(size/24,size/24);let path=new Path2D(p);if(fill){ctx.fillStyle=color;ctx.fill(path)}else{ctx.strokeStyle=color;ctx.lineWidth=(width||2)*24/size;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke(path)}ctx.restore()}
+function hexA(hex,a){hex=String(hex||'#000');if(hex[0]!=='#')return hex;let h=hex.slice(1);if(h.length===3)h=h.split('').map(c=>c+c).join('');let n=parseInt(h,16);return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')'}
+function lum(hex){let h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');let n=parseInt(h,16),r=(n>>16&255)/255,g=(n>>8&255)/255,b=(n&255)/255;return .2126*r+.7152*g+.0722*b}
+function shade(hex,amt){let h=String(hex).replace('#','');if(h.length===3)h=h.split('').map(c=>c+c).join('');let n=parseInt(h,16),f=c=>Math.max(0,Math.min(255,Math.round(c+(amt<0?c*amt:(255-c)*amt))));return '#'+[f(n>>16&255),f(n>>8&255),f(n&255)].map(v=>v.toString(16).padStart(2,'0')).join('')}
+function projectRoute(pts,box,pad){
+  if(!pts||pts.length<2)return null;pad=pad||0;
+  let lat0=pts.reduce((s,p)=>s+p[0],0)/pts.length,kx=Math.cos(lat0*Math.PI/180);
+  let xs=pts.map(p=>p[1]*kx),ys=pts.map(p=>-p[0]),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+  let w=maxX-minX||1e-5,h=maxY-minY||1e-5,sc=Math.min((box.w-pad*2)/w,(box.h-pad*2)/h),ox=box.x+(box.w-w*sc)/2,oy=box.y+(box.h-h*sc)/2;
+  return xs.map((x,i)=>[ox+(x-minX)*sc,oy+(ys[i]-minY)*sc]);
+}
+function routePath(ctx,m){ctx.beginPath();m.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]))}
+function drawRoute(ctx,D,box,o){
+  o=o||{};let m=o.mapped||projectRoute(D.pts,box,o.pad||0);if(!m)return false;
+  ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
+  if(o.glow){ctx.shadowColor=o.glowColor||o.color;ctx.shadowBlur=o.glow;routePath(ctx,m);ctx.strokeStyle=hexA(o.glowColor||o.color,.55);ctx.lineWidth=(o.width||8)*2.2;ctx.stroke();ctx.shadowBlur=o.glow*.5;routePath(ctx,m);ctx.strokeStyle=o.color;ctx.lineWidth=(o.width||8);ctx.stroke();ctx.shadowBlur=0;if(o.core){routePath(ctx,m);ctx.strokeStyle=o.core;ctx.lineWidth=(o.width||8)*.38;ctx.stroke()}}
+  else{if(o.shadow)sh(ctx,true,o.shadow,.45,4);if(o.casing){routePath(ctx,m);ctx.strokeStyle=o.casing;ctx.lineWidth=(o.width||8)+(o.casingW||8);ctx.stroke();sh(ctx,false)}routePath(ctx,m);ctx.strokeStyle=o.color||'#fff';ctx.lineWidth=o.width||8;ctx.stroke()}
+  sh(ctx,false);
+  if(o.markers){let r=Math.max(7,(o.width||8)*1.25),a=m[0],z=m[m.length-1];[[z,'#111'],[a,'#16a34a']].forEach(q=>{ctx.beginPath();ctx.arc(q[0][0],q[0][1],r+4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.beginPath();ctx.arc(q[0][0],q[0][1],r,0,Math.PI*2);ctx.fillStyle=q[1];ctx.fill()})}
+  ctx.restore();return true;
+}
+function brand(ctx,x,y,S,o){
+  if(!ST.brand)return;o=o||{};let px=o.px||26,col=o.color||S.fg2,align=o.align||'center';
+  ctx.save();if(o.shadow)sh(ctx,true,10,.35,2);
+  let label='ACTIVE COACH',w=TW(ctx,label,F(800,px,'ui'),px*.18),mk=px*1.05,tot=w+mk+px*.45,sx=align==='center'?x-tot/2:align==='right'?x-tot:x;
+  ctx.save();ctx.translate(sx,y-mk*.82);let g=ctx.createLinearGradient(0,0,mk,mk);g.addColorStop(0,'#ff5a36');g.addColorStop(.5,'#ec4899');g.addColorStop(1,'#7a5cff');rr(ctx,0,0,mk,mk,mk*.28);ctx.fillStyle=o.mono?col:g;ctx.fill();
+  ctx.strokeStyle=o.mono?(S.dark?'#000':'#fff'):'#fff';ctx.lineWidth=mk*.1;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();ctx.moveTo(mk*.18,mk*.55);ctx.lineTo(mk*.36,mk*.55);ctx.lineTo(mk*.47,mk*.3);ctx.lineTo(mk*.6,mk*.74);ctx.lineTo(mk*.7,mk*.52);ctx.lineTo(mk*.84,mk*.52);ctx.stroke();ctx.restore();
+  T(ctx,label,sx+mk+px*.45,y,{font:F(800,px,'ui'),color:col,spacing:px*.18});
+  ctx.restore();
+}
+function barcode(ctx,x,y,w,h,seed,color){let s=0;String(seed).split('').forEach(c=>s=(s*31+c.charCodeAt(0))>>>0);let cx=x;ctx.fillStyle=color;while(cx<x+w){s=(s*1103515245+12345)>>>0;let bw=1+(s>>>16)%4;s=(s*1103515245+12345)>>>0;let gap=1+(s>>>16)%3;if(cx+bw>x+w)break;ctx.fillRect(cx,y,bw*2,h);cx+=bw*2+gap*2}}
+function safe(W,H){return ST.fmt==='story'?{t:250,b:340,l:72,r:72}:{t:80,b:80,l:72,r:72}}
+function metricBlock(ctx,m,x,y,S,o){
+  o=o||{};let vpx=o.vpx||86,lpx=o.lpx||28,align=o.align||'left';
+  T(ctx,o.upper===false?m.label:m.label.toUpperCase(),x,y,{font:F(700,lpx,'ui'),color:o.lcolor||S.fg2,align,spacing:o.upper===false?0:lpx*.12});
+  let vy=y+vpx*1.02,vf=F(o.vw||800,vpx,o.fam||'ui'),vw=TW(ctx,m.value,vf),uf=F(700,vpx*.42,'ui'),uw=m.unit?TW(ctx,' '+m.unit,uf):0,sx=align==='center'?x-(vw+uw)/2:align==='right'?x-vw-uw:x;
+  T(ctx,m.value,sx,vy,{font:vf,color:o.vcolor||S.fg});
+  if(m.unit)T(ctx,' '+m.unit,sx+vw,vy,{font:uf,color:o.ucolor||S.fg2});
+  return vy;
+}
+</script>

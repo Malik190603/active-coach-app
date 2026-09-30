@@ -67,6 +67,27 @@ for (const img of fs.readdirSync(path.join(NM, 'leaflet/dist/images'))) copy(pat
 copy(need(path.join(NM, 'chart.js/dist/chart.umd.js')), path.join(OUT, 'vendor/chart.umd.js'));
 copy(need(path.join(NM, 'three/build/three.min.js')), path.join(OUT, 'vendor/three.min.js'));
 copy(need(path.join(NM, 'html2pdf.js/dist/html2pdf.bundle.min.js')), path.join(OUT, 'vendor/html2pdf.bundle.min.js'));
+copy(need(path.join(NM, 'maplibre-gl/dist/maplibre-gl.js')), path.join(OUT, 'vendor/maplibre-gl.js'));
+copy(need(path.join(NM, 'maplibre-gl/dist/maplibre-gl.css')), path.join(OUT, 'vendor/maplibre-gl.css'));
+
+// ---------- font lokal (tanpa internet, hasil kartu story selalu konsisten) ----------
+const FONTS = [
+  ['Inter', 'inter', [400, 500, 600, 700, 800, 900], ['normal']],
+  ['Bebas Neue', 'bebas-neue', [400], ['normal']],
+  ['Anton', 'anton', [400], ['normal']],
+  ['Space Mono', 'space-mono', [400, 700], ['normal']],
+  ['Playfair Display', 'playfair-display', [700, 900], ['normal', 'italic']],
+  ['Caveat', 'caveat', [600, 700], ['normal']]
+];
+let fontCss = '';
+for (const [family, pkgName, weights, styles] of FONTS) {
+  for (const w of weights) for (const st of styles) {
+    const file = `${pkgName}-latin-${w}-${st}.woff2`;
+    copy(need(path.join(NM, '@fontsource', pkgName, 'files', file)), path.join(OUT, 'fonts', file));
+    fontCss += `@font-face{font-family:'${family}';font-style:${st};font-weight:${w};font-display:swap;src:url(${file}) format('woff2')}\n`;
+  }
+}
+write(path.join(OUT, 'fonts', 'fonts.css'), fontCss);
 
 const size = f => (fs.statSync(path.join(OUT, f)).size / 1024).toFixed(0) + ' KB';
 console.log('www/ siap:', 'index.html', size('index.html'), '· engine/code.js', size('engine/code.js'), '· server', conf.supabaseUrl || '(diisi di aplikasi)');

@@ -58,39 +58,11 @@ async function showLoginScreen(){
   $('#loginScreen').hidden=false;$('#loading').hidden=true;$('#app').hidden=true;
   setAuthMode('login');
 }
-function setAuthMode(mode){
-  let isLogin=mode==='login';
-  $('#loginForm').hidden=!isLogin;$('#loginForm').reset();
-  $('#registerForm').hidden=isLogin;$('#registerForm').reset();
-  setBtnLoading($('#loginSubmitBtn'),false);setBtnLoading($('#registerSubmitBtn'),false);
-  $('#authIntro').textContent=isLogin?'Masuk dengan akunmu untuk melihat training load pribadimu.':'Buat akun barumu. Setiap akun bersifat pribadi.';
-  $('#authToggle').textContent=isLogin?'Belum punya akun? Daftar di sini':'Sudah punya akun? Masuk di sini';
-  $('#authToggle').dataset.mode=isLogin?'register':'login';
-  clearAuthError();
-}
+function setAuthMode(){clearAuthError()}
 function setBtnLoading(btn,loading){ if(!btn)return; btn.disabled=loading; btn.classList.toggle('is-loading',loading) }
-function clearAuthError(){ let el=$('#authError'); if(!el)return; el.hidden=true; el.textContent=''; $$('#loginForm input,#registerForm input').forEach(i=>i.classList.remove('auth-field-invalid')) }
-function showAuthError(msg){
-  let el=$('#authError'); if(!el)return; el.textContent=msg; el.hidden=false;
-  let visibleForm=$('#loginForm').hidden?$('#registerForm'):$('#loginForm');
-  visibleForm.querySelectorAll('input').forEach(i=>i.classList.add('auth-field-invalid'));
-}
-async function doLoginSubmit(nama,pin,btn){
-  clearAuthError();setBtnLoading(btn,true);showGlobalLoader('Masuk…');
-  try{
-    let res=await gs('loginAthlete',nama,pin);
-    if(!res.ok){hideGlobalLoader();showAuthError(res.error||'Nama atau sandi salah.');setBtnLoading(btn,false);return}
-    SESSION={athleteId:res.athleteId,nama:res.nama};
-    setBtnLoading(btn,false);hideGlobalLoader();
-    $('#loginScreen').hidden=true;startApp();
-  }catch(e){hideGlobalLoader();showAuthError('Gagal login: '+(e.message||e));setBtnLoading(btn,false)}
-}
-async function doRegisterSubmit(nama,pin,btn){
-  clearAuthError();setBtnLoading(btn,true);
-  try{await gs('createAthlete',nama,pin);setBtnLoading(btn,false);await doLoginSubmit(nama,pin,btn)}
-  catch(e){showAuthError(e.message||String(e));setBtnLoading(btn,false)}
-}
-function logoutAthlete(){SESSION={athleteId:'',nama:''};STRAVA_CONNECTED=null;ROUTE_CACHE=null;WR_CUR=null;compareSelection=[];try{if(window.renderCompareBar)renderCompareBar()}catch(e){}try{Object.keys(CHARTS).forEach(k=>{try{CHARTS[k].destroy()}catch(err){}delete CHARTS[k]})}catch(e){}try{if(heatMap){heatMap.remove();heatMap=null}heatLayer=null}catch(e){}DATA={};DETAIL_STACK=[];try{switchPage('dashboard',{noOrigin:true})}catch(e){}setBtnLoading($('#loginSubmitBtn'),false);setBtnLoading($('#registerSubmitBtn'),false);hideGlobalLoader();$('#app').hidden=true;$('#appShell').hidden=true;$('#bottomNav').hidden=true;showLoginScreen()}
+function clearAuthError(){ let el=$('#authError'); if(!el)return; el.hidden=true; el.textContent='' }
+function showAuthError(msg){ let el=$('#authError'); if(!el)return; el.textContent=msg; el.hidden=false }
+function logoutAthlete(){SESSION={athleteId:'',nama:''};STRAVA_CONNECTED=null;ROUTE_CACHE=null;WR_CUR=null;compareSelection=[];try{if(window.renderCompareBar)renderCompareBar()}catch(e){}try{Object.keys(CHARTS).forEach(k=>{try{CHARTS[k].destroy()}catch(err){}delete CHARTS[k]})}catch(e){}try{if(heatMap){heatMap.remove();heatMap=null}heatLayer=null}catch(e){}DATA={};DETAIL_STACK=[];try{switchPage('dashboard',{noOrigin:true})}catch(e){}hideGlobalLoader();$('#app').hidden=true;$('#appShell').hidden=true;$('#bottomNav').hidden=true;showLoginScreen()}
 function startApp(){$('#loginScreen').hidden=true;$('#appShell').hidden=false;$('#bottomNav').hidden=false;document.documentElement.setAttribute('data-tab','dashboard');load();loadStrava();requestAnimationFrame(initSubTabPills)}
 
 function hydrateStravaSlots(){let t=stravaTag();$$('.strava-logo-slot').forEach(x=>x.innerHTML=t)}
@@ -125,7 +97,7 @@ function acxDelegatedClick(e){
   let t=e.target;if(!t||!t.closest)return;
   let sub=t.closest('.acx-subtab[data-sub]');if(sub){let nav=sub.closest('[data-subnav]');if(nav){setSub(nav.dataset.subnav,sub.dataset.sub);return}}
   let el=t.closest('[data-open-search],[data-open-sync],[data-open-profile],[data-go],[data-detail],[data-action]');if(!el||el.onclick)return;
-  if(el.closest('.ovl-studio'))return;
+  if(el.closest('.st-page'))return;
   if(el.hasAttribute('data-open-search')){openSearch();return}
   if(el.hasAttribute('data-open-sync')){openSyncSheet();return}
   if(el.hasAttribute('data-open-profile')){openProfile();if(el.dataset.anchor)setTimeout(()=>focusAnchor(el.dataset.anchor),180);return}
@@ -159,10 +131,6 @@ function init(){initViewMode();hydrateStravaSlots();let savedMode='auto';try{sav
   ['activityFrom','activityTo'].forEach(id=>{let el=$('#'+id);if(el)el.value=''});
   initSession();
   on('reloadBtn','onclick',()=>{let p=$('#syncPopup');if(p)p.hidden=true;toast('Memuat ulang data dari Spreadsheet');load()});
-  on('loginForm','onsubmit',e=>{e.preventDefault();let f=formData(e.target);doLoginSubmit(f.nama,f.pin,$('#loginSubmitBtn'))});
-  on('registerForm','onsubmit',e=>{e.preventDefault();let f=formData(e.target);doRegisterSubmit(f.nama,f.pin,$('#registerSubmitBtn'))});
-  on('authToggle','onclick',e=>setAuthMode(e.target.dataset.mode));
-  $$('#loginForm input,#registerForm input').forEach(i=>i.oninput=clearAuthError);
   on('logoutBtn','onclick',()=>{if(confirm('Keluar dari akun ini?'))logoutAthlete()});
   $$('#bottomNav [data-page]').forEach(x=>x.onclick=()=>acxNavClick(x));
   on('applyDash','onclick',renderDashboard);on('applyShare','onclick',renderSharing);
@@ -180,9 +148,6 @@ function init(){initViewMode();hydrateStravaSlots();let savedMode='auto';try{sav
   on('goalsForm','onsubmit',async e=>{e.preventDefault();DATA=await gs('saveTrainingSettings',formData(e.target),currentAthleteId());renderSettings();toast('Target dan catatan tersimpan')});
   on('hideRoutes','onchange',async e=>{DATA=await gs('savePrivacy',{hideRoutes:e.target.checked},currentAthleteId());toast(e.target.checked?'Peta rute disembunyikan':'Peta rute ditampilkan')});
   on('openWrapped','onclick',openWrappedCard);on('downloadReport','onclick',downloadReportPdf);on('shareTextBtn','onclick',shareSummaryText);
-  on('ovlExportBtn','onclick',ovlExport);on('ovlUndoBtn','onclick',ovlUndo);
-  on('ovlActivitySelect','onchange',e=>{OVL.activityId=e.target.value;ovlSave();ovlDraw();ovlRenderPanes();ovlFetchStreams()});
-  $$('#ovlTabs [data-ovl-tab]').forEach(b=>b.onclick=()=>{OVL_TAB=b.dataset.ovlTab;ovlRenderPanes()});ovlInitStage();
   $$('#heatmapTabs [data-heat-sport]').forEach(b=>b.onclick=()=>{$$('#heatmapTabs [data-heat-sport]').forEach(x=>x.classList.remove('active'));b.classList.add('active');initHeatmap(b.dataset.heatSport);refreshPills()});
   on('routeRecoToggle','onclick',toggleRouteReco);on('calPrevMonth','onclick',calGoPrevMonth);on('calNextMonth','onclick',calGoNextMonth);
   on('compareGo','onclick',showCompare);on('compareClear','onclick',()=>{compareSelection=[];renderCompareBar()});

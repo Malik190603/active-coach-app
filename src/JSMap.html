@@ -1,0 +1,163 @@
+<script>
+'use strict';
+/* =====================================================================
+   Peta Active Coach — gaya peta jelas (Standar/Satelit/Topo/Terang/Gelap),
+   cadangan otomatis bila server tile gagal, layar penuh, rute bercasing,
+   penanda start/finish/km, dan heatmap bercahaya.
+   ===================================================================== */
+const ACX_MAP_STYLES={
+  standard:{name:'Standar',url:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',sub:'abcd',attr:'&copy; OpenStreetMap &copy; CARTO',max:20,thumb:'#e9e4d8',fb:'esriStreet'},
+  satellite:{name:'Satelit',url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',attr:'Imagery &copy; Esri',max:19,labels:true,thumb:'#3d5a3a',fb:'standard'},
+  topo:{name:'Topo',url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',attr:'&copy; Esri',max:19,thumb:'#d9e3c8',fb:'standard'},
+  light:{name:'Terang',url:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',sub:'abcd',attr:'&copy; OpenStreetMap &copy; CARTO',max:20,thumb:'#f2f2f2',fb:'esriStreet'},
+  dark:{name:'Gelap',url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',sub:'abcd',attr:'&copy; OpenStreetMap &copy; CARTO',max:20,thumb:'#2b2d35',fb:'esriDark',dark:true},
+  esriStreet:{name:'Jalan',url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',attr:'&copy; Esri',max:19,hidden:true,fb:'standard'},
+  esriDark:{name:'Gelap',url:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',attr:'&copy; Esri',max:16,hidden:true,fb:'standard',dark:true}
+};
+const ACX_LABELS_URL='https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png';
+const ACX_SPORT_COLOR={Cycling:'#fc4c02',Running:'#ff2d78',Other:'#14b8a6'};
+function acxMapStyleKey(){let k='';try{k=localStorage.getItem('acx_map_style')||''}catch(e){}return ACX_MAP_STYLES[k]&&!ACX_MAP_STYLES[k].hidden?k:'standard'}
+function acxSetMapStyleKey(k){try{localStorage.setItem('acx_map_style',k)}catch(e){}}
+const ACX_MAPS=new Set();
+function acxAlive(m){try{return !!(m&&!m.__acxDead&&m._loaded&&m.getContainer()&&m.getContainer().isConnected)}catch(e){return false}}
+
+/* Lapisan dasar dengan cadangan: jika tile gagal terus dan belum ada yang berhasil → pindah gaya cadangan. */
+function acxBaseLayer(map,key){
+  let st=ACX_MAP_STYLES[key]||ACX_MAP_STYLES.standard,ok=0,bad=0,tried=map.__acxTried||(map.__acxTried=new Set());tried.add(key);
+  let layer=L.tileLayer(st.url,{subdomains:st.sub||'abc',attribution:st.attr,maxZoom:st.max||19,maxNativeZoom:st.max||19,detectRetina:false,keepBuffer:3,updateWhenIdle:false});
+  layer.on('tileload',()=>{ok++;map.getContainer().classList.remove('is-tile-loading','is-tile-failed')});
+  layer.on('tileerror',()=>{bad++;if(ok===0&&bad>=4){let next=st.fb;if(next&&!tried.has(next)){acxSwapBase(map,next,true)}else if(!tried.has('esriStreet')&&key!=='esriStreet'){acxSwapBase(map,'esriStreet',true)}else{map.getContainer().classList.add('is-tile-failed');map.getContainer().classList.remove('is-tile-loading')}}});
+  layer.addTo(map);layer.bringToBack();
+  let labels=null;if(st.labels){labels=L.tileLayer(ACX_LABELS_URL,{subdomains:'abcd',maxZoom:20,pane:'acxLabels'});labels.addTo(map)}
+  map.__acxBase={layer,labels,key};
+  map.getContainer().setAttribute('data-map-style',st.dark?'dark':key);
+  return layer;
+}
+function acxSwapBase(map,key,auto){
+  let b=map.__acxBase;if(b){try{map.removeLayer(b.layer)}catch(e){}if(b.labels)try{map.removeLayer(b.labels)}catch(e){}}
+  if(!auto)map.__acxTried=new Set();
+  map.getContainer().classList.add('is-tile-loading');map.getContainer().classList.remove('is-tile-failed');
+  acxBaseLayer(map,key);
+  let pop=map.getContainer().querySelector('.acx-map-styles');if(pop)pop.querySelectorAll('[data-style]').forEach(x=>x.classList.toggle('on',x.dataset.style===key));
+}
+
+/* Tombol kontrol peta (zoom, gaya, layar penuh, pusatkan). */
+function acxMapControls(map,opts){
+  let C=L.Control.extend({options:{position:'topright'},onAdd(){
+    let d=L.DomUtil.create('div','acx-map-ctl');
+    let btn=(cls,title,icon)=>`<button type="button" class="acx-map-btn ${cls}" title="${title}" aria-label="${title}">${icon}</button>`;
+    d.innerHTML=(opts.layers!==false?btn('js-layers','Gaya peta','<svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>'):'')+
+      (opts.fullscreen!==false?btn('js-full','Layar penuh','<svg viewBox="0 0 24 24" class="i-exp"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg><svg viewBox="0 0 24 24" class="i-col"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>'):'')+
+      (opts.recenter!==false?btn('js-fit','Pusatkan','<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/><circle cx="12" cy="12" r="7.5"/></svg>'):'')+
+      (opts.zoom!==false?'<div class="acx-map-zoom">'+btn('js-zin','Perbesar','<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>')+btn('js-zout','Perkecil','<svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>')+'</div>':'');
+    L.DomEvent.disableClickPropagation(d);L.DomEvent.disableScrollPropagation(d);
+    let q=s=>d.querySelector(s);
+    if(q('.js-zin'))q('.js-zin').onclick=()=>map.zoomIn();
+    if(q('.js-zout'))q('.js-zout').onclick=()=>map.zoomOut();
+    if(q('.js-fit'))q('.js-fit').onclick=()=>acxMapFit(map,true);
+    if(q('.js-full'))q('.js-full').onclick=()=>acxMapFullscreen(map);
+    if(q('.js-layers'))q('.js-layers').onclick=()=>acxMapStylePicker(map);
+    return d}});
+  map.addControl(new C());
+}
+function acxMapStylePicker(map){
+  let host=map.getContainer(),ex=host.querySelector('.acx-map-styles');
+  if(ex){ex.remove();return}
+  let cur=(map.__acxBase||{}).key||acxMapStyleKey();
+  let box=document.createElement('div');box.className='acx-map-styles';
+  box.innerHTML=Object.keys(ACX_MAP_STYLES).filter(k=>!ACX_MAP_STYLES[k].hidden).map(k=>`<button type="button" data-style="${k}" class="${k===cur?'on':''}"><i class="sw sw-${k}"></i><span>${ACX_MAP_STYLES[k].name}</span></button>`).join('');
+  L.DomEvent.disableClickPropagation(box);L.DomEvent.disableScrollPropagation(box);
+  box.querySelectorAll('[data-style]').forEach(b=>b.onclick=()=>{let k=b.dataset.style;acxSetMapStyleKey(k);acxSwapBase(map,k);if(window.acxHaptic)acxHaptic('select');setTimeout(()=>box.remove(),160);ACX_MAPS.forEach(m=>{if(m!==map&&m.__acxFollow&&m.__acxBase&&m.__acxBase.key!==k){try{acxSwapBase(m,k)}catch(e){}}})});
+  host.appendChild(box);
+  setTimeout(()=>{let off=e=>{if(!box.contains(e.target)&&!e.target.closest('.js-layers')){box.remove();document.removeEventListener('pointerdown',off,true)}};document.addEventListener('pointerdown',off,true)},0);
+}
+let ACX_FULL_MAP=null;
+function acxMapFullscreen(map,force){
+  let el=map.getContainer(),on=force!=null?force:!el.classList.contains('acx-map-full');
+  if(on){
+    el.__acxPh=document.createComment('map');el.parentNode.insertBefore(el.__acxPh,el);document.body.appendChild(el);
+    el.classList.add('acx-map-full');ACX_FULL_MAP=map;
+    if(!el.querySelector('.acx-map-close')){let x=document.createElement('button');x.type='button';x.className='acx-map-close';x.setAttribute('aria-label','Tutup peta');x.innerHTML='<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';x.onclick=e=>{e.stopPropagation();acxMapFullscreen(map,false)};el.appendChild(x)}
+  }else{
+    el.classList.remove('acx-map-full');ACX_FULL_MAP=null;
+    if(el.__acxPh&&el.__acxPh.isConnected){el.__acxPh.parentNode.insertBefore(el,el.__acxPh);el.__acxPh.remove();el.__acxPh=null}
+    else{el.__acxPh=null;document.documentElement.classList.remove('has-full-map');try{map.remove()}catch(e){}el.remove();return}
+    let x=el.querySelector('.acx-map-close');if(x)x.remove();
+  }
+  document.documentElement.classList.toggle('has-full-map',on);
+  setTimeout(()=>{try{if(acxAlive(map)){map.invalidateSize();acxMapFit(map,false)}}catch(e){}},60);setTimeout(()=>{try{if(acxAlive(map))map.invalidateSize()}catch(e){}},360);
+  if(window.acxHaptic)acxHaptic('light');
+}
+function acxMapFit(map,animate){if(!acxAlive(map))return;let b=map.__acxBounds;if(b&&b.isValid&&b.isValid()){map.fitBounds(b,{padding:map.__acxPad||[26,26],animate:!!animate,maxZoom:16})}}
+
+/* Membuat peta. el: elemen/ID. opts: {interactive, zoom, layers, fullscreen, recenter, style, follow} */
+function acxMap(el,opts){
+  opts=opts||{};if(typeof el==='string')el=document.getElementById(el);if(!el||!window.L)return null;
+  if(el.__acxMap){try{el.__acxMap.remove()}catch(e){}}
+  el.classList.add('acx-map','is-tile-loading');
+  let interactive=opts.interactive!==false;
+  let map=L.map(el,Object.assign({zoomControl:false,attributionControl:true,scrollWheelZoom:false,tap:true,dragging:interactive,touchZoom:interactive,doubleClickZoom:interactive,boxZoom:false,keyboard:false,preferCanvas:!!opts.canvas,zoomSnap:.25,zoomDelta:.75,wheelPxPerZoomLevel:90,fadeAnimation:true,inertia:true},opts.leaflet||{}));
+  map.attributionControl.setPrefix(false);
+  map.createPane('acxLabels');map.getPane('acxLabels').style.zIndex=450;map.getPane('acxLabels').style.pointerEvents='none';
+  map.setView([-2.5,118],4,{animate:false});
+  map.__acxFollow=opts.follow!==false&&!opts.style;
+  acxBaseLayer(map,opts.style||acxMapStyleKey());
+  if(interactive)acxMapControls(map,opts);
+  if(!el.querySelector('.acx-map-offline')){let o=document.createElement('div');o.className='acx-map-offline';o.innerHTML='<svg viewBox="0 0 24 24"><path d="M3 3l18 18M8.5 8.6A6 6 0 0 0 6 13a4 4 0 0 0 1 7.9h10.5M12 6.1A6.5 6.5 0 0 1 18.4 11 4.5 4.5 0 0 1 21 18"/></svg><span>Peta dasar butuh internet — rute tetap tampil</span>';el.appendChild(o)}
+  el.__acxMap=map;ACX_MAPS.add(map);map.on('unload',()=>{map.__acxDead=true;ACX_MAPS.delete(map);if(ACX_FULL_MAP===map)ACX_FULL_MAP=null});
+  // ukuran kontainer bisa berubah (tab, animasi) → pastikan tile termuat
+  if(window.ResizeObserver){let ro=new ResizeObserver(()=>{if(el.offsetWidth&&el.offsetHeight&&acxAlive(map)){try{map.invalidateSize({pan:false})}catch(e){}}});ro.observe(el);map.on('unload',()=>ro.disconnect())}
+  [80,400].forEach(t=>setTimeout(()=>{try{if(acxAlive(map)){map.invalidateSize();if(!map.__acxFitDone)acxMapFit(map,false)}}catch(e){}},t));
+  return map;
+}
+function acxDecimate(pts,max){if(!pts||pts.length<=max)return pts||[];let step=pts.length/max,out=[];for(let i=0;i<max;i++)out.push(pts[Math.floor(i*step)]);out.push(pts[pts.length-1]);return out}
+function acxHaversine(a,b){let R=6371000,dLa=(b[0]-a[0])*Math.PI/180,dLo=(b[1]-a[1])*Math.PI/180,x=Math.sin(dLa/2)**2+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+function acxPin(kind,label){
+  let html=kind==='start'?'<span class="acx-pin acx-pin-start"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></svg></span>':kind==='finish'?'<span class="acx-pin acx-pin-finish"></span>':`<span class="acx-pin acx-pin-km">${label}</span>`;
+  let s=kind==='km'?22:26;
+  return L.divIcon({className:'acx-pin-wrap',html,iconSize:[s,s],iconAnchor:[s/2,s/2]});
+}
+/* Rute dengan casing putih + start/finish + penanda km. */
+function acxRoute(map,latlngs,opts){
+  opts=opts||{};if(!map||!latlngs||latlngs.length<2)return null;
+  let color=opts.color||ACX_SPORT_COLOR[opts.sport]||'#fc4c02',g=L.featureGroup();
+  L.polyline(latlngs,{color:'#ffffff',weight:(opts.weight||4.5)+4,opacity:.95,lineJoin:'round',lineCap:'round',interactive:false}).addTo(g);
+  L.polyline(latlngs,{color:'rgba(0,0,0,.25)',weight:(opts.weight||4.5)+1,opacity:1,lineJoin:'round',lineCap:'round',interactive:false}).addTo(g);
+  let line=L.polyline(latlngs,{color,weight:opts.weight||4.5,opacity:1,lineJoin:'round',lineCap:'round'}).addTo(g);
+  if(opts.km!==false&&latlngs.length>10){
+    let tot=0,next=1000,marks=[];for(let i=1;i<latlngs.length;i++){tot+=acxHaversine(latlngs[i-1],latlngs[i]);if(tot>=next){marks.push([latlngs[i],next/1000]);next+=1000}}
+    let every=marks.length>60?10:marks.length>24?5:marks.length>10?2:1;
+    marks.filter(m=>m[1]%every===0).forEach(m=>L.marker(m[0],{icon:acxPin('km',m[1]),interactive:false,keyboard:false}).addTo(g));
+  }
+  if(opts.markers!==false){
+    let a=latlngs[0],z=latlngs[latlngs.length-1],loop=acxHaversine(a,z)<60;
+    L.marker(z,{icon:acxPin('finish'),keyboard:false,zIndexOffset:900}).bindTooltip('Finish',{direction:'top',offset:[0,-12]}).addTo(g);
+    L.marker(a,{icon:acxPin('start'),keyboard:false,zIndexOffset:1000}).bindTooltip(loop?'Start & finish':'Start',{direction:'top',offset:[0,-12]}).addTo(g);
+  }
+  g.addTo(map);
+  if(opts.fit!==false){map.__acxBounds=line.getBounds();map.__acxPad=opts.pad||[30,30];acxMapFit(map,false);map.__acxFitDone=true}
+  g.__line=line;return g;
+}
+/* Heatmap bercahaya: tiap rute = halo lebar + inti tipis (renderer canvas). */
+function acxHeat(map,items,opts){
+  opts=opts||{};if(!map)return null;
+  let rend=L.canvas({padding:.4,tolerance:4}),g=L.featureGroup(),bounds=null,n=items.length;
+  let dark=(map.__acxBase&&ACX_MAP_STYLES[map.__acxBase.key]&&ACX_MAP_STYLES[map.__acxBase.key].dark)||map.__acxBase&&map.__acxBase.key==='satellite';
+  let coreOp=n>150?.45:n>60?.55:.7,haloOp=n>150?.05:n>60?.08:.12;
+  items.forEach(it=>{
+    let pts=acxDecimate(it.pts,opts.maxPts||350);if(pts.length<2)return;
+    let c=it.color||ACX_SPORT_COLOR[it.sport]||ACX_SPORT_COLOR.Other;
+    L.polyline(pts,{renderer:rend,color:c,weight:7,opacity:haloOp,lineJoin:'round',lineCap:'round',interactive:false}).addTo(g);
+    let core=L.polyline(pts,{renderer:rend,color:dark?'#fff3e8':c,weight:dark?1.4:2.2,opacity:dark?coreOp*.9:coreOp,lineJoin:'round',lineCap:'round'}).addTo(g);
+    if(dark)L.polyline(pts,{renderer:rend,color:c,weight:2.6,opacity:coreOp*.55,interactive:false}).addTo(g);
+    if(it.onClick){core.options.interactive=true;core.on('click',()=>it.onClick(it))}
+    let b=core.getBounds();bounds=bounds?bounds.extend(b):L.latLngBounds(b.getSouthWest(),b.getNorthEast());
+  });
+  g.addTo(map);
+  if(bounds){map.__acxBounds=bounds;map.__acxPad=[22,22];acxMapFit(map,false);map.__acxFitDone=true}
+  return g;
+}
+window.ACX_BACK=window.ACX_BACK||[];
+window.acxBackHandler=function(){for(let i=ACX_BACK.length-1;i>=0;i--){try{if(ACX_BACK[i]())return true}catch(e){}}let fly=document.getElementById('proFlyClose');if(fly){fly.click();return true}if(ACX_FULL_MAP){acxMapFullscreen(ACX_FULL_MAP,false);return true}let st=document.querySelector('.acx-map-styles');if(st){st.remove();return true}return false};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ACX_FULL_MAP)acxMapFullscreen(ACX_FULL_MAP,false)});
+</script>

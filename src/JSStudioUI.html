@@ -1,0 +1,317 @@
+<script>
+'use strict';
+/* ---------------------------- STUDIO: render pipeline & UI ---------------------------- */
+function stActivity(){let l=DATA.logs||[];return l.find(x=>String(x.id)===String(ST.act))||null}
+function stTpl(k){return ST_TPLS.find(t=>t.k===(k||ST.tpl))||ST_TPLS[0]}
+function stLogsSorted(){return (DATA.logs||[]).slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(Number(b.stravaId||0)-Number(a.stravaId||0)))}
+function stEffBg(tpl,auto){
+  let locked=!auto&&ST.bgLock,m=locked?ST.bg.mode:'auto';
+  let color=locked&&ST_BGS[ST.bg.color]?ST.bg.color:(ST_BGS[tpl.bg]?tpl.bg:'sunset');
+  if(m==='auto')m=(ST_PHOTO&&tpl.bg!=='map')?'photo':(ST_BGS[tpl.bg]?'color':tpl.bg);
+  if(m==='photo'&&!ST_PHOTO)m='color';
+  if(m==='photo'&&tpl.photoInside)m='photoBlur';
+  if(!/^(transparent|photo|photoBlur|color|map)$/.test(m))m='color';
+  return {mode:m,color};
+}
+function stAutoAccent(bg){
+  if(ST.accent!=='auto')return ST.accent;
+  if((bg.mode==='photo'||bg.mode==='photoBlur')&&ST_PHOTO_INFO&&ST_PHOTO_INFO.vibrant)return ST_PHOTO_INFO.vibrant;
+  if(bg.mode==='color'){return {strava:'#ffd166',ocean:'#fde047',forest:'#fde047',grape:'#fde047',sunset:'#ffe08a',lime:'#15803d',blush:'#e11d48',paper:'#fc4c02'}[bg.color]||'#fc4c02'}
+  return '#fc4c02';
+}
+function stStyleFor(tpl,W,H,k,auto){
+  let bg=stEffBg(tpl,auto),dark=true;
+  if(bg.mode==='color')dark=ST_BGS[bg.color].dark;
+  else if(bg.mode==='photo')dark=!(ST_PHOTO_INFO&&ST_PHOTO_INFO.lum-(ST.bg.dim/100)*.9>.62);
+  else if(bg.mode==='map')dark=ST.bg.map!=='voyager';
+  let bgDark=dark;
+  if(ST.text==='light')dark=true;else if(ST.text==='dark')dark=false;
+  let S={W,H,k:k||1,bg,bgMode:bg.mode,dark,sz:safe(W,H),photo:ST_PHOTO,routeInBg:false,loading:false};
+  S.fg=dark?'#ffffff':'#131318';S.fg2=dark?'rgba(255,255,255,.74)':'rgba(19,19,24,.62)';S.fg3=dark?'rgba(255,255,255,.4)':'rgba(19,19,24,.35)';
+  S.fgOnBg=bgDark?'#ffffff':'#131318';S.fgOnBg2=bgDark?'rgba(255,255,255,.7)':'rgba(19,19,24,.6)';
+  if(ST.text==='light'){S.fgOnBg='#fff';S.fgOnBg2='rgba(255,255,255,.7)'}else if(ST.text==='dark'){S.fgOnBg='#131318';S.fgOnBg2='rgba(19,19,24,.6)'}
+  S.acc=stAutoAccent(bg);if(!dark&&S.acc==='#ffffff')S.acc='#131318';if(dark&&S.acc==='#111111')S.acc='#ffffff';
+  S.shadow=bg.mode==='transparent'||bg.mode==='photo'||bg.mode==='map';
+  let map=bg.mode==='map'?stMapFor(tpl,W,H,S.acc):null;
+  if(map&&map.ok)S.routeInBg=true;
+  S.drawBg=function(c){
+    if(bg.mode==='transparent'){return}
+    if(bg.mode==='color'){let g=c.createLinearGradient(0,0,W*.35,H);let cols=ST_BGS[bg.color].g;cols.forEach((col,i)=>g.addColorStop(i/(cols.length-1),col));c.fillStyle=g;c.fillRect(0,0,W,H);
+      c.save();c.globalAlpha=bgDark?.10:.35;let rg=c.createRadialGradient(W*.85,H*.12,0,W*.85,H*.12,W*.9);rg.addColorStop(0,'#ffffff');rg.addColorStop(1,'rgba(255,255,255,0)');c.fillStyle=rg;c.fillRect(0,0,W,H);c.restore();
+      c.save();c.globalAlpha=bgDark?.05:.04;for(let i=0;i<W+H;i+=46){c.fillStyle=bgDark?'#fff':'#000';c.beginPath();c.moveTo(i,0);c.lineTo(i+2,0);c.lineTo(i+2-H*.5,H);c.lineTo(i-H*.5,H);c.fill()}c.restore();return}
+    if((bg.mode==='photo'||bg.mode==='photoBlur')&&ST_PHOTO){let im=ST_PHOTO,sc=Math.max(W/im.width,H/im.height),dw=im.width*sc,dh=im.height*sc,fx=(W-dw)/2,fy=(H-dh)*((ST.bg.fy==null?50:ST.bg.fy)/100);
+      if(bg.mode==='photoBlur'){c.save();c.filter='blur('+Math.round(28*S.k)+'px)';c.drawImage(im,fx-40,fy-40,dw+80,dh+80);c.restore();c.fillStyle='rgba(0,0,0,.28)';c.fillRect(0,0,W,H);return}
+      c.drawImage(im,fx,fy,dw,dh);let d=(ST.bg.dim||0)/100;if(d>0){let g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'rgba(0,0,0,'+d*.8+')');g.addColorStop(.45,'rgba(0,0,0,'+d*.35+')');g.addColorStop(1,'rgba(0,0,0,'+Math.min(.9,d*1.25)+')');c.fillStyle=g;c.fillRect(0,0,W,H)}return}
+    if(bg.mode==='map'){if(map&&map.canvas){c.drawImage(map.canvas,0,0,W,H)}else{let g=c.createLinearGradient(0,0,0,H);g.addColorStop(0,'#dfe6ee');g.addColorStop(1,'#c9d3de');c.fillStyle=g;c.fillRect(0,0,W,H);c.strokeStyle='rgba(255,255,255,.7)';c.lineWidth=6;for(let i=-H;i<W;i+=140){c.beginPath();c.moveTo(i,0);c.lineTo(i+H*.6,H);c.stroke()}}}
+  };
+  return S;
+}
+let ST_DCACHE={k:'',d:null};
+function stDataCached(x){let s=x.stravaId&&ST_STREAMS[x.stravaId];let key=[x.id,ST.title,ST.sub,(ST.metrics||[]).join(','),ST.trim,s?1:0,(DATA.logs||[]).length,(DATA.privacy||{}).hideRoutes?1:0].join('|');if(ST_DCACHE.k!==key){ST_DCACHE={k:key,d:stData(x)}}return ST_DCACHE.d}
+function stRender(ctx,W,H,k,opt){
+  opt=opt||{};let x=stActivity();ctx.clearRect(0,0,W,H);if(!x)return;
+  let tpl=stTpl(opt.tpl),D=stDataCached(x),S=stStyleFor(tpl,W,H,k,!!opt.auto);
+  S.loading=!!(x.stravaId&&ST_STREAMS[x.stravaId]===undefined);
+  S.drawBg(ctx);
+  ctx.save();
+  if(tpl.movable&&!opt.auto){let a=tpl.anchor(W,H,S);ctx.translate(a[0]+ST.dx*W,a[1]+ST.dy*H);ctx.scale(ST.scale,ST.scale);ctx.translate(-a[0],-a[1])}
+  try{tpl.draw(ctx,W,H,D,S)}catch(e){console.error('Template '+tpl.k,e)}
+  ctx.restore();
+}
+
+/* ---------------------------- peta sungguhan sebagai latar ---------------------------- */
+const ST_TILE={voyager:z=>(x,y)=>'https://'+'abcd'[(x+y)%4]+'.basemaps.cartocdn.com/rastertiles/voyager/'+z+'/'+x+'/'+y+'@2x.png',dark:z=>(x,y)=>'https://'+'abcd'[(x+y)%4]+'.basemaps.cartocdn.com/dark_all/'+z+'/'+x+'/'+y+'@2x.png',satellite:z=>(x,y)=>'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x};
+function stMapFor(tpl,W,H,acc){
+  let x=stActivity();if(!x)return null;let D=stDataCached(x);if(!D.hasRoute)return {ok:false};
+  let sz=safe(W,H),box=tpl.k==='mapshot'?{x:90,y:sz.t,w:W-180,h:(H-sz.b-(ST.fmt==='story'?500:470))-sz.t-40}:{x:90,y:sz.t+40,w:W-180,h:H-sz.t-sz.b-80};
+  let key=[x.id,ST.fmt,ST.bg.map,ST.trim,acc,box.x,box.y,box.w,box.h].join('|');
+  let c=ST_MAPCACHE[key];if(c)return c;
+  c=ST_MAPCACHE[key]={ok:false,canvas:null,pending:true};
+  stBuildMap(D,W,H,box,acc).then(cv=>{c.canvas=cv;c.ok=true;c.pending=false;stDraw()}).catch(e=>{c.pending=false;c.ok=false;c.fail=true;stToastOnce('Peta tidak bisa dimuat (butuh internet). Latar diganti pola peta.');stDraw()});
+  return c;
+}
+let ST_TOASTED={};function stToastOnce(t){if(ST_TOASTED[t])return;ST_TOASTED[t]=1;toast(t)}
+function stBuildMap(D,W,H,box,acc){
+  return new Promise((ok,no)=>{
+    const TS=512,pts=D.pts,lon2x=(lon,z)=>(lon+180)/360*Math.pow(2,z)*TS,lat2y=(lat,z)=>{let r=lat*Math.PI/180;return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z)*TS};
+    let lats=pts.map(p=>p[0]),lngs=pts.map(p=>p[1]),mnLa=Math.min(...lats),mxLa=Math.max(...lats),mnLo=Math.min(...lngs),mxLo=Math.max(...lngs),z=17;
+    for(;z>3;z--){let w=lon2x(mxLo,z)-lon2x(mnLo,z),h=lat2y(mnLa,z)-lat2y(mxLa,z);if(w<=box.w-60&&h<=box.h-60)break}
+    let cx=(lon2x(mnLo,z)+lon2x(mxLo,z))/2,cy=(lat2y(mnLa,z)+lat2y(mxLa,z))/2,ox=cx-(box.x+box.w/2),oy=cy-(box.y+box.h/2),n=Math.pow(2,z);
+    let cv=document.createElement('canvas');cv.width=W;cv.height=H;let c=cv.getContext('2d');c.fillStyle=ST.bg.map==='voyager'?'#f2efe9':'#1d1f24';c.fillRect(0,0,W,H);
+    let jobs=[],url=ST_TILE[ST.bg.map]?ST_TILE[ST.bg.map](z):ST_TILE.voyager(z);
+    for(let ty=Math.floor(oy/TS);ty<=Math.floor((oy+H)/TS);ty++){if(ty<0||ty>=n)continue;for(let tx=Math.floor(ox/TS);tx<=Math.floor((ox+W)/TS);tx++){let wx=((tx%n)+n)%n;jobs.push(new Promise(res=>{let im=new Image();im.crossOrigin='anonymous';let t=setTimeout(()=>{im.src='';res(false)},12000);im.onload=()=>{clearTimeout(t);try{c.drawImage(im,tx*TS-ox,ty*TS-oy,TS,TS);res(true)}catch(e){res(false)}};im.onerror=()=>{clearTimeout(t);res(false)};im.src=url(wx,ty)}))}}
+    Promise.all(jobs).then(r=>{let good=r.filter(Boolean).length;if(!r.length||good<r.length*.7)return no(new Error('tiles'));
+      try{c.getImageData(0,0,1,1)}catch(e){return no(e)}
+      let m=pts.map(p=>[lon2x(p[1],z)-ox,lat2y(p[0],z)-oy]);
+      c.save();c.globalAlpha=ST.bg.map==='voyager'?.0:.18;c.fillStyle='#000';c.fillRect(0,0,W,H);c.restore();
+      drawRoute(c,D,null,{mapped:m,color:acc,width:12,casing:'#ffffff',casingW:10,shadow:14,markers:true});
+      ok(cv)});
+  });
+}
+
+/* ---------------------------- foto ---------------------------- */
+function stAnalyzePhoto(img){
+  let c=document.createElement('canvas');c.width=48;c.height=48;let g=c.getContext('2d');g.drawImage(img,0,0,48,48);let d=g.getImageData(0,0,48,48).data,L=0,best=null,bs=0;
+  for(let i=0;i<d.length;i+=4){let r=d[i]/255,gg=d[i+1]/255,b=d[i+2]/255;L+=.2126*r+.7152*gg+.0722*b;let mx=Math.max(r,gg,b),mn=Math.min(r,gg,b),s=mx?(mx-mn)/mx:0,score=s*s*(mx>.35&&mx<.98?1:.2);if(score>bs){bs=score;best=[d[i],d[i+1],d[i+2]]}}
+  let vib=null;if(best&&bs>.28){let mx=Math.max(...best),k=mx<200?200/mx:1;vib='#'+best.map(v=>Math.min(255,Math.round(v*k)).toString(16).padStart(2,'0')).join('')}
+  return {lum:L/(d.length/4),vibrant:vib};
+}
+function stLoadPhoto(file){
+  if(!file)return;if(!/^image\//.test(file.type||'image/')){toast('File harus berupa gambar');return}
+  let url=URL.createObjectURL(file),img=new Image();
+  img.onload=()=>{let max=2200,sc=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);
+    ST_PHOTO=c;ST_PHOTO_INFO=stAnalyzePhoto(c);if(ST.bgLock&&ST.bg.mode!=='photo'){ST.bg.mode='photo'}
+    if(!stTpl().photoInside&&stTpl().bg==='map'){}
+    stSave();stRefreshAll();if(window.acxHaptic)acxHaptic('success');toast('Foto dipasang'+(ST_PHOTO_INFO.vibrant?' · warna aksen menyesuaikan foto':''))};
+  img.onerror=()=>{URL.revokeObjectURL(url);toast('Foto tidak bisa dibuka')};img.src=url;
+}
+
+/* ---------------------------- pratinjau ---------------------------- */
+function stFmt(){return ST_FORMATS[ST.fmt]||ST_FORMATS.story}
+function stDraw(){if(ST_RAF)return;ST_RAF=requestAnimationFrame(()=>{ST_RAF=0;stPaint()})}
+function stPaint(){
+  let cv=$('#stCanvas'),stage=$('#stStage');if(!cv||!stage||!ST)return;
+  let f=stFmt(),r=stage.getBoundingClientRect();if(!r.width)return;
+  let dpr=Math.min(2.2,window.devicePixelRatio||1),w=Math.round(r.width*dpr),h=Math.round(w*f.h/f.w);
+  if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h}
+  let ctx=cv.getContext('2d'),k=w/f.w;ctx.setTransform(k,0,0,k,0,0);stRender(ctx,f.w,f.h,k);ctx.setTransform(1,0,0,1,0,0);
+  let tpl=stTpl(),bg=stEffBg(tpl);stage.classList.toggle('is-transparent',bg.mode==='transparent');
+  let sf=$('#stSafe');if(sf){sf.hidden=!(ST.safe&&ST.fmt==='story')}
+  let hint=$('#stHint');if(hint){hint.textContent=tpl.movable?'Geser untuk memindah · cubit untuk ubah ukuran · ketuk 2× untuk reset':(bg.mode==='transparent'?'Latar transparan — tempel sebagai stiker di story':'Ketuk template lain untuk ganti gaya')}
+  let ld=$('#stLoading');if(ld){let m=bg.mode==='map'?stMapFor(tpl,f.w,f.h,stStyleFor(tpl,f.w,f.h,1).acc):null;ld.hidden=!(m&&m.pending)}
+}
+function stSizeStage(){
+  let stage=$('#stStage'),area=$('.st-stage-area');if(!stage||!area)return;
+  let f=stFmt(),desk=document.documentElement.getAttribute('data-view')==='desktop',maxH=desk?Math.min(window.innerHeight-170,860):Math.min(window.innerHeight*.5,580),maxW=area.clientWidth-(desk?40:0);
+  let w=Math.min(maxW,maxH*f.w/f.h);stage.style.width=Math.round(w)+'px';stage.style.height=Math.round(w*f.h/f.w)+'px';stage.dataset.fmt=ST.fmt;
+}
+let ST_THUMB_T=0;
+function stRenderThumbs(force){
+  let host=$('#stTpls');if(!host||!ST)return;let x=stActivity();
+  let key=[ST.act,ST.fmt,ST.accent,ST.text,ST.trim,ST_PHOTO?1:0,ST.bg.map,x&&x.stravaId&&ST_STREAMS[x.stravaId]?1:0,ST.title,(ST.metrics||[]).join(','),ST_CAT].join('|');
+  let list=ST_TPLS.filter(t=>ST_CAT==='all'||t.cat.indexOf(ST_CAT)>=0);
+  if(host.dataset.cat!==ST_CAT||force||!host.children.length){host.dataset.cat=ST_CAT;host.innerHTML=list.map(t=>`<button type="button" class="st-tpl${t.k===ST.tpl?' on':''}" data-tpl="${t.k}"><span class="st-tpl-thumb" data-fmt="${ST.fmt}"><canvas></canvas></span><span class="st-tpl-name">${esc(t.n)}</span></button>`).join('');host.querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>stSetTpl(b.dataset.tpl));ST_THUMB_KEY=''}
+  host.querySelectorAll('[data-tpl]').forEach(b=>b.classList.toggle('on',b.dataset.tpl===ST.tpl));
+  if(key===ST_THUMB_KEY)return;ST_THUMB_KEY=key;
+  let f=stFmt(),btns=[...host.querySelectorAll('[data-tpl]')],i=0;clearTimeout(ST_THUMB_T);
+  let step=()=>{let t0=performance.now();while(i<btns.length&&performance.now()-t0<14){let b=btns[i++],cv=b.querySelector('canvas'),w=150,h=Math.round(w*f.h/f.w);cv.width=w;cv.height=h;let c=cv.getContext('2d'),k=w/f.w;c.setTransform(k,0,0,k,0,0);stRender(c,f.w,f.h,k,{tpl:b.dataset.tpl,auto:true});b.querySelector('.st-tpl-thumb').classList.toggle('is-transparent',stEffBg(stTpl(b.dataset.tpl),true).mode==='transparent')}if(i<btns.length)ST_THUMB_T=setTimeout(step,16)};
+  step();
+}
+function stSetTpl(k){if(ST.tpl===k){return}ST.tpl=k;ST.dx=0;ST.dy=0;ST.scale=1;stSave();let st=$('#stStage');if(st){st.classList.remove('st-swap');void st.offsetWidth;st.classList.add('st-swap')}stRenderThumbs();stRenderPane();stDraw();let b=document.querySelector('#stTpls .st-tpl.on');if(b&&b.scrollIntoView)b.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'})}
+
+/* ---------------------------- caption pintar ---------------------------- */
+function stCaption(D,v){
+  let em=D.isRun?['🏃','🔥','💨','👟']:D.isRide?['🚴','⚡','🌄','💨']:['💪','🔥','✨','⚡'];
+  let dist=D.distance>0?stDist(D.distance)+' km':stTime(D.minutes),perf=D.isRun&&D.pace?'pace '+stPace(D.pace)+'/km':(D.speed&&D.distance>0?'rata-rata '+stNum(D.speed,1)+' km/j':'');
+  let day=D.dateStr.split(',')[0];
+  let open=[D.title+' ✅',D.verb+(D.partOfDay?' '+D.partOfDay:'')+' '+dist+' hari ini '+em[0],'Satu lagi di catatan: '+dist+' '+em[1],day+' yang produktif — '+dist+' '+em[0],'Hasil hari ini: '+dist+' '+em[2]];
+  let mid=[dist+' dalam '+stTime(D.minutes)+(perf?', '+perf:'')+'.',(perf?perf.charAt(0).toUpperCase()+perf.slice(1)+' · ':'')+(D.elev>30?'naik '+Math.round(D.elev)+' m · ':'')+stTime(D.minutes)+' bergerak.',(D.elev>150?'Tanjakan '+Math.round(D.elev)+' m dilibas. ':'')+stTime(D.minutes)+' penuh fokus'+(D.hr?', detak rata-rata '+Math.round(D.hr)+' bpm':'')+'.'];
+  let close=['Konsisten > sempurna.','Sedikit demi sedikit, lama-lama jadi bukit.','Besok lanjut lagi 💪','Progress, bukan perfection.','Yang penting gerak dulu.','Terima kasih, kaki 🙏'];
+  let tags=D.isRun?'#lari #running #runnerindonesia #larisehat #strava #activecoach':D.isRide?'#gowes #cycling #sepeda #cyclingindonesia #roadbike #strava #activecoach':'#olahraga #workout #sehat #strava #activecoach';
+  return [open[v%open.length],mid[v%mid.length]+(D.badge?'\n🏅 '+D.badge+'!':''),close[v%close.length],'',tags].join('\n');
+}
+function stCurrentCaption(){let ta=$('#stCaption');if(ta&&ta.value.trim())return ta.value.trim();let x=stActivity();return x?stCaption(stDataCached(x),ST_CAPTION_V):''}
+async function stCopy(text){
+  try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text);toast('Caption disalin');if(window.acxHaptic)acxHaptic('success');return}}catch(e){}
+  let t=document.createElement('textarea');t.value=text;t.style.cssText='position:fixed;opacity:0;top:0';document.body.appendChild(t);t.select();try{document.execCommand('copy');toast('Caption disalin')}catch(e){toast('Tidak bisa menyalin')}t.remove();
+}
+
+/* ---------------------------- panel kontrol ---------------------------- */
+function stSeg(name,opts,cur){return `<div class="st-seg" data-seg="${name}">${opts.map(o=>`<button type="button" class="${o[0]===cur?'on':''}" data-v="${o[0]}">${o[1]}</button>`).join('')}</div>`}
+function stToggle(id,label,sub,on){return `<label class="st-toggle"><span><b>${label}</b>${sub?`<small>${sub}</small>`:''}</span><input type="checkbox" id="${id}"${on?' checked':''}><i></i></label>`}
+function stRange(id,label,min,max,val,unit){return `<label class="st-range"><span>${label}<em id="${id}Val">${val}${unit||''}</em></span><input type="range" id="${id}" min="${min}" max="${max}" value="${val}"></label>`}
+function stRenderPane(){
+  let tpl=stTpl(),x=stActivity(),D=x?stDataCached(x):null;
+  $$('.st-tab').forEach(t=>t.classList.toggle('on',t.dataset.pane===ST_PANE));
+  $$('.st-pane').forEach(p=>p.hidden=p.dataset.pane!==ST_PANE);
+  if(ST_PANE==='tpl'){let c=$('#stCats');if(c&&!c.children.length){c.innerHTML=ST_CATS.map(k=>`<button type="button" class="st-cat${k[0]===ST_CAT?' on':''}" data-cat="${k[0]}">${k[1]}</button>`).join('');c.querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{ST_CAT=b.dataset.cat;c.querySelectorAll('[data-cat]').forEach(q=>q.classList.toggle('on',q===b));stRenderThumbs(true)})}stRenderThumbs();return}
+  let host=$('.st-pane[data-pane="'+ST_PANE+'"]');if(!host)return;
+  if(ST_PANE==='bg'){
+    let eff=stEffBg(tpl),m=ST.bgLock?ST.bg.mode:'auto';
+    let html=stSeg('bgmode',[['auto','Otomatis'],['transparent','Transparan'],['photo','Foto'],['color','Warna'],['map','Peta']],m);
+    if(m==='auto')html+=`<p class="st-note">Latar mengikuti template${ST_PHOTO?' — foto kamu dipakai otomatis':''}. Sekarang: <b>${{transparent:'Transparan',photo:'Foto',photoBlur:'Foto (blur)',color:(ST_BGS[eff.color]||{}).n||'Warna',map:'Peta'}[eff.mode]}</b>.</p>`;
+    if(m==='transparent')html+=`<p class="st-note">PNG transparan — di Instagram: buat story dari foto/video, lalu tempel lewat stiker <b>Galeri</b>. Teks otomatis diberi bayangan agar terbaca.</p>`;
+    if(m==='photo'||m==='auto'||tpl.photoInside)html+=`<div class="st-photo"><button type="button" class="acx-btn st-photo-btn" id="stPickPhoto"><span class="icon"><svg><use href="#i-camera"/></svg></span>${ST_PHOTO?'Ganti foto':'Pilih foto dari galeri'}</button>${ST_PHOTO?'<button type="button" class="st-link" id="stRemovePhoto">Hapus foto</button>':''}</div>`+(ST_PHOTO?stRange('stDim','Gelapkan foto',0,70,ST.bg.dim,'%')+stRange('stFocus','Posisi foto',0,100,ST.bg.fy,'%'):'');
+    if(m==='color')html+=`<div class="st-swatches">${Object.keys(ST_BGS).map(k=>`<button type="button" class="st-swatch st-bgsw${ST.bg.color===k?' on':''}" data-bg="${k}" style="background:linear-gradient(135deg,${ST_BGS[k].g.join(',')})" title="${ST_BGS[k].n}"><span>${ST_BGS[k].n}</span></button>`).join('')}</div>`;
+    if(m==='map')html+=stSeg('mapstyle',[['voyager','Terang'],['dark','Gelap'],['satellite','Satelit']],ST.bg.map)+`<p class="st-note">Rute digambar di atas peta sungguhan (butuh internet). ${D&&!D.hasRoute?'<b>Aktivitas ini tidak punya rute GPS.</b>':''}</p>`;
+    host.innerHTML=html;
+  }
+  if(ST_PANE==='data'){
+    let keys=D?Object.keys(ST_METRICS).filter(k=>ST_METRICS[k].ok(D)):[],cur=D?D.metrics.map(m=>m.k):[];
+    host.innerHTML=`<p class="st-note">Ketuk untuk memilih & mengurutkan data yang tampil. Template memakai urutan ini (angka kecil = urutan).</p><div class="st-chips">${keys.map(k=>{let i=cur.indexOf(k);return `<button type="button" class="st-chip${i>=0?' on':''}" data-metric="${k}">${i>=0?`<em>${i+1}</em>`:''}${ST_METRICS[k].n}${D?`<small>${(stMetric(D,k)||{}).value||''}</small>`:''}</button>`}).join('')}</div>
+      <div class="st-row"><button type="button" class="st-link" id="stMetricsAuto">${ST.metrics?'↺ Kembali ke pilihan otomatis':'✓ Pilihan otomatis sesuai olahraga'}</button></div>
+      ${stToggle('stTrim','Privasi rute','Sembunyikan 200 m awal & akhir (lokasi rumah)',ST.trim)}
+      ${D&&D.badge?`<div class="st-badge-note"><span class="icon"><svg><use href="#i-medal"/></svg></span><span><b>Sorotan otomatis:</b> ${esc(D.badge)}</span></div>`:''}`;
+  }
+  if(ST_PANE==='style'){
+    host.innerHTML=`<div class="st-label">Ukuran</div>`+stSeg('fmt',Object.keys(ST_FORMATS).map(k=>[k,ST_FORMATS[k].name]),ST.fmt)+
+      `<div class="st-label">Warna aksen</div><div class="st-swatches st-acc">${ST_ACCENTS.map(c=>`<button type="button" class="st-swatch${ST.accent===c?' on':''}" data-acc="${c}" ${c==='auto'?'':'style="background:'+c+'"'} title="${c==='auto'?'Otomatis':c}">${c==='auto'?'<span class="st-auto">A</span>':''}</button>`).join('')}</div>`+
+      `<div class="st-label">Warna teks</div>`+stSeg('text',[['auto','Otomatis'],['light','Putih'],['dark','Hitam']],ST.text)+
+      (tpl.movable?stRange('stScale','Skala',50,180,Math.round(ST.scale*100),'%')+'<div class="st-row"><button type="button" class="st-link" id="stResetPos">↺ Reset posisi & ukuran</button></div>':'')+
+      stToggle('stBrand','Logo Active Coach','Tanda kecil di kartu',ST.brand)+(ST.fmt==='story'?stToggle('stSafeT','Panduan area aman','Tampilkan area yang tertutup UI Instagram',ST.safe):'');
+  }
+  if(ST_PANE==='text'){
+    let cap=D?stCaption(D,ST_CAPTION_V):'';
+    host.innerHTML=`<label class="st-field"><span>Judul di kartu</span><input type="text" id="stTitle" maxlength="60" placeholder="${esc(x?x.title:'Judul')}" value="${esc(ST.title||'')}"></label>
+      <div class="st-label st-label-row">Caption Instagram <span><button type="button" class="st-link" id="stCapNew">↻ Buat ulang</button></span></div>
+      <textarea id="stCaption" class="st-caption" rows="7">${esc(cap)}</textarea>
+      <div class="st-row"><button type="button" class="acx-btn st-btn-ghost" id="stCapCopy"><span class="icon"><svg><use href="#i-doc"/></svg></span>Salin caption</button></div>`;
+  }
+  stBindPane(host);
+}
+function stBindPane(host){
+  let q=s=>host.querySelector(s);
+  host.querySelectorAll('.st-seg').forEach(seg=>seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{let v=b.dataset.v,n=seg.dataset.seg;
+    if(n==='bgmode'){if(v==='auto'){ST.bgLock=false;ST.bg.mode='auto'}else{ST.bgLock=true;ST.bg.mode=v;if(v==='photo'&&!ST_PHOTO){$('#stPhotoInput').click()}}}
+    if(n==='mapstyle')ST.bg.map=v;
+    if(n==='fmt'){ST.fmt=v;ST.dx=0;ST.dy=0;stSizeStage();stRenderThumbs(true)}
+    if(n==='text')ST.text=v;
+    stSave();stRenderPane();stRenderThumbs();stDraw()}));
+  let pick=q('#stPickPhoto');if(pick)pick.onclick=()=>$('#stPhotoInput').click();
+  let rm=q('#stRemovePhoto');if(rm)rm.onclick=()=>{ST_PHOTO=null;ST_PHOTO_INFO=null;if(ST.bgLock&&ST.bg.mode==='photo'){ST.bgLock=false;ST.bg.mode='auto'}stSave();stRefreshAll()};
+  [['stDim','dim','%'],['stFocus','fy','%']].forEach(r=>{let el=q('#'+r[0]);if(el)el.oninput=()=>{ST.bg[r[1]]=+el.value;q('#'+r[0]+'Val').textContent=el.value+r[2];stDraw()};if(el)el.onchange=()=>{stSave();stRenderThumbs()}});
+  host.querySelectorAll('[data-bg]').forEach(b=>b.onclick=()=>{ST.bg.color=b.dataset.bg;ST.bgLock=true;ST.bg.mode='color';stSave();stRenderPane();stRenderThumbs();stDraw()});
+  host.querySelectorAll('[data-acc]').forEach(b=>b.onclick=()=>{ST.accent=b.dataset.acc;stSave();host.querySelectorAll('[data-acc]').forEach(x=>x.classList.toggle('on',x===b));stRenderThumbs();stDraw()});
+  host.querySelectorAll('[data-metric]').forEach(b=>b.onclick=()=>{let x=stActivity();if(!x)return;let D=stDataCached(x),cur=ST.metrics?ST.metrics.slice():D.metrics.map(m=>m.k),k=b.dataset.metric,i=cur.indexOf(k);if(i>=0){if(cur.length<=1){toast('Minimal satu data');return}cur.splice(i,1)}else cur.push(k);ST.metrics=cur;stSave();stRenderPane();stRenderThumbs();stDraw()});
+  let ma=q('#stMetricsAuto');if(ma)ma.onclick=()=>{ST.metrics=null;stSave();stRenderPane();stRenderThumbs();stDraw()};
+  let tr=q('#stTrim');if(tr)tr.onchange=()=>{ST.trim=tr.checked;stSave();stRenderThumbs();stDraw()};
+  let sc=q('#stScale');if(sc){sc.oninput=()=>{ST.scale=sc.value/100;q('#stScaleVal').textContent=sc.value+'%';stDraw()};sc.onchange=stSave}
+  let rp=q('#stResetPos');if(rp)rp.onclick=()=>{ST.dx=0;ST.dy=0;ST.scale=1;stSave();stRenderPane();stDraw()};
+  let br=q('#stBrand');if(br)br.onchange=()=>{ST.brand=br.checked;stSave();stRenderThumbs();stDraw()};
+  let sf=q('#stSafeT');if(sf)sf.onchange=()=>{ST.safe=sf.checked;stSave();stDraw()};
+  let ti=q('#stTitle');if(ti){ti.oninput=()=>{ST.title=ti.value;stDraw();clearTimeout(ti.__t);ti.__t=setTimeout(()=>{stSave();stRenderThumbs()},500)}}
+  let cn=q('#stCapNew');if(cn)cn.onclick=()=>{ST_CAPTION_V++;let x=stActivity();if(x)$('#stCaption').value=stCaption(stDataCached(x),ST_CAPTION_V)};
+  let cc=q('#stCapCopy');if(cc)cc.onclick=()=>stCopy(stCurrentCaption());
+}
+
+/* ---------------------------- pilih aktivitas ---------------------------- */
+function stActLabel(){
+  let b=$('#stActBtn');if(!b)return;let x=stActivity();
+  if(!x){b.innerHTML='<span class="st-act-ic icon"><svg><use href="#i-list"/></svg></span><span class="st-act-t"><b>Pilih aktivitas</b><small>Belum ada aktivitas</small></span>';return}
+  b.innerHTML=`<span class="st-act-ic tone-${x.sport==='Running'?'pink':x.sport==='Cycling'?'coral':'teal'} icon"><svg><use href="#${sportIconId(x.sport)}"/></svg></span><span class="st-act-t"><b>${esc(x.title)}</b><small>${esc(fmtDateShort(x.date))}${x.distance?' · '+x.distance.toFixed(1)+' km':''} · ${esc(duration(x.minutes))}</small></span><span class="st-act-chev">Ganti<span class="icon"><svg><use href="#i-chevron"/></svg></span></span>`;
+}
+function stOpenPicker(){
+  let logs=stLogsSorted().slice(0,120),hide=DATA.privacy&&DATA.privacy.hideRoutes;
+  let box=document.createElement('div');box.className='st-sheet';box.id='stSheet';
+  box.innerHTML=`<div class="st-sheet-box"><div class="sheet-handle"><i></i></div><div class="st-sheet-head"><h3>Pilih aktivitas</h3><button type="button" class="sheet-close" data-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button></div><label class="st-search"><span class="icon"><svg><use href="#i-search"/></svg></span><input type="search" placeholder="Cari judul, tanggal, olahraga…" id="stSearch"></label><div class="st-sheet-list" id="stSheetList"></div></div>`;
+  document.body.appendChild(box);
+  let paint=(qv)=>{qv=(qv||'').toLowerCase();let items=logs.filter(l=>!qv||(l.title+' '+l.date+' '+l.sport+' '+fmtDateShort(l.date)).toLowerCase().indexOf(qv)>=0).slice(0,80);
+    $('#stSheetList').innerHTML=items.map(l=>`<button type="button" class="st-sheet-row${String(l.id)===String(ST.act)?' on':''}" data-id="${esc(l.id)}"><span class="st-sheet-thumb">${(!hide&&l.polyline)?svgRouteThumb(l.polyline,72,72):`<span class="icon"><svg><use href="#${sportIconId(l.sport)}"/></svg></span>`}</span><span class="st-sheet-t"><b>${esc(l.title)}</b><small>${esc(fmtDateShort(l.date))} · ${l.distance?l.distance.toFixed(1)+' km · ':''}${esc(duration(l.minutes))}</small></span>${String(l.id)===String(ST.act)?'<span class="st-sheet-check icon"><svg><use href="#i-check"/></svg></span>':''}</button>`).join('')||'<p class="st-note" style="text-align:center;padding:24px">Tidak ada aktivitas yang cocok.</p>';
+    $('#stSheetList').querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{close();stSelectActivity(b.dataset.id)})};
+  let close=()=>{box.classList.add('out');setTimeout(()=>box.remove(),220)};
+  box.onclick=e=>{if(e.target===box||e.target.closest('[data-x]'))close()};
+  $('#stSearch').oninput=e=>paint(e.target.value);paint('');
+}
+function stSelectActivity(id){ST.act=String(id);ST.title='';ST_CAPTION_V=0;stSave();stActLabel();stFetchStreams();stRenderThumbs(true);stRenderPane();stDraw()}
+async function stFetchStreams(){
+  let x=stActivity();if(!x||!x.stravaId||ST_STREAMS[x.stravaId]!==undefined)return;
+  let id=x.stravaId;ST_STREAMS[id]=undefined;
+  try{let d=await gs('getStravaActivityDetail',id,currentAthleteId());ST_META[id]={movingTime:d&&d.movingTime||0,startLocal:d&&d.startLocal||''};ST_STREAMS[id]=(d&&d.streams&&Object.keys(d.streams).length)?d.streams:null}catch(e){ST_STREAMS[id]=null}
+  ST_DCACHE.k='';if(ST&&stActivity()&&stActivity().stravaId===id){stRenderThumbs();stRenderPane();stDraw()}
+}
+
+/* ---------------------------- ekspor & bagikan ---------------------------- */
+async function stExport(){
+  let x=stActivity();if(!x){toast('Pilih aktivitas dulu');return}
+  let btn=$('#stShare'),top=$('#stShareTop');[btn,top].forEach(b=>{if(b){b.disabled=true;b.classList.add('is-busy')}});
+  try{
+    await stFonts();
+    let tpl=stTpl(),f=stFmt(),bg=stEffBg(tpl);
+    if(bg.mode==='map'){let m=stMapFor(tpl,f.w,f.h,stStyleFor(tpl,f.w,f.h,1).acc);let t0=Date.now();while(m&&m.pending&&Date.now()-t0<15000)await new Promise(r=>setTimeout(r,200))}
+    let cv=document.createElement('canvas');cv.width=f.w;cv.height=f.h;stRender(cv.getContext('2d'),f.w,f.h,1);
+    let blob=await new Promise(ok=>cv.toBlob(ok,'image/png'));if(!blob)throw new Error('Gagal membuat gambar');
+    let name='activecoach-'+tpl.k+'-'+String(x.date||'').slice(0,10)+'.png';
+    let cap=stCurrentCaption();
+    let done=window.ACX&&ACX.shareImage?await ACX.shareImage(blob,name,cap):(()=>{let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();return true})();
+    if(done){if(window.acxHaptic)acxHaptic('success');if(cap&&navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(cap).then(()=>toast('Gambar siap · caption sudah disalin'),()=>{})}}
+  }catch(e){toast('Gagal membagikan: '+(e.message||e))}
+  [btn,top].forEach(b=>{if(b){b.disabled=false;b.classList.remove('is-busy')}});
+}
+let ST_FONT_P=null;
+function stFonts(){if(ST_FONTS_OK||!document.fonts)return Promise.resolve();if(ST_FONT_P)return ST_FONT_P;
+  let list=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','900 40px Inter','300 40px Inter','400 40px Anton',"400 40px 'Bebas Neue'","400 40px 'Space Mono'","700 40px 'Space Mono'","900 40px 'Playfair Display'","italic 900 40px 'Playfair Display'",'700 40px Caveat','600 40px Caveat'];
+  ST_FONT_P=Promise.race([Promise.all(list.map(f=>document.fonts.load(f).catch(()=>null))),new Promise(r=>setTimeout(r,3500))]).then(()=>{ST_FONTS_OK=true});return ST_FONT_P}
+
+/* ---------------------------- gestur di pratinjau ---------------------------- */
+function stBindStage(){
+  let st=$('#stStage');if(!st||st.__bound)return;st.__bound=true;
+  let pts=new Map(),start=null,lastTap=0;
+  let snap=()=>({dx:ST.dx,dy:ST.dy,scale:ST.scale});
+  st.addEventListener('pointerdown',e=>{if(!stTpl().movable)return;st.setPointerCapture(e.pointerId);pts.set(e.pointerId,{x:e.clientX,y:e.clientY});start={s:snap(),p:[...pts.values()].map(p=>({...p}))};st.classList.add('dragging');
+    let now=Date.now();if(pts.size===1&&now-lastTap<300){ST.dx=0;ST.dy=0;ST.scale=1;stSave();stDraw();if(window.acxHaptic)acxHaptic('light')}lastTap=now});
+  st.addEventListener('pointermove',e=>{if(!pts.has(e.pointerId)||!start)return;pts.set(e.pointerId,{x:e.clientX,y:e.clientY});let r=st.getBoundingClientRect(),cur=[...pts.values()];
+    if(cur.length===1&&start.p.length===1){ST.dx=Math.max(-.5,Math.min(.5,start.s.dx+(cur[0].x-start.p[0].x)/r.width));ST.dy=Math.max(-.5,Math.min(.5,start.s.dy+(cur[0].y-start.p[0].y)/r.height))}
+    else if(cur.length>=2&&start.p.length>=2){let d0=Math.hypot(start.p[0].x-start.p[1].x,start.p[0].y-start.p[1].y)||1,d1=Math.hypot(cur[0].x-cur[1].x,cur[0].y-cur[1].y);ST.scale=Math.max(.5,Math.min(1.8,start.s.scale*d1/d0))}
+    stDraw()});
+  let end=e=>{if(!pts.has(e.pointerId))return;pts.delete(e.pointerId);start=pts.size?{s:snap(),p:[...pts.values()].map(p=>({...p}))}:null;if(!pts.size){st.classList.remove('dragging');stSave();if(ST_PANE==='style'){let sc=$('#stScale');if(sc){sc.value=Math.round(ST.scale*100);$('#stScaleVal').textContent=sc.value+'%'}}}};
+  st.addEventListener('pointerup',end);st.addEventListener('pointercancel',end);
+}
+
+/* ---------------------------- entry points ---------------------------- */
+function stRefreshAll(){stSizeStage();stActLabel();stRenderPane();stRenderThumbs(true);stDraw()}
+function studioInit(){
+  if(ST_BOUND)return;ST_BOUND=true;
+  $$('.st-tab').forEach(t=>t.onclick=()=>{ST_PANE=t.dataset.pane;stRenderPane();let sp=$('.st-panel');if(sp&&document.documentElement.getAttribute('data-view')!=='desktop'){let y=sp.getBoundingClientRect().top+window.scrollY-120;if(window.scrollY<y-200)window.scrollTo({top:y,behavior:'smooth'})}});
+  let ab=$('#stActBtn');if(ab)ab.onclick=stOpenPicker;
+  let pi=$('#stPhotoInput');if(pi)pi.onchange=e=>{let f=e.target.files&&e.target.files[0];e.target.value='';stLoadPhoto(f)};
+  ['stShare','stShareTop'].forEach(id=>{let b=$('#'+id);if(b)b.onclick=stExport});
+  let cc=$('#stCopyCaption');if(cc)cc.onclick=()=>stCopy(stCurrentCaption());
+  stBindStage();
+  window.addEventListener('resize',()=>{if(currentPageView()!=='overlay-editor')return;clearTimeout(window.__stRz);window.__stRz=setTimeout(()=>{stSizeStage();stDraw()},120)});
+  document.addEventListener('acx:theme',()=>{if(currentPageView()==='overlay-editor')stDraw()});
+  if(!window.ACX_BACK)window.ACX_BACK=[];
+  ACX_BACK.push(()=>{let s=$('#stSheet');if(s){s.remove();return true}return false});
+}
+function studioOpen(id){if(!ST)ST=stLoad();if(id){ST.act=String(id);ST.title='';ST_CAPTION_V=0;stSave()}switchPage('overlay-editor')}
+function renderOverlayEditor(){
+  studioInit();
+  if(!ST)ST=stLoad();
+  let logs=stLogsSorted(),empty=$('#stEmpty'),wrap=$('#stWrap');
+  if(!logs.length){if(empty)empty.hidden=false;if(wrap)wrap.hidden=true;return}
+  if(empty)empty.hidden=true;if(wrap)wrap.hidden=false;
+  if(!ST.act||!logs.some(l=>String(l.id)===String(ST.act))){ST.act=String(logs[0].id);ST.title=''}
+  stRefreshAll();stFetchStreams();
+  stFonts().then(()=>{ST_THUMB_KEY='';ST_DCACHE.k='';stRenderThumbs();stDraw()});
+  requestAnimationFrame(()=>{stSizeStage();stDraw()});
+}
+</script>

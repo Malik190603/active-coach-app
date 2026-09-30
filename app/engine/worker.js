@@ -90,9 +90,11 @@ E.http = function (req) {
   x.setRequestHeader('apikey', CFG.anonKey);
   x.setRequestHeader('Authorization', 'Bearer ' + SES.access_token);
   x.setRequestHeader('Content-Type', 'application/json');
+  var hint = 'Server proxy tidak bisa dihubungi. Cek di Supabase: Edge Function "proxy" sudah di-deploy dan "Verify JWT" dimatikan. Tes: buka ' + CFG.url + '/functions/v1/proxy?config=1 di browser, harus muncul {"error":"Belum login"}.';
   try { x.send(JSON.stringify({ url: req.url, method: req.method, headers: req.headers, body: req.body })); }
-  catch (e) { throw new Error('Tidak ada koneksi internet (' + (e && e.message || e) + ').'); }
-  if (x.status === 0) throw new Error('Tidak ada koneksi internet.');
+  catch (e) { throw new Error(navigator.onLine === false ? 'Tidak ada koneksi internet.' : hint); }
+  if (x.status === 0) throw new Error(navigator.onLine === false ? 'Tidak ada koneksi internet.' : hint);
+  if (x.status === 401 || x.status === 404) throw new Error(hint + ' (kode ' + x.status + ')');
   var out;
   try { out = JSON.parse(x.responseText); } catch (e) { throw new Error('Proxy error ' + x.status + ': ' + String(x.responseText).slice(0, 200)); }
   if (out.error && out.status == null) throw new Error('Proxy: ' + out.error);

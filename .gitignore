@@ -1,0 +1,6 @@
+node_modules
+www/
+android/
+app/config.local.json
+*.apk
+.DS_Store

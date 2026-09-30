@@ -52,7 +52,7 @@ function setProgressTab(tab){let map={insights:'#progressInsights',zones:'#progr
 let LAST_REMINDERS=[],DETAIL_ORIGIN='dashboard',PROFILE_ORIGIN='dashboard';
 function openProfile(){PROFILE_ORIGIN=currentPageView();if(PROFILE_ORIGIN==='profile')PROFILE_ORIGIN='dashboard';switchPage('profile')}
 function closeProfile(){switchPage(PROFILE_ORIGIN||'dashboard',{restoreScroll:true})}
-function setAvatarEls(n,photo){let ini=initials(n),img=photo?`url('${photo}')`:'';$$('.js-avatar').forEach(el=>{let active=el.classList.contains('active');el.textContent=ini;el.className='avatar avatar-btn js-avatar'+(photo?' has-photo':'')+(active?' active':'');el.style.backgroundImage=img});let pp=$('#profilePageAvatar');if(pp){pp.textContent=ini;pp.className='profile-avatar'+(photo?' has-photo':'');pp.style.backgroundImage=img}}
+function setAvatarEls(n,photo){if(photo&&/^https?:/.test(photo)){let im=new Image();im.onerror=()=>{if(setAvatarEls.__last===photo)setAvatarEls(n,'')};im.src=photo}setAvatarEls.__last=photo;let ini=initials(n),img=photo?`url('${photo}')`:'';$$('.js-avatar').forEach(el=>{let active=el.classList.contains('active');el.textContent=ini;el.className='avatar avatar-btn js-avatar'+(photo?' has-photo':'')+(active?' active':'');el.style.backgroundImage=img});let pp=$('#profilePageAvatar');if(pp){pp.textContent=ini;pp.className='profile-avatar'+(photo?' has-photo':'');pp.style.backgroundImage=img}}
 function riegelPredict(baseSeconds,baseKm,targetKm){return Math.round(baseSeconds*Math.pow(targetKm/baseKm,1.06))}
 function fmtHMS(totalSeconds){totalSeconds=Math.round(totalSeconds);let h=Math.floor(totalSeconds/3600),m=Math.floor((totalSeconds%3600)/60),s=totalSeconds%60;return (h?h+':':'')+(h?String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0')}
 

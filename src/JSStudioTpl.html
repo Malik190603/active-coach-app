@@ -1,0 +1,306 @@
+<script>
+'use strict';
+/* ---------------------------- TEMPLATE ----------------------------
+   Setiap template: {k, n, cat, bg (latar rekomendasi), movable, needs, draw(ctx,W,H,D,S)}
+   S: {fg, fg2, fg3, acc, dark, shadow, sz(safe), bgMode, drawBg, photo, routeInBg}
+   ------------------------------------------------------------------ */
+function stFirst(D,n){return D.metrics.slice(0,n)}
+function stSportIcon(D){return D.isRun?'run':D.isRide?'ride':'bolt'}
+function stNoRoute(ctx,D,box,S,col){icon(ctx,stSportIcon(D),box.x+box.w/2-box.h*.3,box.y+box.h*.2,box.h*.6,col||S.fg2,1.8)}
+
+const ST_TPLS=[
+/* 1 — Stiker Statistik: gaya stiker Strava, transparan untuk ditempel di foto */
+{k:'sticker',n:'Stiker Statistik',cat:['sticker'],bg:'transparent',movable:true,
+ anchor:(W,H)=>[W/2,H*.52],
+ draw(ctx,W,H,D,S){
+  let ms=stFirst(D,3),cx=W/2,routeH=D.hasRoute&&!S.routeInBg?330:0,blockH=(routeH?routeH+60:0)+ms.length*176+70,y=H*.52-blockH/2;
+  ctx.save();sh(ctx,S.shadow,22,.5,3);
+  if(routeH){drawRoute(ctx,D,{x:cx-300,y,w:600,h:routeH},{color:S.acc==='#ffffff'?'#fff':S.acc,width:13,casing:S.shadow?'rgba(255,255,255,.95)':null,casingW:9,shadow:S.shadow?18:0});y+=routeH+60}
+  sh(ctx,S.shadow,22,.5,3);
+  ms.forEach(m=>{T(ctx,m.label,cx,y+34,{font:F(600,34,'ui'),color:S.fg2,align:'center'});let vf=F(800,112,'ui'),vw=TW(ctx,m.value,vf),uf=F(700,50,'ui'),uw=m.unit?TW(ctx,' '+m.unit,uf):0,sx=cx-(vw+uw)/2;T(ctx,m.value,sx,y+146,{font:vf,color:S.fg});if(m.unit)T(ctx,' '+m.unit,sx+vw,y+146,{font:uf,color:S.fg});y+=176});
+  brand(ctx,cx,y+46,S,{px:26,color:S.fg,shadow:S.shadow,mono:true});
+  ctx.restore();
+ }},
+/* 2 — Minimalis: angka besar kiri-bawah, satu baris statistik */
+{k:'minimal',n:'Minimalis',cat:['sticker'],bg:'transparent',movable:true,
+ anchor:(W,H,S)=>[S.sz.l+300,H-S.sz.b-220],
+ draw(ctx,W,H,D,S){
+  let x=S.sz.l+8,y=H-S.sz.b-10,ms=D.metrics.filter(m=>m.k!=='distance').slice(0,3);
+  ctx.save();sh(ctx,S.shadow,20,.5,3);
+  brand(ctx,x,y,S,{px:24,align:'left',color:S.fg2,mono:true});y-=62;
+  T(ctx,ms.map(m=>m.value+(m.unit?' '+m.unit:'')).join('   ·   '),x,y,{font:F(700,42,'ui'),color:S.fg,max:W-x-S.sz.r});y-=40;
+  let big=D.distance>0?stDist(D.distance):stTime(D.minutes),unit=D.distance>0?'KM':'',px=fitPx(ctx,big,W-x-S.sz.r-180,900,'ui',290,120);
+  T(ctx,big,x-6,y,{font:F(900,px,'ui'),color:S.fg});if(unit)T(ctx,unit,x+TW(ctx,big,F(900,px,'ui'))+14,y,{font:F(900,px*.3,'ui'),color:S.acc});
+  y-=px*.86;T(ctx,D.title,x,y,{font:F(700,44,'ui'),color:S.fg,max:W-x-S.sz.r});
+  if(D.hasRoute&&!S.routeInBg){sh(ctx,S.shadow,16,.45,3);drawRoute(ctx,D,{x,y:y-280,w:300,h:220},{color:S.acc,width:9})}
+  ctx.restore();
+ }},
+/* 3 — Angka Raksasa: angka jarak berulang (outline) — tren poster tipografi */
+{k:'bold',n:'Angka Raksasa',cat:['trend'],bg:'noir',
+ draw(ctx,W,H,D,S){
+  let big=D.distance>0?stDist(D.distance):stTime(D.minutes),unit=D.distance>0?'KM':'',txt=big+unit,px=fitPx(ctx,txt,W-110,400,'disp',Math.min(H*.2,380),90),lh=px*.92,rTop=S.sz.t+80,rBot=H-S.sz.b-30-190,rows=Math.max(1,Math.min(7,Math.floor((rBot-rTop)/lh)));if(rows%2===0)rows--;let mid=Math.floor(rows/2),y0=rTop+((rBot-rTop)-rows*lh)/2+lh*.84;
+  T(ctx,D.sportLabel+'  ·  '+D.dateShort.toUpperCase(),W/2,S.sz.t+40,{font:F(700,30,'ui'),color:S.fg2,align:'center',spacing:5});
+  for(let i=0;i<rows;i++){let y=y0+i*lh;ctx.font=F(400,px,'disp');ctx.textAlign='center';if(i===mid){ctx.fillStyle=S.acc;ctx.fillText(txt,W/2,y)}else{ctx.lineWidth=3;ctx.strokeStyle=hexA(S.dark?'#ffffff':'#111111',Math.max(.14,.55-Math.abs(i-mid)*.13));ctx.strokeText(txt,W/2,y)}}
+  let by=H-S.sz.b-30,ms=D.metrics.filter(m=>m.k!=='distance').slice(0,3),cw=(W-S.sz.l-S.sz.r)/ms.length;
+  ms.forEach((m,i)=>{let cx=S.sz.l+cw*i+cw/2;T(ctx,m.value+(m.unit?' '+m.unit:''),cx,by-40,{font:F(800,46,'ui'),color:S.fg,align:'center',max:cw-16});T(ctx,m.label.toUpperCase(),cx,by,{font:F(700,24,'ui'),color:S.fg2,align:'center',spacing:3})});
+  T(ctx,D.title,W/2,by-120,{font:F(800,52,'ui'),color:S.fg,align:'center',max:W-160});
+  brand(ctx,W/2,Math.min(H-26,by+74),S,{px:22});
+ }},
+/* 4 — Rute Neon: rute bercahaya di latar gelap */
+{k:'neon',n:'Rute Neon',cat:['route','trend'],bg:'midnight',needsRoute:true,
+ draw(ctx,W,H,D,S){
+  let top=S.sz.t+30,col=S.acc;
+  T(ctx,D.sportLabel,W/2,top+10,{font:F(800,28,'ui'),color:col,align:'center',spacing:8});
+  T(ctx,D.title,W/2,top+86,{font:F(800,64,'ui'),color:S.fg,align:'center',max:W-150});
+  T(ctx,D.dateStr,W/2,top+136,{font:F(500,32,'ui'),color:S.fg2,align:'center'});
+  let bot=H-S.sz.b,box={x:90,y:top+190,w:W-180,h:bot-top-190-260};
+  if(!S.routeInBg){if(!drawRoute(ctx,D,box,{color:col,width:10,glow:46,core:'#ffffff',markers:true,pad:20}))stNoRoute(ctx,D,box,S,col)}
+  let ms=stFirst(D,3),cw=(W-120)/ms.length;
+  ctx.strokeStyle=hexA(S.fg,.18);ctx.lineWidth=2;
+  ms.forEach((m,i)=>{let cx=60+cw*i+cw/2;if(i){ctx.beginPath();ctx.moveTo(60+cw*i,bot-150);ctx.lineTo(60+cw*i,bot-40);ctx.stroke()}ctx.save();ctx.shadowColor=col;ctx.shadowBlur=24;T(ctx,m.value,cx,bot-86,{font:F(800,74,'ui'),color:S.fg,align:'center',max:cw-20});ctx.restore();T(ctx,(m.unit?m.unit+' · ':'')+m.label.toLowerCase(),cx,bot-40,{font:F(600,26,'ui'),color:S.fg2,align:'center',max:cw-10})});
+  brand(ctx,W/2,Math.min(H-24,bot+60),S,{px:22});
+ }},
+/* 5 — Struk: struk belanja (tren "receipt") */
+{k:'receipt',n:'Struk',cat:['trend'],bg:'strava',
+ draw(ctx,W,H,D,S){
+  let pw=Math.min(780,W-160),lines=[],mono=F(400,32,'mono'),monoB=F(700,32,'mono');
+  let ms=D.metrics.filter(m=>m.k!=='distance').slice(0,6),seed=String(D.id||'')+D.title;
+  let no=('000'+(Math.abs(seed.split('').reduce((a,c)=>(a*33+c.charCodeAt(0))|0,7))%100000)).slice(-5);
+  lines.push(['c','ACTIVE COACH',F(700,46,'mono'),60],['c','STRUK AKTIVITAS',F(400,28,'mono'),44],['-'],
+    ['lr','TGL '+String(D.date.getDate()).padStart(2,'0')+'/'+String(D.date.getMonth()+1).padStart(2,'0')+'/'+D.date.getFullYear(),'NO #'+no,mono,44],['lr','ATLET',D.name.toUpperCase().slice(0,16),mono,44],['-'],
+    ['l','1x '+D.sportLabel,monoB,48]);
+  if(D.distance>0)lines.push(['dot','JARAK',stDist(D.distance)+' KM',mono,46]);
+  ms.forEach(m=>lines.push(['dot',m.label.toUpperCase().replace('²','2'),(m.value+(m.unit?' '+m.unit:'')).toUpperCase(),mono,46]));
+  if(D.splits&&D.splits.list.length>1){let f=D.splits.list.filter(s=>!s.partial).sort((a,b)=>b.speed-a.speed)[0];if(f)lines.push(['-'],['lr','SPLIT TERCEPAT KM '+f.km,D.isRun?stPace(f.pace):stNum(f.speed,1),mono,46])}
+  if(D.badge)lines.push(['-'],['c','★ '+D.badge.toUpperCase()+' ★',F(700,26,'mono'),42]);
+  lines.push(['='],['lr','TOTAL',D.distance>0?stDist(D.distance)+' KM':stTime(D.minutes).toUpperCase(),F(700,46,'mono'),64],['='],['bar'],['c','TERIMA KASIH SUDAH BERGERAK!',F(400,26,'mono'),44],['c','SAMPAI JUMPA DI SESI BERIKUTNYA',F(400,22,'mono'),36]);
+  let ph=70+lines.reduce((s,l)=>s+(l[0]==='-'||l[0]==='='?34:l[0]==='bar'?130:l[4]||l[3]||44),0)+40;
+  let sc=Math.min(1,(H-110)/ph),x=(W-pw)/2,y=(H-ph)/2-(ST.fmt==='story'?30:0);if(sc>=1)y=Math.max(S.sz.t-40,y);
+  ctx.save();ctx.translate(W/2,y+ph/2);ctx.rotate(-.025);ctx.scale(sc,sc);ctx.translate(-W/2,-(y+ph/2));
+  sh(ctx,true,50,.35,20);
+  let zig=(yy,dir)=>{let n=Math.round(pw/34);for(let i=0;i<=n;i++){let xx=x+i*pw/n;ctx.lineTo(xx,yy+(i%2?dir*14:0))}};
+  ctx.beginPath();ctx.moveTo(x,y);zig(y,1);ctx.lineTo(x+pw,y+ph);let n=Math.round(pw/34);for(let i=n;i>=0;i--){ctx.lineTo(x+i*pw/n,y+ph+(i%2?-14:0))}ctx.closePath();
+  ctx.fillStyle='#fbfaf6';ctx.fill();sh(ctx,false);
+  let g=ctx.createLinearGradient(0,y,0,y+ph);g.addColorStop(0,'rgba(0,0,0,.03)');g.addColorStop(.5,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.05)');ctx.fillStyle=g;ctx.fill();
+  let cy=y+70,L=x+50,R=x+pw-50,ink='#1b1b1f';
+  lines.forEach(l=>{
+    if(l[0]==='-'||l[0]==='='){ctx.save();ctx.strokeStyle=ink;ctx.lineWidth=2;ctx.setLineDash(l[0]==='-'?[10,8]:[]);ctx.beginPath();ctx.moveTo(L,cy-8);ctx.lineTo(R,cy-8);ctx.stroke();if(l[0]==='='){ctx.beginPath();ctx.moveTo(L,cy-2);ctx.lineTo(R,cy-2);ctx.stroke()}ctx.restore();cy+=34;return}
+    if(l[0]==='bar'){barcode(ctx,L+30,cy,R-L-60,90,seed,ink);cy+=130;return}
+    let h=l[4]||l[3]||44;cy+=h*.72;
+    if(l[0]==='c')T(ctx,l[1],(L+R)/2,cy,{font:l[2],color:ink,align:'center',max:R-L});
+    if(l[0]==='l')T(ctx,l[1],L,cy,{font:l[2],color:ink,max:R-L});
+    if(l[0]==='lr'){T(ctx,l[1],L,cy,{font:l[3],color:ink});T(ctx,l[2],R,cy,{font:l[3],color:ink,align:'right'})}
+    if(l[0]==='dot'){let lw=TW(ctx,l[1],l[3]),rw=TW(ctx,l[2],l[3]);T(ctx,l[1],L,cy,{font:l[3],color:ink});T(ctx,l[2],R,cy,{font:l[3],color:ink,align:'right'});ctx.fillStyle=ink;for(let dx=L+lw+14;dx<R-rw-14;dx+=16)ctx.fillRect(dx,cy-6,4,4)}
+    cy+=h*.28;
+  });
+  ctx.restore();
+ }},
+/* 6 — Poster Finisher: poster lomba berbingkai */
+{k:'poster',n:'Poster Finisher',cat:['trend'],bg:'noir',
+ draw(ctx,W,H,D,S){
+  let m=46,top=Math.max(m,S.sz.t-150),bot=Math.min(H-m,H-S.sz.b+150);
+  ctx.strokeStyle=hexA(S.fg,.55);ctx.lineWidth=3;ctx.strokeRect(m,top,W-m*2,bot-top);ctx.lineWidth=1.5;ctx.strokeRect(m+14,top+14,W-m*2-28,bot-top-28);
+  let hx=m+60,y=top+100;
+  let head=D.isRun?'FINISHER':D.isRide?'RIDE DONE':'FINISHER',px=fitPx(ctx,head,W-2*hx,400,'disp',230,90);
+  T(ctx,head,W/2,y+px*.8,{font:F(400,px,'disp'),color:S.fg,align:'center'});y+=px*.8+56;
+  T(ctx,D.sportLabel+'  ✦  '+D.dateStr.toUpperCase(),W/2,y,{font:F(700,26,'ui'),color:S.fg2,align:'center',spacing:4,max:W-2*hx});
+  let bottomBlock=430,box={x:hx,y:y+40,w:W-2*hx,h:Math.max(120,bot-60-bottomBlock-(y+40))};
+  if(!S.routeInBg){if(!drawRoute(ctx,D,box,{color:S.acc,width:11,markers:true,pad:10}))stNoRoute(ctx,D,box,S)}
+  let by=bot-60-bottomBlock+130;
+  let big=D.distance>0?stDist(D.distance)+' KM':stTime(D.minutes).toUpperCase(),bpx=fitPx(ctx,big,W-2*hx,400,'disp',170,80);
+  T(ctx,big,W/2,by,{font:F(400,bpx,'disp'),color:S.acc,align:'center'});
+  T(ctx,D.name.toUpperCase(),W/2,by+62,{font:F(800,34,'ui'),color:S.fg,align:'center',spacing:6,max:W-2*hx});
+  let ms=D.metrics.filter(q=>q.k!=='distance').slice(0,3),cw=(W-2*hx)/Math.max(1,ms.length);
+  ms.forEach((q,i)=>{let cx=hx+cw*i+cw/2;T(ctx,q.value+(q.unit?' '+q.unit:''),cx,by+160,{font:F(800,44,'ui'),color:S.fg,align:'center',max:cw-14});T(ctx,q.label.toUpperCase(),cx,by+198,{font:F(700,22,'ui'),color:S.fg2,align:'center',spacing:3})});
+  brand(ctx,W/2,bot-42,S,{px:20});
+ }},
+/* 7 — Split per KM */
+{k:'splits',n:'Split per KM',cat:['data'],bg:'midnight',needs:'splits',
+ draw(ctx,W,H,D,S){
+  let x=S.sz.l+6,r=W-S.sz.r-6,y=S.sz.t+30;
+  T(ctx,(D.splits&&D.splits.unit===5?'SPLIT PER 5 KM':'SPLIT PER KM'),x,y+10,{font:F(800,28,'ui'),color:S.acc,spacing:6});
+  T(ctx,D.title,x,y+80,{font:F(800,60,'ui'),color:S.fg,max:r-x});
+  T(ctx,D.metrics.slice(0,3).map(m=>m.value+(m.unit?' '+m.unit:'')).join('  ·  '),x,y+130,{font:F(600,32,'ui'),color:S.fg2,max:r-x});
+  let top=y+190,bot=H-S.sz.b-70,sp=D.splits;
+  if(!sp){ctx.fillStyle=hexA(S.fg,.06);rr(ctx,x,top,r-x,Math.min(420,bot-top),28);ctx.fill();T(ctx,S.loading?'Memuat data split…':'Data split butuh aktivitas dari Strava',W/2,top+Math.min(420,bot-top)/2+12,{font:F(600,34,'ui'),color:S.fg2,align:'center'});brand(ctx,W/2,H-S.sz.b+50,S,{px:22});return}
+  let list=sp.list,n=list.length,maxRows=Math.floor((bot-top)/46),grp=1;while(Math.ceil(n/grp)>maxRows)grp++;
+  if(grp>1){let g=[];for(let i=0;i<n;i+=grp){let c=list.slice(i,i+grp),sec=c.reduce((a,s)=>a+s.sec,0),len=c.reduce((a,s)=>a+s.len,0);g.push({km:c[c.length-1].km,sec,len,speed:len/sec*3600,pace:sec/60/len,partial:c.some(s=>s.partial)})}list=g}
+  let rows=list.length,rh=Math.min(92,(bot-top)/rows),bh=rh*.62,fs=Math.min(34,rh*.46),labW=110,valW=D.isRun?150:170,bx=x+labW,bw=r-x-labW-valW-10;
+  let sp0=list.filter(s=>!s.partial),mx=Math.max(...sp0.map(s=>s.speed),...list.map(s=>s.speed)),mn=Math.min(...list.map(s=>s.speed)),fastest=sp0.length?sp0.reduce((a,b)=>b.speed>a.speed?b:a):null;
+  list.forEach((s,i)=>{let cy=top+i*rh,w=bw*(.35+.65*((s.speed-mn)/((mx-mn)||1)));
+    T(ctx,(s.partial?'':'')+s.km,x,cy+rh/2+fs*.36,{font:F(700,fs,'mono'),color:S.fg2});
+    rr(ctx,bx,cy+(rh-bh)/2,w,bh,bh/2);ctx.fillStyle=s===fastest?S.acc:hexA(S.fg,.22);ctx.fill();
+    T(ctx,D.isRun?stPace(s.pace):stNum(s.speed,1),r,cy+rh/2+fs*.36,{font:F(800,fs,'ui'),color:s===fastest?S.acc:S.fg,align:'right'});
+  });
+  T(ctx,(D.isRun?'min/km':'km/j')+(fastest?'  ·  tercepat: '+(fastest.km)+(sp.unit===5||grp>1?'':' km'):''),x,bot+44,{font:F(600,26,'ui'),color:S.fg2});
+  brand(ctx,r,bot+44,S,{px:20,align:'right'});
+ }},
+/* 8 — Profil Elevasi */
+{k:'elevation',n:'Profil Elevasi',cat:['data'],bg:'forest',needs:'alt',
+ draw(ctx,W,H,D,S){
+  let x=S.sz.l+6,r=W-S.sz.r-6,y=S.sz.t+30,elevM=D.metrics.find(m=>m.k==='elev')||{value:Math.round(D.elev).toLocaleString('id-ID'),unit:'m'};
+  T(ctx,'TOTAL TANJAKAN',x,y+10,{font:F(800,28,'ui'),color:S.acc,spacing:6});
+  let px=fitPx(ctx,elevM.value,r-x-200,900,'ui',220,100);T(ctx,elevM.value,x-6,y+10+px*.95,{font:F(900,px,'ui'),color:S.fg});T(ctx,'m',x+TW(ctx,elevM.value,F(900,px,'ui'))+10,y+10+px*.95,{font:F(800,px*.35,'ui'),color:S.fg2});
+  y+=px*.95+70;T(ctx,D.title,x,y,{font:F(800,50,'ui'),color:S.fg,max:r-x});T(ctx,D.dateStr,x,y+46,{font:F(500,30,'ui'),color:S.fg2});
+  let ms=D.metrics.filter(m=>m.k!=='elev').slice(0,3),cw=(r-x)/Math.max(1,ms.length),my=y+140;
+  ms.forEach((m,i)=>metricBlock(ctx,m,x+cw*i,my,S,{vpx:58,lpx:24}));
+  let a=D.alt,ch0=my+150,chB=H-S.sz.b+(ST.fmt==='story'?120:-20),ch=Math.max(160,chB-ch0);
+  if(!a){if(!S.routeInBg){let box={x,y:ch0,w:r-x,h:ch};if(!drawRoute(ctx,D,box,{color:S.acc,width:10,markers:true}))stNoRoute(ctx,D,box,S)}if(S.loading)T(ctx,'Memuat profil elevasi…',W/2,chB-20,{font:F(600,28,'ui'),color:S.fg2,align:'center'});brand(ctx,W/2,H-30,S,{px:20});return}
+  let n=a.v.length,span=(a.max-a.min)||1,px0=0,pw=W,yy=v=>chB-(v-a.min)/span*ch*.82-ch*.04;
+  ctx.beginPath();ctx.moveTo(px0,chB+2);a.v.forEach((v,i)=>ctx.lineTo(px0+i/(n-1)*pw,yy(v)));ctx.lineTo(px0+pw,chB+2);ctx.closePath();
+  let g=ctx.createLinearGradient(0,chB-ch,0,chB);g.addColorStop(0,hexA(S.acc,.85));g.addColorStop(1,hexA(S.acc,.06));ctx.fillStyle=g;ctx.fill();
+  ctx.beginPath();a.v.forEach((v,i)=>i?ctx.lineTo(px0+i/(n-1)*pw,yy(v)):ctx.moveTo(px0,yy(v)));ctx.strokeStyle=S.fg;ctx.lineWidth=5;ctx.lineJoin='round';ctx.stroke();
+  let pi=a.v.indexOf(a.max),pxp=px0+pi/(n-1)*pw,pyp=yy(a.max);ctx.beginPath();ctx.arc(pxp,pyp,12,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.beginPath();ctx.arc(pxp,pyp,7,0,Math.PI*2);ctx.fillStyle=S.acc;ctx.fill();
+  let lab='Puncak '+Math.round(a.max)+' m',lw=TW(ctx,lab,F(800,28,'ui'))+36,lx=Math.max(x,Math.min(r-lw,pxp-lw/2));rr(ctx,lx,pyp-86,lw,52,26);ctx.fillStyle=S.dark?'rgba(0,0,0,.55)':'rgba(255,255,255,.85)';ctx.fill();T(ctx,lab,lx+lw/2,pyp-51,{font:F(800,28,'ui'),color:S.fg,align:'center'});
+  if(a.total)T(ctx,'0 km',x,chB-16,{font:F(700,24,'ui'),color:hexA(S.dark?'#fff':'#000',.7)}),T(ctx,stDist(a.total)+' km',r,chB-16,{font:F(700,24,'ui'),color:hexA(S.dark?'#fff':'#000',.7),align:'right'});
+  brand(ctx,W/2,Math.min(H-28,chB+60),S,{px:20});
+ }},
+/* 9 — Kartu Kaca: panel frosted di atas foto */
+{k:'glass',n:'Kartu Kaca',cat:['photo'],bg:'photo',
+ draw(ctx,W,H,D,S){
+  let cw=W-120,chh=560,x=60,y=H-S.sz.b-chh+(ST.fmt==='story'?20:0);
+  ctx.save();rr(ctx,x,y,cw,chh,48);ctx.clip();ctx.filter='blur('+Math.round(34*S.k)+'px)';S.drawBg(ctx);ctx.filter='none';
+  ctx.fillStyle=S.dark?'rgba(20,20,26,.30)':'rgba(255,255,255,.42)';ctx.fillRect(x,y,cw,chh);ctx.restore();
+  rr(ctx,x+1,y+1,cw-2,chh-2,47);ctx.strokeStyle='rgba(255,255,255,.45)';ctx.lineWidth=2;ctx.stroke();
+  let ix=x+48,iy=y+78,rw=D.hasRoute&&!S.routeInBg?230:0;
+  T(ctx,D.title,ix,iy,{font:F(800,52,'ui'),color:S.fg,max:cw-96-rw-20});
+  T(ctx,D.dateStr+(D.badge?'  ·  '+D.badge:''),ix,iy+46,{font:F(600,28,'ui'),color:S.fg2,max:cw-96-rw-20});
+  if(rw)drawRoute(ctx,D,{x:x+cw-48-rw,y:y+36,w:rw,h:150},{color:S.acc,width:7,markers:false});
+  let ms=stFirst(D,6),cols=3,rows=Math.ceil(ms.length/cols),gw=(cw-96)/cols,gy=y+200,gh=(chh-240)/Math.max(1,rows);
+  ctx.strokeStyle=hexA(S.dark?'#fff':'#000',.14);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(ix,gy-20);ctx.lineTo(x+cw-48,gy-20);ctx.stroke();
+  ms.forEach((m,i)=>{let c=i%cols,rw2=Math.floor(i/cols);metricBlock(ctx,m,ix+c*gw,gy+rw2*gh+20,S,{vpx:Math.min(64,gh*.46),lpx:24})});
+  brand(ctx,W/2,Math.min(H-24,y+chh+62),S,{px:22,color:S.fgOnBg,shadow:true});
+ }},
+/* 10 — Now Playing: kartu pemutar musik */
+{k:'player',n:'Now Playing',cat:['trend'],bg:'grape',
+ draw(ctx,W,H,D,S){
+  let cw=Math.min(880,W-120),art=Math.min(cw-100,H-60-440-150),ch=art+440;cw=Math.min(cw,art+100);let x=(W-cw)/2,y=Math.max(ST.fmt==='story'?S.sz.t-60:40,(H-ch-130)/2);
+  ctx.save();rr(ctx,x,y,cw,ch,56);ctx.clip();ctx.filter='blur('+Math.round(40*S.k)+'px)';S.drawBg(ctx);ctx.filter='none';ctx.fillStyle='rgba(12,12,16,.52)';ctx.fillRect(x,y,cw,ch);ctx.restore();
+  rr(ctx,x,y,cw,ch,56);ctx.strokeStyle='rgba(255,255,255,.16)';ctx.lineWidth=2;ctx.stroke();
+  let ax=x+(cw-art)/2,ay=y+50,cols=S.bgMode==='color'&&ST_BGS[S.bg.color]?ST_BGS[S.bg.color].g:[lum(S.acc)>.6?shade(S.acc,-.25):S.acc,shade(S.acc,-.7)];
+  sh(ctx,true,40,.45,16);rr(ctx,ax,ay,art,art,32);let g=ctx.createLinearGradient(ax,ay,ax+art,ay+art);cols.forEach((c,i)=>g.addColorStop(i/(cols.length-1),c));ctx.fillStyle=g;ctx.fill();sh(ctx,false);
+  ctx.save();rr(ctx,ax,ay,art,art,32);ctx.clip();if(S.photo&&(S.bgMode==='photo'||S.bgMode==='photoBlur')){let im=S.photo,sc=Math.max(art/im.width,art/im.height);ctx.drawImage(im,ax+(art-im.width*sc)/2,ay+(art-im.height*sc)/2,im.width*sc,im.height*sc);ctx.fillStyle='rgba(0,0,0,.25)';ctx.fillRect(ax,ay,art,art)}
+  let rg=ctx.createRadialGradient(ax+art*.8,ay+art*.15,0,ax+art*.8,ay+art*.15,art*.9);rg.addColorStop(0,'rgba(255,255,255,.28)');rg.addColorStop(1,'rgba(255,255,255,0)');ctx.fillStyle=rg;ctx.fillRect(ax,ay,art,art);ctx.restore();
+  if(!drawRoute(ctx,D,{x:ax+50,y:ay+50,w:art-100,h:art-140},{color:'#fff',width:10,glow:24,glowColor:'#ffffff',pad:10}))stNoRoute(ctx,D,{x:ax,y:ay+art*.2,w:art,h:art*.5},S,'#fff');
+  T(ctx,D.sportLabel+' · '+D.dateShort.toUpperCase(),ax+32,ay+art-34,{font:F(800,24,'ui'),color:'rgba(255,255,255,.85)',spacing:3});
+  let ty=ay+art+84,fg='#fff';
+  T(ctx,D.title,ax,ty,{font:F(800,52,'ui'),color:fg,max:art-80});icon(ctx,'heart',ax+art-46,ty-40,46,S.acc,2,true);
+  T(ctx,D.name+(D.badge?' · '+D.badge:''),ax,ty+48,{font:F(500,32,'ui'),color:'rgba(255,255,255,.66)',max:art-10});
+  let py=ty+118;rr(ctx,ax,py,art,10,5);ctx.fillStyle='rgba(255,255,255,.22)';ctx.fill();rr(ctx,ax,py,art*.999,10,5);ctx.fillStyle='#fff';ctx.fill();ctx.beginPath();ctx.arc(ax+art,py+5,15,0,Math.PI*2);ctx.fill();
+  T(ctx,'0:00',ax,py+52,{font:F(600,26,'ui'),color:'rgba(255,255,255,.66)'});T(ctx,stClock(D.minutes,D.sec),ax+art,py+52,{font:F(600,26,'ui'),color:'rgba(255,255,255,.66)',align:'right'});
+  let cy=py+130,cx=ax+art/2;icon(ctx,'shuffle',ax+10,cy-22,44,'rgba(255,255,255,.7)',2.2);icon(ctx,'prev',cx-190,cy-26,52,'#fff',2.6,false);
+  ctx.beginPath();ctx.arc(cx,cy,56,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.fillStyle='#111';ctx.fillRect(cx-16,cy-22,10,44);ctx.fillRect(cx+6,cy-22,10,44);
+  icon(ctx,'next',cx+138,cy-26,52,'#fff',2.6,false);icon(ctx,'repeat',ax+art-54,cy-22,44,S.acc,2.2);
+  T(ctx,D.metrics.slice(0,3).map(m=>m.value+(m.unit?' '+m.unit:'')).join('  ·  '),cx,y+ch+60,{font:F(700,32,'ui'),color:S.fgOnBg,align:'center',max:W-120});
+  brand(ctx,W/2,y+ch+112,S,{px:20,color:S.fgOnBg2});
+ }},
+/* 11 — Notifikasi: layar kunci dengan notifikasi pintar */
+{k:'notif',n:'Notifikasi',cat:['trend','photo'],bg:'photo',movable:true,
+ anchor:(W,H)=>[W/2,H*.5],
+ draw(ctx,W,H,D,S){
+  let fg=S.fgOnBg,top=S.sz.t-40;
+  ctx.save();sh(ctx,true,24,.35,2);
+  T(ctx,D.dateStr+(D.startHM?' · '+D.startHM:''),W/2,top+40,{font:F(600,40,'ui'),color:fg,align:'center'});
+  let big=D.distance>0?stDist(D.distance):stTime(D.minutes),px=fitPx(ctx,big,W-200,300,'ui',250,120);
+  T(ctx,big,W/2,top+40+px*.98,{font:F(300,px,'ui'),color:fg,align:'center'});
+  T(ctx,D.distance>0?'kilometer · '+stTime(D.minutes):'waktu bergerak',W/2,top+px*.98+100,{font:F(600,34,'ui'),color:fg,align:'center'});ctx.restore();
+  let pace=D.isRun?stPace(D.pace)+'/km':stNum(D.speed,1)+' km/j',h=D.minutes>150||D.distance>30?36:D.minutes>75?24:12;
+  let items=[['Aktivitas selesai 🏁',D.verb+' '+(D.distance>0?stDist(D.distance)+' km dalam '+stTime(D.minutes):stTime(D.minutes))+'. Kerja bagus, '+D.first+'!','sekarang'],
+    ['Catatan coach',(D.badge?D.badge+'! ':'')+(D.distance>0?(D.isRun?'Pace':'Kecepatan')+' rata-rata '+pace:'')+(D.hr?' · detak '+Math.round(D.hr)+' bpm':'')+'.','1 mnt lalu'],
+    ['Pemulihan','Minum & isi karbo 30 menit ke depan. Beri tubuh ±'+h+' jam sebelum sesi berat.','2 mnt lalu']];
+  let nw=W-120,x=60,y=Math.max(top+px+170,H*.46);
+  items.forEach((it,i)=>{
+    ctx.font=F(500,31,'ui');let lines=wrapLines(ctx,it[1],nw-150,3),nh=112+lines.length*40;
+    ctx.save();rr(ctx,x,y,nw,nh,40);ctx.clip();ctx.filter='blur('+Math.round(30*S.k)+'px)';S.drawBg(ctx);ctx.filter='none';ctx.fillStyle='rgba(250,250,252,.78)';ctx.fillRect(x,y,nw,nh);ctx.restore();
+    let ix=x+30,iy=y+30,g=ctx.createLinearGradient(ix,iy,ix+76,iy+76);g.addColorStop(0,'#ff5a36');g.addColorStop(.5,'#ec4899');g.addColorStop(1,'#7a5cff');rr(ctx,ix,iy,76,76,20);ctx.fillStyle=g;ctx.fill();
+    ctx.strokeStyle='#fff';ctx.lineWidth=6;ctx.lineJoin='round';ctx.lineCap='round';ctx.beginPath();ctx.moveTo(ix+14,iy+42);ctx.lineTo(ix+28,iy+42);ctx.lineTo(ix+36,iy+22);ctx.lineTo(ix+46,iy+56);ctx.lineTo(ix+53,iy+40);ctx.lineTo(ix+64,iy+40);ctx.stroke();
+    T(ctx,'ACTIVE COACH',ix+104,iy+26,{font:F(700,24,'ui'),color:'rgba(20,20,26,.55)',spacing:2});T(ctx,it[2],x+nw-30,iy+26,{font:F(500,24,'ui'),color:'rgba(20,20,26,.5)',align:'right'});
+    T(ctx,it[0],ix+104,iy+70,{font:F(800,34,'ui'),color:'#14141a',max:nw-160});
+    lines.forEach((l,j)=>T(ctx,l,ix+104,iy+114+j*40,{font:F(500,31,'ui'),color:'#2a2a33'}));
+    y+=nh+22;
+  });
+ }},
+/* 12 — Rekap Minggu */
+{k:'recap',n:'Rekap Minggu',cat:['data'],bg:'ocean',
+ draw(ctx,W,H,D,S){
+  let wk=stWeek(D.x),x=S.sz.l+6,r=W-S.sz.r-6,y=S.sz.t+30;
+  T(ctx,'MINGGU INI',x,y+10,{font:F(800,30,'ui'),color:S.acc,spacing:7});T(ctx,wk.range,r,y+10,{font:F(600,28,'ui'),color:S.fg2,align:'right'});
+  let big=stDist(wk.tot.km),px=fitPx(ctx,big,r-x-200,900,'ui',250,100);T(ctx,big,x-8,y+30+px*.92,{font:F(900,px,'ui'),color:S.fg});T(ctx,'km',x+TW(ctx,big,F(900,px,'ui'))+12,y+30+px*.92,{font:F(800,px*.34,'ui'),color:S.fg2});
+  y+=px*.92+90;
+  let stats=[['Sesi',String(wk.tot.n)],['Waktu',stTime(wk.tot.min)],['Elevasi',Math.round(wk.tot.elev).toLocaleString('id-ID')+' m']],cw=(r-x)/3;
+  stats.forEach((s,i)=>metricBlock(ctx,{label:s[0],value:s[1],unit:''},x+cw*i,y,S,{vpx:56,lpx:24}));
+  let cTop=y+130,cBot=H-S.sz.b-330,ch=Math.max(180,cBot-cTop),mx=Math.max(1,...wk.days.map(d=>d.km)),bw=(r-x)/7;
+  wk.days.forEach((d,i)=>{let h=d.km>0?Math.max(18,(d.km/mx)*(ch-70)):10,bx=x+i*bw+bw*.18,by=cTop+ch-50-h;rr(ctx,bx,by,bw*.64,h,Math.min(22,bw*.32));ctx.fillStyle=d.on?S.acc:d.km>0?hexA(S.fg,.55):hexA(S.fg,.14);ctx.fill();
+    if(d.km>0)T(ctx,stNum(d.km,d.km>=10?0:1),bx+bw*.32,by-14,{font:F(700,24,'ui'),color:d.on?S.acc:S.fg2,align:'center'});T(ctx,d.label,bx+bw*.32,cTop+ch-8,{font:F(d.on?800:600,26,'ui'),color:d.on?S.fg:S.fg2,align:'center'})});
+  let hy=Math.max(cTop+ch+40,H-S.sz.b-250),hh=190;rr(ctx,x,hy,r-x,hh,36);ctx.fillStyle=hexA(S.dark?'#ffffff':'#000000',.08);ctx.fill();
+  T(ctx,'SOROTAN',x+36,hy+54,{font:F(800,24,'ui'),color:S.acc,spacing:5});T(ctx,D.title,x+36,hy+108,{font:F(800,44,'ui'),color:S.fg,max:r-x-80});
+  T(ctx,D.metrics.slice(0,3).map(m=>m.value+(m.unit?' '+m.unit:'')).join('  ·  '),x+36,hy+154,{font:F(600,30,'ui'),color:S.fg2,max:r-x-80});
+  brand(ctx,W/2,Math.min(H-26,hy+hh+62),S,{px:20});
+ }},
+/* 13 — Sampul Majalah */
+{k:'magazine',n:'Sampul Majalah',cat:['trend','photo'],bg:'photo',
+ draw(ctx,W,H,D,S){
+  let fg=S.fgOnBg,x=64,r=W-64,top=Math.max(40,S.sz.t-170);
+  ctx.save();sh(ctx,true,26,.3,3);
+  let px=fitPx(ctx,'ACTIVE',r-x,900,'serif',330,120);T(ctx,'ACTIVE',W/2,top+px*.78,{font:F(900,px,'serif'),color:fg,align:'center'});
+  let iy=top+px*.78+46;T(ctx,'EDISI '+ST_MON[D.date.getMonth()].toUpperCase()+' '+D.date.getFullYear(),x,iy,{font:F(700,24,'ui'),color:fg,spacing:4});T(ctx,'EKSKLUSIF · '+D.sportLabel,r,iy,{font:F(700,24,'ui'),color:fg,align:'right',spacing:4});
+  let ly=iy+130,ms=D.metrics.filter(m=>m.k!=='distance').slice(0,3);
+  let cov=[[D.distance>0?stDist(D.distance):stTime(D.minutes),D.distance>0?'KILOMETER':'BERGERAK','ditaklukkan dalam '+stTime(D.minutes)]].concat(ms.slice(0,2).map(m=>[m.value,m.unit?m.unit.toUpperCase():m.label.toUpperCase(),{pace:'rahasia ritme yang konsisten',elev:'tanjakan yang bikin kuat',hr:'kontrol napas & jantung',time:'waktu penuh fokus',speed:'kecepatan yang stabil',power:'watt demi watt',cadence:'ritme kaki terjaga',kcal:'energi yang terbakar',maxspeed:'puncak kecepatan hari ini',distance:'kilometer demi kilometer'}[m.k]||'angka yang bicara']));
+  let by0=H-S.sz.b-60;ctx.font=F(900,96,'serif','italic');let tl0=wrapLines(ctx,D.title,r-x,2),headTop=by0-160-(tl0.length-1)*98-110;
+  cov.forEach((c,i)=>{let yy=ly+i*190;if(yy>headTop)return;T(ctx,c[0],x,yy,{font:F(900,i?84:120,'ui'),color:i?fg:S.acc});let w=TW(ctx,c[0],F(900,i?84:120,'ui'));T(ctx,c[1],x+w+16,yy-(i?40:58),{font:F(800,24,'ui'),color:fg,spacing:3});T(ctx,c[2],x+w+16,yy-(i?6:14),{font:F(600,28,'ui'),color:fg,max:r-x-w-30})});
+  let by=H-S.sz.b-60;ctx.font=F(900,96,'serif','italic');let tl=wrapLines(ctx,D.title,r-x,2);
+  tl.forEach((l,i)=>T(ctx,l,x,by-160-(tl.length-1-i)*98,{font:F(900,96,'serif','italic'),color:fg}));
+  T(ctx,'Cerita '+D.first+' — '+D.dateStr,x,by-90,{font:F(600,32,'ui'),color:fg,max:r-x-230});
+  ctx.restore();
+  ctx.fillStyle='#fff';ctx.fillRect(r-200,by-150,200,120);barcode(ctx,r-186,by-138,172,72,D.id+'m','#111');T(ctx,'AC-'+String(D.date.getFullYear()).slice(2)+String(D.date.getMonth()+1).padStart(2,'0'),r-100,by-44,{font:F(700,20,'mono'),color:'#111',align:'center'});
+  brand(ctx,x,Math.min(H-26,by+60),S,{px:20,align:'left',color:fg,shadow:true});
+ }},
+/* 14 — Polaroid */
+{k:'polaroid',n:'Polaroid',cat:['photo'],bg:'blush',photoInside:true,
+ draw(ctx,W,H,D,S){
+  let fw=Math.min(820,W-160),iw=fw-72,fh=iw+250,x=(W-fw)/2,y=Math.max(S.sz.t-40,(H-fh)/2-40);
+  if(fh>H-100){iw=H-100-250;fw=iw+72;fh=iw+250;x=(W-fw)/2;y=50}
+  ctx.save();ctx.translate(W/2,y+fh/2);ctx.rotate(.035);ctx.translate(-W/2,-(y+fh/2));
+  sh(ctx,true,46,.3,18);ctx.fillStyle='#fdfdfb';ctx.fillRect(x,y,fw,fh);sh(ctx,false);
+  let ix=x+36,iy=y+36;ctx.save();ctx.beginPath();ctx.rect(ix,iy,iw,iw);ctx.clip();
+  if(S.photo){let im=S.photo,sc=Math.max(iw/im.width,iw/im.height),dw=im.width*sc,dh=im.height*sc;ctx.drawImage(im,ix+(iw-dw)/2,iy+(iw-dh)*((ST.bg.fy||50)/100),dw,dh)}
+  else{let g=ctx.createLinearGradient(ix,iy,ix+iw,iy+iw);g.addColorStop(0,S.acc);g.addColorStop(1,shade(S.acc,-.6));ctx.fillStyle=g;ctx.fillRect(ix,iy,iw,iw);if(!drawRoute(ctx,D,{x:ix+60,y:iy+60,w:iw-120,h:iw-120},{color:'#fff',width:10,glow:20,glowColor:'#fff',markers:true}))stNoRoute(ctx,D,{x:ix,y:iy+iw*.25,w:iw,h:iw*.5},S,'#fff')}
+  ctx.restore();ctx.strokeStyle='rgba(0,0,0,.08)';ctx.strokeRect(ix,iy,iw,iw);
+  T(ctx,D.title+(D.isRun?' 🏃':D.isRide?' 🚴':' ✨'),x+fw/2,iy+iw+104,{font:F(700,70,'hand'),color:'#23232a',align:'center',max:fw-60});
+  T(ctx,D.metrics.slice(0,2).map(m=>m.value+(m.unit?' '+m.unit:'')).join(' · ')+'  ✦  '+D.dateShort,x+fw/2,iy+iw+172,{font:F(600,48,'hand'),color:'#55555f',align:'center',max:fw-60});
+  ctx.save();ctx.translate(x+fw/2,y-6);ctx.rotate(-.06);ctx.fillStyle='rgba(255,240,200,.72)';ctx.fillRect(-110,-26,220,60);ctx.restore();
+  ctx.restore();
+  brand(ctx,W/2,Math.min(H-28,y+fh+90),S,{px:20});
+ }},
+/* 15 — Data Lengkap: grid 3×3 */
+{k:'grid',n:'Data Lengkap',cat:['data','sticker'],bg:'transparent',movable:true,
+ anchor:(W,H)=>[W/2,H*.55],
+ draw(ctx,W,H,D,S){
+  let ms=D.metrics.slice(0,9),cols=3,rows=Math.ceil(ms.length/cols),x=S.sz.l,r=W-S.sz.r,cw=(r-x)/cols,rh=170,gh=rows*rh,hh=D.hasRoute&&!S.routeInBg?300:150,tot=hh+gh+80,y=H*.55-tot/2;
+  ctx.save();sh(ctx,S.shadow,18,.5,3);
+  T(ctx,D.sportLabel+' · '+D.dateShort.toUpperCase(),x,y+30,{font:F(700,26,'ui'),color:S.acc,spacing:5});
+  T(ctx,D.title,x,y+96,{font:F(800,58,'ui'),color:S.fg,max:(hh>150?r-x-280:r-x)});
+  if(hh>150)drawRoute(ctx,D,{x:r-260,y:y,w:260,h:260},{color:S.acc,width:8,markers:false});
+  let gy=y+hh;ctx.strokeStyle=hexA(S.fg,.25);ctx.lineWidth=2;
+  for(let i=0;i<=rows;i++){if(i===0||i===rows)continue;ctx.beginPath();ctx.moveTo(x,gy+i*rh);ctx.lineTo(r,gy+i*rh);ctx.stroke()}
+  for(let c=1;c<cols;c++){ctx.beginPath();ctx.moveTo(x+c*cw,gy+14);ctx.lineTo(x+c*cw,gy+gh-14);ctx.stroke()}
+  ms.forEach((m,i)=>{let c=i%cols,rw=Math.floor(i/cols),cx=x+c*cw+cw/2,cy=gy+rw*rh;icon(ctx,ST_METRIC_ICON[m.k]||'bolt',cx-17,cy+22,34,S.acc,2.2);T(ctx,m.value,cx,cy+110,{font:F(800,Math.min(58,fitPx(ctx,m.value,cw-30,800,'ui',58,30)),'ui'),color:S.fg,align:'center'});T(ctx,(m.unit?m.unit+' · ':'')+m.label.toLowerCase(),cx,cy+148,{font:F(600,24,'ui'),color:S.fg2,align:'center',max:cw-16})});
+  brand(ctx,W/2,gy+gh+60,S,{px:22,color:S.fg,mono:true,shadow:S.shadow});
+  ctx.restore();
+ }},
+/* 16 — Peta Rute: rute di atas peta sungguhan + panel putih */
+{k:'mapshot',n:'Peta Rute',cat:['route'],bg:'map',
+ draw(ctx,W,H,D,S){
+  let ph=ST.fmt==='story'?560:470,x=48,w=W-96,y=H-S.sz.b-ph+(ST.fmt==='story'?60:0);
+  if(!S.routeInBg){let box={x:90,y:S.sz.t,w:W-180,h:y-S.sz.t-40};if(!drawRoute(ctx,D,box,{color:S.acc,width:12,casing:'#fff',casingW:10,markers:true,shadow:18}))stNoRoute(ctx,D,box,S)}
+  sh(ctx,true,40,.28,12);rr(ctx,x,y,w,ph,44);ctx.fillStyle='#ffffff';ctx.fill();sh(ctx,false);
+  let ix=x+48,iy=y+88,ink='#15151b';
+  T(ctx,D.title,ix,iy,{font:F(800,54,'ui'),color:ink,max:w-96});
+  T(ctx,D.name+'  ·  '+D.dateStr,ix,iy+48,{font:F(500,30,'ui'),color:'#6b6b76',max:w-96});
+  let ms=stFirst(D,3),cw=(w-96)/Math.max(1,ms.length),my=iy+130;
+  ms.forEach((m,i)=>metricBlock(ctx,m,ix+cw*i,my,{fg:ink,fg2:'#6b6b76'},{vpx:66,lpx:24}));
+  if(D.badge){let bw=TW(ctx,D.badge,F(700,24,'ui'))+46;rr(ctx,ix,y+ph-100,bw,52,26);ctx.fillStyle=hexA(S.acc,.14);ctx.fill();T(ctx,D.badge,ix+23,y+ph-66,{font:F(700,24,'ui'),color:S.acc})}
+  brand(ctx,x+w-48,y+ph-62,{fg2:'#8a8a95',dark:false},{px:20,align:'right'});
+ }}
+];
+</script>

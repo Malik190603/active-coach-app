@@ -36,9 +36,8 @@
   })();
 </script>
   <?!= include('Stylesheet') ?>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Anton&family=Bebas+Neue&family=Oswald:wght@400;700&family=Montserrat:wght@400;700;900&family=Poppins:wght@400;700;900&family=Playfair+Display:wght@400;700;900&family=Roboto+Mono:wght@400;700&display=swap">
+  <?!= include('StylePro') ?>
+  <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -293,7 +292,7 @@
           </div>
 
           <div class="acx-sub" data-sub-view="routes" hidden>
-            <article class="acx-card heatmap-panel"><div class="acx-card-head"><div><span class="acx-eyebrow">Heatmap pribadi</span><h3>Semua rute yang pernah kamu lalui</h3></div><small class="muted" id="heatmapSummary"></small></div><div class="sub-tabs acx-pilltabs" id="heatmapTabs"><button class="sub-tab active" data-heat-sport="All">Semua</button><button class="sub-tab" data-heat-sport="Cycling">Cycling</button><button class="sub-tab" data-heat-sport="Running">Running</button></div><div class="heatmap-map" id="heatmapMap"></div></article>
+            <article class="acx-card heatmap-panel"><div class="acx-card-head"><div><span class="acx-eyebrow">Heatmap pribadi</span><h3>Semua rute yang pernah kamu lalui</h3></div><small class="muted" id="heatmapSummary"></small></div><div class="sub-tabs acx-pilltabs" id="heatmapTabs"><button class="sub-tab active" data-heat-sport="All">Semua</button><button class="sub-tab" data-heat-sport="Cycling">Sepeda</button><button class="sub-tab" data-heat-sport="Running">Lari</button></div><div class="heatmap-wrap"><div class="heatmap-map" id="heatmapMap"></div><div class="heatmap-legend" id="heatmapLegend"></div><div class="acx-map-empty heatmap-empty" id="heatmapEmpty" hidden><span class="icon"><svg><use href="#i-route"/></svg></span>Belum ada rute GPS. Sinkronkan Strava untuk melihat heatmap.</div></div><p class="heatmap-hint muted">Ketuk garis untuk membuka aktivitas · tombol lapis untuk ganti gaya peta (Standar, Satelit, Topo, Gelap).</p></article>
             <div class="acx-tools acx-tools-row" data-tools="training-map"></div>
             <article class="acx-card route-reco-panel" id="routeRecoPanel"><div class="acx-card-head"><div><span class="acx-eyebrow">Rute baru untukmu</span><h3>Arah yang belum pernah kamu coba</h3></div><div class="route-reco-head-actions"><small class="muted" id="routeRecoCount"></small><button type="button" class="panel-collapse-btn" id="routeRecoToggle" aria-expanded="true" aria-label="Ciutkan rekomendasi rute"><span class="icon"><svg><use href="#i-chevron"/></svg></span></button></div></div>
               <div class="filters route-filters acx-filter-grid">
@@ -418,7 +417,7 @@
 
           <article class="acx-card acx-studio-hero" data-go="overlay-editor" role="button" tabindex="0">
             <div class="acx-studio-art" aria-hidden="true"><i></i><i></i><i></i></div>
-            <div class="acx-studio-copy"><span class="acx-eyebrow">Overlay Studio</span><h3>Ubah aktivitas jadi kartu story</h3><p>Template, font, warna, grafik & splits — ekspor PNG 1080×1920.</p><span class="acx-btn acx-btn-light">Buka studio <span class="icon"><svg><use href="#i-arrow-right"/></svg></span></span></div>
+            <div class="acx-studio-copy"><span class="acx-eyebrow">Studio</span><h3>Ubah aktivitas jadi kartu story</h3><p>16 template tren: stiker transparan, struk, poster, peta, Now Playing — siap Story &amp; Feed.</p><span class="acx-btn acx-btn-light">Buka studio <span class="icon"><svg><use href="#i-arrow-right"/></svg></span></span></div>
           </article>
 
           <div class="acx-split">
@@ -450,43 +449,44 @@
           </div>
         </section>
 
-        <!-- ===================== OVERLAY STUDIO (push) ===================== -->
-        <section class="page acx-page acx-push" data-page-view="overlay-editor" hidden>
-          <header class="ios-nav acx-navbar"><button type="button" class="ios-back" data-back-to="sharing"><span class="icon"><svg><use href="#i-back"/></svg></span>Berbagi</button><b class="ios-nav-title">Overlay Studio</b><span class="ios-nav-spacer"></span></header>
-          <article class="acx-card">
-            <div class="filters overlay-filters">
-              <label>Aktivitas<select id="ovlActivitySelect"></select></label>
-            </div>
-            <div class="ovl-studio">
-              <div class="ovl-stage-col">
-                <div class="ovl-stage" id="ovlStage">
-                  <canvas id="ovlCanvas" width="1080" height="1920"></canvas>
-                  <div class="ovl-sel-box" id="ovlSelBox" hidden><span class="ovl-handle" id="ovlResizeHandle"></span></div>
+        <!-- ===================== STUDIO (push) ===================== -->
+        <section class="page acx-page acx-push st-page" data-page-view="overlay-editor" hidden>
+          <header class="ios-nav acx-navbar"><button type="button" class="ios-back" data-back-to="sharing"><span class="icon"><svg><use href="#i-back"/></svg></span>Berbagi</button><b class="ios-nav-title">Studio</b><button type="button" class="st-nav-share" id="stShareTop"><span class="icon"><svg><use href="#i-share"/></svg></span>Bagikan</button></header>
+          <div class="acx-card acx-empty-sm st-empty" id="stEmpty" hidden><span class="icon"><svg><use href="#i-image"/></svg></span><b>Belum ada aktivitas</b><p>Sinkronkan Strava dulu, lalu kembali ke sini untuk membuat kartu story.</p></div>
+          <div class="st-wrap" id="stWrap">
+            <div class="st-left">
+              <button type="button" class="st-act" id="stActBtn"></button>
+              <div class="st-stage-area">
+                <div class="st-stage" id="stStage" data-fmt="story">
+                  <canvas id="stCanvas" aria-label="Pratinjau kartu"></canvas>
+                  <div class="st-safe" id="stSafe" hidden><i class="t"><span>Area profil IG</span></i><i class="b"><span>Area balasan IG</span></i></div>
+                  <div class="st-loading" id="stLoading" hidden><span class="lg-spin"></span>Memuat peta…</div>
                 </div>
-                <p class="muted ovl-hint ovl-stage-hint">Ketuk elemen untuk memilih, tahan &amp; geser untuk memindah, tarik titik pojok untuk mengubah ukuran.</p>
-                <div class="ovl-stage-actions">
-                  <button type="button" class="btn secondary" id="ovlUndoBtn"><span class="icon"><svg><use href="#i-undo"/></svg></span> Undo</button>
-                  <button type="button" class="btn primary" id="ovlExportBtn"><span class="icon"><svg><use href="#i-download"/></svg></span> Unduh PNG</button>
-                </div>
-              </div>
-              <div class="ovl-side">
-                <div class="sub-tabs ovl-tabs" id="ovlTabs">
-                  <button type="button" class="sub-tab active" data-ovl-tab="template">Template</button>
-                  <button type="button" class="sub-tab" data-ovl-tab="add">Tambah</button>
-                  <button type="button" class="sub-tab" data-ovl-tab="style">Gaya</button>
-                  <button type="button" class="sub-tab" data-ovl-tab="bg">Latar</button>
-                  <button type="button" class="sub-tab" data-ovl-tab="layers">Layer</button>
-                  <button type="button" class="sub-tab" data-ovl-tab="preset">Preset</button>
-                </div>
-                <div class="ovl-pane" id="ovlPaneTemplate"></div>
-                <div class="ovl-pane" id="ovlPaneAdd" hidden></div>
-                <div class="ovl-pane" id="ovlPaneStyle" hidden></div>
-                <div class="ovl-pane" id="ovlPaneBg" hidden></div>
-                <div class="ovl-pane" id="ovlPaneLayers" hidden></div>
-                <div class="ovl-pane" id="ovlPanePreset" hidden></div>
+                <p class="st-hint" id="stHint"></p>
               </div>
             </div>
-          </article>
+            <div class="st-right">
+              <div class="st-panel">
+                <div class="st-tabs" role="tablist">
+                  <button type="button" class="st-tab on" data-pane="tpl"><span class="icon"><svg><use href="#i-grid"/></svg></span>Template</button>
+                  <button type="button" class="st-tab" data-pane="bg"><span class="icon"><svg><use href="#i-image"/></svg></span>Latar</button>
+                  <button type="button" class="st-tab" data-pane="data"><span class="icon"><svg><use href="#i-chart"/></svg></span>Data</button>
+                  <button type="button" class="st-tab" data-pane="style"><span class="icon"><svg><use href="#i-palette"/></svg></span>Gaya</button>
+                  <button type="button" class="st-tab" data-pane="text"><span class="icon"><svg><use href="#i-edit"/></svg></span>Teks</button>
+                </div>
+                <div class="st-pane" data-pane="tpl"><div class="st-cats" id="stCats"></div><div class="st-tpls" id="stTpls"></div></div>
+                <div class="st-pane" data-pane="bg" hidden></div>
+                <div class="st-pane" data-pane="data" hidden></div>
+                <div class="st-pane" data-pane="style" hidden></div>
+                <div class="st-pane" data-pane="text" hidden></div>
+              </div>
+              <div class="st-actions">
+                <button type="button" class="acx-btn st-btn-ghost" id="stCopyCaption"><span class="icon"><svg><use href="#i-doc"/></svg></span>Salin caption</button>
+                <button type="button" class="acx-btn st-btn-main" id="stShare"><span class="icon"><svg><use href="#i-share"/></svg></span>Bagikan gambar</button>
+              </div>
+            </div>
+          </div>
+          <input type="file" id="stPhotoInput" accept="image/*" hidden>
         </section>
 
         <!-- ===================== PROFIL (push) ===================== -->
@@ -612,37 +612,61 @@
   <div class="toast" id="toast"></div>
   <div class="compare-bar" id="compareBar" hidden><span id="compareBarText">0/2 aktivitas dipilih</span><div class="compare-bar-actions"><button type="button" class="btn secondary" id="compareClear">Batal</button><button type="button" class="btn primary" id="compareGo" disabled>Bandingkan</button></div></div>
 
-  <div id="loginScreen" class="login-screen acx-login" hidden>
-    <div class="auth-card">
-      <div class="auth-left">
-        <div class="auth-hero">
-          <span class="auth-app-icon acx-logo acx-logo-lg"><span class="icon"><svg><use href="#i-brand"/></svg></span></span>
-          <h1 class="auth-title">Active Coach</h1>
-          <p class="auth-subtitle" id="authIntro">Semua data latihanmu, dirangkum rapi dalam satu tempat.</p>
-        </div>
-        <ul class="auth-points">
-          <li><span class="auth-point-icon tone-coral"><span class="icon"><svg><use href="#i-today"/></svg></span></span><div><b>Hari Ini</b><small>Kesiapan tubuh, sesi hari ini &amp; insight coach.</small></div></li>
-          <li><span class="auth-point-icon tone-blue"><span class="icon"><svg><use href="#i-stopwatch"/></svg></span></span><div><b>Latihan &amp; Performa</b><small>Plan adaptif, riwayat, zona, rekor &amp; analisis lanjutan.</small></div></li>
-          <li><span class="auth-point-icon tone-amber"><span class="icon"><svg><use href="#i-garage"/></svg></span></span><div><b>Garasi &amp; Berbagi</b><small>Perawatan sepeda otomatis &amp; kartu story siap bagikan.</small></div></li>
-        </ul>
-      </div><div class="auth-right">
-        <div class="auth-error" id="authError" hidden></div>
-        <form id="loginForm" class="auth-form">
-          <div class="inset-group">
-            <label class="inset-field"><span class="auth-field-icon icon"><svg><use href="#i-user"/></svg></span><input type="text" name="nama" placeholder="User" autocomplete="username" required></label>
-            <label class="inset-field"><span class="auth-field-icon icon"><svg><use href="#i-lock"/></svg></span><input type="password" name="pin" placeholder="Sandi" autocomplete="current-password" required></label>
+  <div id="loginScreen" class="login-screen lg" hidden data-state="idle">
+    <div class="lg-bg" aria-hidden="true">
+      <span class="lg-blob b1"></span><span class="lg-blob b2"></span><span class="lg-blob b3"></span>
+      <svg class="lg-lines" viewBox="0 0 400 900" preserveAspectRatio="xMidYMid slice"><path class="lg-path p1" d="M-20 700 C 60 640 90 560 170 560 S 260 640 330 600 S 420 470 380 400 S 250 360 240 280 S 330 150 420 130"/><path class="lg-path p2" d="M-30 820 C 80 780 120 720 210 740 S 330 800 430 720"/><path class="lg-path p3" d="M-20 240 C 50 200 110 250 160 210 S 240 90 320 110 S 400 60 440 40"/></svg>
+    </div>
+    <div class="lg-wrap">
+      <header class="lg-top">
+        <span class="lg-logo acx-logo"><span class="icon"><svg><use href="#i-brand"/></svg></span></span>
+        <span class="lg-brand">Active Coach</span>
+      </header>
+      <div class="lg-slides" id="lgSlides" aria-roledescription="carousel">
+        <section class="lg-slide" aria-label="1 dari 3">
+          <div class="lg-visual">
+            <div class="lg-ring"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="50" class="lg-ring-bg"/><circle cx="60" cy="60" r="50" class="lg-ring-fg"/></svg><div class="lg-ring-txt"><b>86</b><small>Siap latihan</small></div></div>
+            <div class="lg-chip c1"><span class="icon"><svg><use href="#i-pulse"/></svg></span>HRV stabil</div>
+            <div class="lg-chip c2"><span class="icon"><svg><use href="#i-today"/></svg></span>Tempo 45 mnt</div>
           </div>
-          <button class="btn primary auth-submit" type="submit" id="loginSubmitBtn">Masuk</button>
-        </form>
-        <form id="registerForm" class="auth-form" hidden>
-          <div class="inset-group">
-            <label class="inset-field"><span class="auth-field-icon icon"><svg><use href="#i-user"/></svg></span><input type="text" name="nama" placeholder="User baru" autocomplete="username" required></label>
-            <label class="inset-field"><span class="auth-field-icon icon"><svg><use href="#i-lock"/></svg></span><input type="password" name="pin" placeholder="Buat sandi" autocomplete="new-password" required></label>
+          <h1>Pelatih pintar untuk setiap kilometer</h1>
+          <p>Kesiapan tubuh, beban latihan &amp; saran harian dihitung otomatis dari aktivitas Strava-mu.</p>
+        </section>
+        <section class="lg-slide" aria-label="2 dari 3">
+          <div class="lg-visual">
+            <div class="lg-bars"><i style="--h:38%"></i><i style="--h:62%"></i><i style="--h:45%"></i><i style="--h:80%"></i><i style="--h:30%"></i><i style="--h:92%"></i><i style="--h:55%"></i></div>
+            <div class="lg-chip c1"><span class="icon"><svg><use href="#i-stopwatch"/></svg></span>PR baru 10K</div>
+            <div class="lg-chip c2"><span class="icon"><svg><use href="#i-garage"/></svg></span>Rantai: servis 120 km lagi</div>
           </div>
-          <button class="btn primary auth-submit" type="submit" id="registerSubmitBtn">Daftar &amp; masuk</button>
-        </form>
-        <button type="button" class="auth-toggle link-btn" id="authToggle">Belum punya akun? Daftar di sini</button>
-        <p class="auth-foot">© <span id="footerYear"></span> Active Coach · Created by <b>Muhammad Malik</b> · <a href="https://instagram.com/muh.malikkk" target="_blank" rel="noopener">@muh.malikkk</a></p>
+          <h1>Plan adaptif, rekor &amp; garasi otomatis</h1>
+          <p>Rencana mingguan menyesuaikan kondisimu. Rekor, zona, dan perawatan sepeda tercatat sendiri.</p>
+        </section>
+        <section class="lg-slide" aria-label="3 dari 3">
+          <div class="lg-visual">
+            <div class="lg-story"><svg viewBox="0 0 90 80"><path d="M8 62 C 18 40 30 58 40 36 S 60 10 82 22" /></svg><b>42.2<small>km</small></b><span>4:58 /km · 3:29:41</span></div>
+            <div class="lg-chip c1"><span class="icon"><svg><use href="#i-share"/></svg></span>Siap diunggah ke story</div>
+          </div>
+          <h1>Kartu story yang bikin followers penasaran</h1>
+          <p>Template tren sosmed: stiker transparan, struk, poster, rute neon — ekspor 1080×1920 sekali ketuk.</p>
+        </section>
+      </div>
+      <div class="lg-dots" id="lgDots"><button type="button" class="on" aria-label="Slide 1"></button><button type="button" aria-label="Slide 2"></button><button type="button" aria-label="Slide 3"></button></div>
+      <div class="lg-bottom auth-right">
+        <div class="lg-notice" id="lgNotice" hidden></div>
+        <div class="auth-error" id="authError" role="alert" hidden></div>
+        <button type="button" class="lg-strava" id="stravaLoginBtn">
+          <svg class="lg-strava-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.39 17.94 13.3 13.8h-3.07l5.16 10.2 5.15-10.2h-3.07M10.1 0 3.2 13.8h4.06l2.84-5.63 2.84 5.63h4.05z"/></svg>
+          <span class="lg-strava-label" id="stravaLoginLabel">Masuk dengan Strava</span>
+          <span class="lg-spin" aria-hidden="true"></span>
+        </button>
+        <ol class="lg-steps" id="lgSteps" hidden>
+          <li data-step="auth"><i></i><span>Izin Strava diterima</span></li>
+          <li data-step="account"><i></i><span>Menyiapkan akun &amp; data</span></li>
+          <li data-step="sync"><i></i><span>Membuka dasbor</span></li>
+        </ol>
+        <button type="button" class="lg-cancel" id="lgCancel" hidden>Batal</button>
+        <p class="lg-legal"><span class="icon"><svg><use href="#i-lock"/></svg></span>Hanya membaca aktivitas &amp; profil. Active Coach tidak pernah memposting apa pun ke Strava.</p>
+        <p class="auth-foot">© <span id="footerYear"></span> Active Coach · <b>Muhammad Malik</b> · <a href="https://instagram.com/muh.malikkk" target="_blank" rel="noopener">@muh.malikkk</a></p>
       </div>
     </div>
     <button type="button" class="fab login-display-fab" id="loginDisplayFab" title="Tampilan &amp; mode"><span class="icon"><svg><use href="#i-palette"/></svg></span></button>
@@ -668,11 +692,12 @@
     </div>
   </div>
   <?!= include('JSCore') ?>
+  <?!= include('JSMap') ?>
   <?!= include('JSHealth') ?>
   <?!= include('JSBrowse') ?>
-  <?!= include('JSOverlay') ?>
-  <?!= include('JSTemplates') ?>
-  <?!= include('JSOverlay2') ?>
+  <?!= include('JSStudio') ?>
+  <?!= include('JSStudioTpl') ?>
+  <?!= include('JSStudioUI') ?>
   <?!= include('JSActivity') ?>
   <?!= include('JSPlan') ?>
   <?!= include('JSReview') ?>

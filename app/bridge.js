@@ -1,8 +1,9 @@
 /*
  * Active Coach — jembatan aplikasi Android.
  * Menggantikan google.script.run: semua panggilan "server" dijalankan oleh engine (Web Worker)
- * yang memuat Code.gs asli, dengan data tersimpan di Supabase. Juga menangani login akun,
- * koneksi Strava lewat deep link, tombol kembali Android, unduhan/berbagi file, dan impor data.
+ * yang memuat Code.gs asli, dengan data tersimpan di Supabase. Juga menangani login dengan Strava,
+ * koneksi Strava lewat deep link, tombol kembali Android, getaran (haptics), unduhan/berbagi file,
+ * dan impor/cadangan data.
  */
 (function () {
   'use strict';
@@ -18,6 +19,25 @@
   function $(s) { return document.querySelector(s); }
   function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (m) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]; }); }
   function note(t) { try { if (typeof toast === 'function') toast(t); } catch (e) {} }
+  function loader(t) { try { if (typeof showGlobalLoader === 'function') showGlobalLoader(t); } catch (e) {} }
+  function unloader() { try { if (typeof hideGlobalLoader === 'function') hideGlobalLoader(); } catch (e) {} }
+  var domReady = new Promise(function (ok) { if (document.readyState !== 'loading') ok(); else document.addEventListener('DOMContentLoaded', ok); });
+
+  /* ------------------------------ getaran halus (haptics) ------------------------------ */
+  var lastHap = 0;
+  function haptic(kind) {
+    if (!NATIVE || !P.Haptics) return;
+    var now = Date.now(); if (now - lastHap < 45) return; lastHap = now;
+    try {
+      if (kind === 'success' || kind === 'warning' || kind === 'error') P.Haptics.notification({ type: kind.toUpperCase() });
+      else P.Haptics.impact({ style: kind === 'heavy' ? 'HEAVY' : kind === 'medium' ? 'MEDIUM' : 'LIGHT' });
+    } catch (e) {}
+  }
+  window.acxHaptic = haptic;
+  document.addEventListener('click', function (e) {
+    var t = e.target && e.target.closest && e.target.closest('#bottomNav [data-page],.acx-subtab,.seg-item,.chip,.pill,[data-heat-sport],.st-tpl,.st-tab,.st-swatch,.lg-strava,.acx-btn,.btn.primary');
+    if (t) haptic(t.matches('.lg-strava,.acx-btn,.btn.primary') ? 'light' : 'select');
+  }, true);
 
   /* ------------------------------ konfigurasi server ------------------------------ */
   function cfg() {
@@ -26,34 +46,14 @@
   }
   function configured() { var c = cfg(); return /^https?:\/\//.test(c.url) && c.anonKey.length > 20; }
 
-  /* ------------------------------ akun (Supabase Auth) ------------------------------ */
-  function authMessage(j, status) {
-    var code = (j && (j.error_code || j.code || j.error)) || '', msg = (j && (j.msg || j.message || j.error_description)) || '';
-    var map = {
-      invalid_credentials: 'Email atau sandi salah.', invalid_grant: 'Email atau sandi salah.',
-      email_not_confirmed: 'Email belum dikonfirmasi. Buka email dari Supabase lalu ketuk tautannya, kemudian masuk lagi.',
-      user_already_exists: 'Email ini sudah terdaftar. Silakan masuk.', email_exists: 'Email ini sudah terdaftar. Silakan masuk.',
-      weak_password: 'Sandi terlalu lemah (minimal 6 karakter).', validation_failed: 'Format email atau sandi tidak valid.',
-      over_email_send_rate_limit: 'Terlalu banyak percobaan. Tunggu beberapa menit.', signup_disabled: 'Pendaftaran akun baru dimatikan di server.'
-    };
-    if (map[code]) return map[code];
-    if (/Invalid login credentials/i.test(msg)) return 'Email atau sandi salah.';
-    if (/already registered/i.test(msg)) return 'Email ini sudah terdaftar. Silakan masuk.';
-    if (/Password should be/i.test(msg)) return 'Sandi minimal 6 karakter.';
-    return msg || ('Server menolak (' + status + ').');
-  }
-  async function authReq(path, body, token) {
-    var c = cfg(), h = { apikey: c.anonKey, 'Content-Type': 'application/json' };
-    if (token) h.Authorization = 'Bearer ' + token;
-    var r;
-    try { r = await fetch(c.url + '/auth/v1/' + path, { method: 'POST', headers: h, body: JSON.stringify(body || {}) }); }
-    catch (e) { throw new Error('Tidak bisa menghubungi server. Periksa koneksi internet.'); }
-    var j = {}; try { j = await r.json(); } catch (e) {}
-    if (!r.ok) throw new Error(authMessage(j, r.status));
-    return j;
-  }
-  function toSession(j) { return { access_token: j.access_token, refresh_token: j.refresh_token, expires_at: j.expires_at || Math.floor(Date.now() / 1000) + (j.expires_in || 3600), user: j.user }; }
+  /* ------------------------------ sesi ------------------------------ */
   function displayNameOf(s) { var u = (s && s.user) || {}, m = u.user_metadata || {}; return String(m.name || m.full_name || (u.email || 'Atlet').split('@')[0]).replace(/[._]+/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }).trim(); }
+  function isStravaSession(s) { var u = (s && s.user) || {}; return (u.user_metadata && u.user_metadata.provider === 'strava') || /@athlete\.activecoach\.app$/i.test(String(u.email || '')); }
+  function stravaIdOf(s) { var u = (s && s.user) || {}; return String((u.user_metadata && u.user_metadata.strava_id) || (String(u.email || '').match(/^strava-(\d+)@/) || [])[1] || ''); }
+  async function authLogout(token) {
+    var c = cfg();
+    try { await fetch(c.url + '/auth/v1/logout', { method: 'POST', headers: { apikey: c.anonKey, Authorization: 'Bearer ' + token } }); } catch (e) {}
+  }
 
   /* ------------------------------ engine worker ------------------------------ */
   var W = null, seq = 0, pending = new Map(), engineReady = false, currentSession = null, syncState = { state: 'idle' }, pendingLink = null;
@@ -65,6 +65,11 @@
     }
     return W;
   }
+  function stopWorker(reason) {
+    engineReady = false;
+    if (W) { W.terminate(); W = null; }
+    pending.forEach(function (p) { p.no(new Error(reason || 'Dihentikan')); }); pending.clear();
+  }
   function send(msg) { return new Promise(function (ok, no) { var id = ++seq; pending.set(id, { ok: ok, no: no }); worker().postMessage(Object.assign({ id: id }, msg)); }); }
   function onWorkerMessage(ev) {
     var m = ev.data || {};
@@ -74,15 +79,15 @@
       if (m.ok) p.ok(m.value); else p.no(new Error(m.error || 'Terjadi kesalahan'));
       return;
     }
-    if (m.type === 'session') { currentSession = m.session; LS.set('acx_session', m.session); return; }
+    if (m.type === 'session') { currentSession = m.session; if (!migrating) LS.set('acx_session', m.session); return; }
     if (m.type === 'sync') { var prev = syncState.state; syncState = m; paintSyncState(); if (m.state === 'offline' && prev !== 'offline') note('Offline — perubahan disimpan di HP dan disinkronkan nanti'); return; }
     if (m.type === 'remoteUpdate') { try { if (typeof softRefresh === 'function' && !$('#appShell').hidden) { softRefresh(); note('Data diperbarui dari perangkat lain'); } } catch (e) {} return; }
-    if (m.type === 'authExpired') { note('Sesi login berakhir, silakan masuk lagi'); forceLoggedOut(); }
+    if (m.type === 'authExpired') { if (migrating) return; note('Sesi login berakhir, silakan masuk lagi dengan Strava'); forceLoggedOut(); }
   }
   function callEngine(fn, args) { if (!engineReady) return Promise.reject(new Error('Belum masuk ke akun.')); return send({ type: 'call', fn: fn, args: args || [] }); }
-  async function startEngine(session) {
-    currentSession = session; LS.set('acx_session', session);
-    var t = setTimeout(function () { try { if (typeof showGlobalLoader === 'function') showGlobalLoader('Mengunduh data dari server…'); } catch (e) {} }, 1200);
+  async function startEngine(session, quiet) {
+    currentSession = session; if (!quiet) LS.set('acx_session', session);
+    var t = quiet ? 0 : setTimeout(function () { loader('Mengunduh data dari server…'); }, 1500);
     try { await send({ type: 'init', cfg: cfg(), session: session, tz: TZ }); }
     finally { clearTimeout(t); }
     engineReady = true;
@@ -91,7 +96,7 @@
     return new Promise(function (ok) {
       var box = document.createElement('div');
       box.className = 'acx-pick';
-      box.innerHTML = '<div class="acx-pick-box"><h3>Pilih profil atlet</h3><p>Data yang diimpor berisi beberapa atlet. Profil mana yang milikmu?</p><div class="acx-list">' + list.map(function (a) { return '<button type="button" class="acx-row" data-id="' + esc(a.athleteId) + '"><span class="acx-row-ic tone-coral icon"><svg><use href="#i-user"/></svg></span><span class="acx-row-text"><b>' + esc(a.nama) + '</b><small>' + esc(a.athleteId) + '</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>'; }).join('') + '</div></div>';
+      box.innerHTML = '<div class="acx-pick-box"><h3>Pilih profil atlet</h3><p>Datamu berisi beberapa atlet. Profil mana yang milikmu?</p><div class="acx-list">' + list.map(function (a) { return '<button type="button" class="acx-row" data-id="' + esc(a.athleteId) + '"><span class="acx-row-ic tone-coral icon"><svg><use href="#i-user"/></svg></span><span class="acx-row-text"><b>' + esc(a.nama) + '</b><small>' + esc(a.athleteId) + '</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>'; }).join('') + '</div></div>';
       document.body.appendChild(box);
       box.querySelectorAll('[data-id]').forEach(function (b) { b.onclick = function () { box.remove(); ok(b.dataset.id); }; });
     });
@@ -102,35 +107,143 @@
     if (!r || !r.ok) throw new Error((r && r.error) || 'Profil atlet tidak ditemukan.');
     return r;
   }
-  async function appLogin(email, password) {
-    if (!configured()) return { ok: false, error: 'Server belum diatur. Ketuk "Atur server" di bawah.' };
-    try {
-      var j = await authReq('token?grant_type=password', { email: String(email || '').trim(), password: String(password || '') });
-      await startEngine(toSession(j));
-      var r = await sessionFlow();
-      afterLogin();
-      return { ok: true, athleteId: r.athleteId, nama: r.nama, fotoProfil: r.fotoProfil };
-    } catch (e) { return { ok: false, error: e.message || String(e) }; }
-  }
-  async function appRegister(email, password) {
-    if (!configured()) throw new Error('Server belum diatur. Ketuk "Atur server" di bawah.');
-    email = String(email || '').trim();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Masukkan alamat email yang valid.');
-    if (String(password || '').length < 6) throw new Error('Sandi minimal 6 karakter.');
-    var j = await authReq('signup', { email: email, password: password, data: { name: email.split('@')[0] } });
-    if (!j.access_token && !(j.session && j.session.access_token)) throw new Error('Akun dibuat. Buka email konfirmasi dari server, ketuk tautannya, lalu masuk. (Atau matikan "Confirm email" di Supabase agar langsung bisa masuk.)');
-    return [];
-  }
   function forceLoggedOut() {
-    LS.del('acx_session'); engineReady = false; currentSession = null;
-    if (W) { W.terminate(); W = null; pending.forEach(function (p) { p.no(new Error('Keluar')); }); pending.clear(); }
+    LS.del('acx_session'); currentSession = null;
+    stopWorker('Keluar');
     try { if (typeof __origLogout === 'function') __origLogout(); } catch (e) {}
+    setLoginState('idle');
+  }
+
+  /* ------------------------------ Masuk dengan Strava ------------------------------ */
+  var authBusy = false, migrating = false, browserOpenAt = 0;
+  function setLoginState(state, opts) {
+    opts = opts || {};
+    var ls = $('#loginScreen'); if (!ls) return;
+    ls.setAttribute('data-state', state);
+    var btn = $('#stravaLoginBtn'), lbl = $('#stravaLoginLabel'), steps = $('#lgSteps'), cancel = $('#lgCancel');
+    if (btn) btn.disabled = state === 'working';
+    if (lbl) lbl.textContent = state === 'waiting' ? 'Menunggu izin Strava…' : state === 'working' ? (opts.label || 'Menyiapkan…') : state === 'error' ? 'Coba lagi dengan Strava' : 'Masuk dengan Strava';
+    if (steps) {
+      steps.hidden = state !== 'working';
+      var order = ['auth', 'account', 'sync'], at = order.indexOf(opts.step || 'auth');
+      steps.querySelectorAll('li').forEach(function (li) { var i = order.indexOf(li.dataset.step); li.className = i < at ? 'done' : i === at ? 'now' : ''; });
+    }
+    if (cancel) cancel.hidden = state !== 'waiting';
+    if (state !== 'error') { try { clearAuthError(); } catch (e) {} }
+  }
+  function loginError(msg) {
+    authBusy = false;
+    setLoginState('error');
+    try { showAuthError(msg); } catch (e) {}
+    haptic('error');
+  }
+  function randomNonce() { var a = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(a); return Array.from(a, function (b) { return b.toString(16).padStart(2, '0'); }).join(''); }
+  function startStravaLogin() {
+    if (!configured()) { toggleServerPanel(true); note('Atur server dulu (sekali saja)'); return; }
+    if (authBusy) return;
+    var nonce = randomNonce();
+    LS.set('acx_auth_nonce', { n: nonce, t: Date.now() });
+    var url = cfg().url + '/functions/v1/strava-callback?start=1&nonce=' + nonce;
+    setLoginState('waiting');
+    browserOpenAt = Date.now();
+    if (NATIVE && P.Browser) P.Browser.open({ url: url, presentationStyle: 'popover', toolbarColor: '#fc4c02' }).catch(function (e) { loginError('Tidak bisa membuka Strava: ' + (e && e.message || e)); });
+    else _open.call(window, url, '_blank');
+  }
+  function cancelStravaLogin() {
+    try { if (P.Browser) P.Browser.close(); } catch (e) {}
+    if (!authBusy) setLoginState('idle');
+  }
+  function parseLink(url) {
+    var m = String(url || '').match(/^activecoach:\/\/([^/?#]+)/i);
+    return { host: m ? m[1].toLowerCase() : '', q: new URL(String(url).replace(/^activecoach:\/\/[^/?#]*/i, 'https://app/')).searchParams };
+  }
+  function redeemHeaders(c) { var h = { apikey: c.anonKey, 'Content-Type': 'application/json' }; if (/^eyJ/.test(c.anonKey)) h.Authorization = 'Bearer ' + c.anonKey; return h; }
+  async function redeem(code, nonce) {
+    var c = cfg(), r;
+    try { r = await fetch(c.url + '/functions/v1/strava-callback?redeem=1', { method: 'POST', headers: redeemHeaders(c), body: JSON.stringify({ code: code, nonce: nonce }) }); }
+    catch (e) { throw new Error('Tidak bisa menghubungi server. Periksa koneksi internet lalu coba lagi.'); }
+    var j = {}; try { j = await r.json(); } catch (e) {}
+    if (r.status === 404) throw new Error('Fungsi "strava-callback" versi terbaru belum di-deploy di Supabase.');
+    if (!r.ok) throw new Error(j.error || ('Server menolak (' + r.status + ')'));
+    if (!j.session || !j.session.access_token) throw new Error('Server tidak mengirim sesi login.');
+    return j;
+  }
+  async function finishStravaLogin(q) {
+    await domReady;
+    try { if (P.Browser) P.Browser.close(); } catch (e) {}
+    var saved = LS.get('acx_auth_nonce') || {}, nonce = q.get('nonce') || '';
+    if (q.get('error')) { LS.del('acx_auth_nonce'); loginError(q.get('error')); return; }
+    if (!q.get('code')) { loginError('Balasan login tidak lengkap. Coba lagi.'); return; }
+    if (saved.n && nonce && saved.n !== nonce) { loginError('Tautan login ini bukan dari HP ini. Ketuk Masuk dengan Strava lagi.'); return; }
+    if (authBusy) return;
+    authBusy = true;
+    LS.del('acx_auth_nonce');
+    var ls = $('#loginScreen'); if (ls && ls.hidden) { try { showLoginScreen(); } catch (e) {} }
+    setLoginState('working', { step: 'auth', label: 'Memverifikasi…' });
+    try {
+      var payload = await redeem(q.get('code'), nonce);
+      haptic('success');
+      await completeLogin(payload);
+    } catch (e) {
+      stopWorker('Gagal');
+      LS.del('acx_session');
+      loginError(e.message || String(e));
+    }
+  }
+  async function completeLogin(payload) {
+    setLoginState('working', { step: 'account', label: 'Menyiapkan akun…' });
+    // 1) Data dari akun email lama di HP ini → dipindahkan otomatis ke akun Strava
+    var legacy = LS.get('acx_legacy_session'), legacyData = null;
+    if (legacy && legacy.refresh_token) {
+      setLoginState('working', { step: 'account', label: 'Mengambil data lama…' });
+      migrating = true;
+      try {
+        await Promise.race([startEngine(legacy, true), new Promise(function (_, no) { setTimeout(function () { no(new Error('timeout')); }, 45000); })]);
+        var info = await callEngine('appWorkspaceInfo', []);
+        if (info && info.sheets && (info.sheets.LogAktivitas || info.sheets.Athletes)) legacyData = JSON.parse(await send({ type: 'export' }));
+      } catch (e) { console.warn('Data lama tidak bisa diambil', e); }
+      stopWorker('ganti akun'); migrating = false;
+    }
+    // 2) Buka akun Strava
+    setLoginState('working', { step: 'account', label: 'Membuka akunmu…' });
+    await startEngine(payload.session);
+    var moved = 0;
+    if (legacyData) {
+      var cur = await callEngine('appWorkspaceInfo', []);
+      if (!cur || !cur.sheets || !cur.sheets.LogAktivitas) {
+        setLoginState('working', { step: 'account', label: 'Memindahkan data lama…' });
+        var imp = await send({ type: 'import', data: legacyData });
+        moved = (imp && imp.sheets && imp.sheets.LogAktivitas) || 0;
+      }
+      if (legacy && legacy.access_token) authLogout(legacy.access_token);
+    }
+    LS.del('acx_legacy_session');
+    var ath = (payload.strava && payload.strava.athlete) || {};
+    try { await callEngine('appSelectStravaAthlete', [String(ath.id || stravaIdOf(payload.session))]); } catch (e) {}
+    var r = await sessionFlow();
+    var applied = await callEngine('appApplyStravaLogin', [payload.strava || {}]);
+    SESSION = { athleteId: r.athleteId, nama: (applied && applied.nama) || r.nama };
+    setLoginState('working', { step: 'sync', label: 'Membuka dasbor…' });
+    authBusy = false;
+    await new Promise(function (ok) { setTimeout(ok, 350); });
+    $('#loginScreen').hidden = true;
+    setLoginState('idle');
+    startApp();
+    afterLogin();
+    if (moved) note(moved + ' aktivitas dari akun lama sudah dipindahkan');
+    else note('Halo, ' + String(SESSION.nama || 'Atlet').split(' ')[0] + '! 👋');
+    if (applied && applied.scopeOk === false) setTimeout(function () { note('Izin "lihat semua aktivitas" tidak dicentang — aktivitas privat tidak ikut. Masuk ulang untuk mengubah.'); }, 2600);
+    if (applied && (applied.needsFirstSync || moved)) setTimeout(firstSync, moved ? 2200 : 900);
+  }
+  function firstSync() {
+    if (!engineReady || typeof syncStrava !== 'function') return;
+    if (typeof LOAD_BUSY !== 'undefined' && LOAD_BUSY) { setTimeout(firstSync, 700); return; }
+    syncStrava();
   }
 
   /* ------------------------------ google.script.run pengganti ------------------------------ */
   async function dispatch(fn, args) {
-    if (fn === 'loginAthlete') return appLogin(args[0], args[1]);
-    if (fn === 'createAthlete') return appRegister(args[0], args[1]);
+    if (fn === 'loginAthlete' || fn === 'createAthlete') return { ok: false, error: 'Gunakan tombol "Masuk dengan Strava".' };
     if (fn === 'generateReportPdf') return finishReport(await callEngine(fn, args));
     return callEngine(fn, args);
   }
@@ -182,13 +295,26 @@
 
   /* ------------------------------ simpan & bagikan file (Android) ------------------------------ */
   function blobToB64(blob) { return new Promise(function (ok, no) { var r = new FileReader(); r.onload = function () { ok(String(r.result).split(',')[1]); }; r.onerror = no; r.readAsDataURL(blob); }); }
-  async function saveAndShare(href, name) {
+  async function saveAndShare(href, name, text) {
     try {
       var blob = href instanceof Blob ? href : await (await fetch(href)).blob();
       var b64 = await blobToB64(blob);
       var w = await P.Filesystem.writeFile({ path: name, data: b64, directory: 'CACHE' });
-      await P.Share.share({ title: name, files: [w.uri], dialogTitle: 'Simpan atau bagikan' });
-    } catch (e) { if (!/cancel/i.test(String(e && e.message || e))) note('Gagal menyimpan file: ' + (e && e.message || e)); }
+      await P.Share.share({ title: name, text: text || undefined, files: [w.uri], dialogTitle: 'Simpan atau bagikan' });
+      return true;
+    } catch (e) { if (!/cancel/i.test(String(e && e.message || e))) note('Gagal menyimpan file: ' + (e && e.message || e)); return false; }
+  }
+  /* Bagikan gambar (dipakai Overlay Studio): Android → lembar bagikan (Instagram, WhatsApp, Galeri…);
+     browser → Web Share API bila ada, kalau tidak diunduh. */
+  async function shareImage(blob, name, text) {
+    if (NATIVE && P.Filesystem && P.Share) return saveAndShare(blob, name, text);
+    try {
+      var file = new File([blob], name, { type: blob.type || 'image/png' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name, text: text || '' }); return true; }
+    } catch (e) { if (/abort|cancel/i.test(String(e && e.name || e))) return false; }
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; _click.call(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    return true;
   }
   var _click = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function () {
@@ -201,75 +327,72 @@
     return _open.call(window, url, target, feat);
   };
 
-  /* ------------------------------ deep link Strava ------------------------------ */
+  /* ------------------------------ deep link ------------------------------ */
   async function handleDeepLink(url) {
-    if (!/^activecoach:\/\/strava/i.test(String(url || ''))) return;
+    if (!/^activecoach:\/\//i.test(String(url || ''))) return;
+    var L = parseLink(url);
+    if (L.host === 'auth') return finishStravaLogin(L.q);
+    if (L.host !== 'strava') return;
     try { if (P.Browser) P.Browser.close(); } catch (e) {}
-    if (!engineReady) { pendingLink = url; return; }
-    var q = new URL(String(url).replace(/^activecoach:\/\//i, 'https://app/')).searchParams;
-    try { showGlobalLoader('Menghubungkan Strava & mengimpor aktivitas…'); } catch (e) {}
+    if (!engineReady) {
+      if (authBusy || ($('#loginScreen') && $('#loginScreen').getAttribute('data-state') === 'waiting')) { loginError('Fungsi "strava-callback" di Supabase masih versi lama. Deploy ulang versi terbaru (lihat README), lalu coba lagi.'); return; }
+      pendingLink = url; return;
+    }
+    var q = L.q;
+    loader('Menghubungkan Strava & mengimpor aktivitas…');
     try {
       var r = await callEngine('appFinishOAuth', [q.get('code') || '', q.get('state') || '', q.get('error') || '']);
-      try { hideGlobalLoader(); } catch (e) {}
+      unloader();
+      haptic(r && r.ok ? 'success' : 'error');
       note(r && r.ok ? 'Strava tersambung — aktivitas sudah diimpor' : ('Strava gagal tersambung: ' + ((r && (r.error || r.message)) || '')));
       if (typeof load === 'function') await load();
       if (typeof loadStrava === 'function') await loadStrava();
-    } catch (e) { try { hideGlobalLoader(); } catch (x) {} note('Gagal menghubungkan Strava: ' + e.message); }
+    } catch (e) { unloader(); note('Gagal menghubungkan Strava: ' + e.message); }
   }
 
   /* ------------------------------ UI tambahan ------------------------------ */
-  function injectStyles() {
-    var css = '.acx-pick{position:fixed;inset:0;z-index:300;background:rgba(10,10,20,.45);display:flex;align-items:center;justify-content:center;padding:18px}' +
-      '.acx-pick-box{width:100%;max-width:440px;background:var(--acx-surface,#fff);border-radius:22px;padding:18px;box-shadow:0 20px 60px -20px rgba(0,0,0,.5)}.acx-pick-box h3{margin:0 0 4px;font-size:19px}.acx-pick-box p{margin:0 0 12px;color:var(--acx-text-2,#666);font-size:13.5px}' +
-      '.acx-server{margin:0 0 14px;padding:14px;border-radius:16px;border:1px solid var(--acx-line,#ddd);background:var(--acx-surface-2,#f7f7fa);text-align:left}.acx-server b{display:block;font-size:14.5px;margin-bottom:2px}.acx-server small{display:block;color:var(--acx-text-2,#666);font-size:12px;margin-bottom:10px;line-height:1.4}' +
-      '.acx-server input{width:100%;box-sizing:border-box;height:42px;margin:0 0 8px;padding:0 12px;border-radius:12px;border:1px solid var(--acx-line-2,#ccc);background:var(--acx-surface,#fff);color:var(--acx-text,#111);font:500 14px Inter,system-ui}' +
-      '.acx-server .acx-actions-row{margin-top:4px}.acx-server-link{display:block;margin:10px auto 0;border:0;background:none;color:var(--acx-text-3,#999);font:600 12.5px Inter,system-ui;cursor:pointer}' +
-      '.acx-syncstate.saving{color:var(--acx-blue)}.acx-syncstate.offline{color:var(--acx-orange)}';
-    var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
-  }
   function serverPanelHtml() {
     var c = cfg();
     return '<div class="acx-server" id="acxServer"><b>Hubungkan ke server</b><small>Isi dari Supabase › Project Settings › API. Cukup sekali — tersimpan di HP ini.</small>' +
-      '<input id="acxSrvUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://xxxx.supabase.co" value="' + esc(c.url) + '">' +
-      '<input id="acxSrvKey" type="text" autocomplete="off" placeholder="anon / publishable key" value="' + esc(c.anonKey) + '">' +
-      '<div class="acx-actions-row"><button type="button" class="acx-btn" id="acxSrvSave">Simpan & tes</button></div></div>';
+      '<input id="acxSrvUrl" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://xxxx.supabase.co" value="' + esc(c.url) + '">' +
+      '<input id="acxSrvKey" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="anon / publishable key" value="' + esc(c.anonKey) + '">' +
+      '<div class="acx-actions-row"><button type="button" class="acx-btn" id="acxSrvSave">Simpan &amp; tes</button></div></div>';
   }
   function toggleServerPanel(show) {
-    var host = $('.auth-right'), ex = $('#acxServer');
+    var host = $('.lg-bottom'), ex = $('#acxServer');
     if (!host) return;
     if (ex && !show) { ex.remove(); return; }
     if (ex) return;
     host.insertAdjacentHTML('afterbegin', serverPanelHtml());
     $('#acxSrvSave').onclick = async function () {
       var url = $('#acxSrvUrl').value.trim().replace(/\/+$/, ''), key = $('#acxSrvKey').value.trim(), btn = this;
-      if (!/^https:\/\//.test(url) || key.length < 20) { note('URL harus diawali https:// dan key tidak boleh kosong'); return; }
+      if (!/^https?:\/\//.test(url) || key.length < 20) { note('URL harus diawali https:// dan key tidak boleh kosong'); return; }
       btn.disabled = true; btn.textContent = 'Mengetes…';
       try {
         var r = await fetch(url + '/auth/v1/settings', { headers: { apikey: key } });
         if (!r.ok) throw new Error('Server menjawab ' + r.status);
-        LS.set('acx_server', { url: url, anonKey: key }); toggleServerPanel(false); note('Server tersambung. Silakan masuk atau daftar.');
-      } catch (e) { note('Server tidak bisa dihubungi: ' + e.message); }
+        LS.set('acx_server', { url: url, anonKey: key }); toggleServerPanel(false); note('Server tersambung. Ketuk Masuk dengan Strava.'); haptic('success');
+      } catch (e) { note('Server tidak bisa dihubungi: ' + e.message); haptic('error'); }
       btn.disabled = false; btn.textContent = 'Simpan & tes';
     };
   }
-  function tweakLogin() {
-    var lf = $('#loginForm'), rf = $('#registerForm');
-    [lf, rf].forEach(function (f, i) {
-      if (!f) return;
-      var n = f.querySelector('input[name=nama]'), p = f.querySelector('input[name=pin]');
-      if (n) { n.type = 'email'; n.placeholder = 'Email'; n.autocomplete = 'email'; n.setAttribute('inputmode', 'email'); n.setAttribute('autocapitalize', 'off'); }
-      if (p) { p.placeholder = i ? 'Buat sandi (min. 6 karakter)' : 'Sandi'; p.minLength = 6; }
-    });
-    var ic = document.querySelectorAll('.auth-field-icon use');
-    ic.forEach(function (u) { if (u.getAttribute('href') === '#i-user') u.setAttribute('href', '#i-mail'); });
-    var t = $('#authToggle');
-    if (t && !$('#acxServerLink')) { t.insertAdjacentHTML('afterend', '<button type="button" class="acx-server-link" id="acxServerLink">Atur server</button>'); $('#acxServerLink').onclick = function () { toggleServerPanel(!$('#acxServer')); }; }
-    if (typeof setAuthMode === 'function' && !setAuthMode.__acx) {
-      var orig = setAuthMode;
-      window.setAuthMode = function (mode) { orig(mode); var i = $('#authIntro'); if (i) i.textContent = mode === 'login' ? 'Masuk dengan email & sandi akun Active Coach-mu.' : 'Buat akun baru — datamu tersimpan aman di server pribadimu.'; };
-      window.setAuthMode.__acx = true;
-    }
-    var intro = $('#authIntro'); if (intro && lf && !lf.hidden) intro.textContent = 'Masuk dengan email & sandi akun Active Coach-mu.';
+  function initLoginUi() {
+    var btn = $('#stravaLoginBtn'); if (btn) btn.onclick = startStravaLogin;
+    var c = $('#lgCancel'); if (c) c.onclick = cancelStravaLogin;
+    var foot = $('.lg-bottom .auth-foot');
+    if (foot && !$('#acxServerLink')) { foot.insertAdjacentHTML('beforebegin', '<button type="button" class="acx-server-link" id="acxServerLink">Pengaturan server</button>'); $('#acxServerLink').onclick = function () { toggleServerPanel(!$('#acxServer')); }; }
+    // karusel fitur: geser manual atau otomatis tiap 5 detik
+    var track = $('#lgSlides'), dots = [].slice.call(document.querySelectorAll('#lgDots button')), idx = 0, timer = null, touching = false;
+    if (!track) return;
+    function go(i, smooth) { idx = (i + dots.length) % dots.length; paint(); track.scrollTo({ left: idx * track.clientWidth, behavior: smooth === false ? 'auto' : 'smooth' }); }
+    function paint() { dots.forEach(function (d, i) { d.classList.toggle('on', i === idx); }); }
+    function auto() { clearInterval(timer); timer = setInterval(function () { var ls = $('#loginScreen'); if (!touching && ls && !ls.hidden && document.visibilityState === 'visible') go(idx + 1); }, 5200); }
+    track.addEventListener('scroll', function () { var i = Math.round(track.scrollLeft / Math.max(1, track.clientWidth)); if (i !== idx) { idx = i; paint(); } }, { passive: true });
+    track.addEventListener('touchstart', function () { touching = true; }, { passive: true });
+    track.addEventListener('touchend', function () { touching = false; auto(); }, { passive: true });
+    dots.forEach(function (d, i) { d.onclick = function () { go(i); auto(); }; });
+    window.addEventListener('resize', function () { go(idx, false); });
+    auto();
   }
   function paintSyncState() {
     var el = $('#acxSyncState'); if (!el) return;
@@ -281,8 +404,9 @@
     if (!host || $('#acxImportRow')) return;
     var c = cfg(), hostName = c.url.replace(/^https?:\/\//, '');
     host.insertAdjacentHTML('beforeend',
+      '<div class="acx-row as-static"><span class="acx-row-ic tone-strava icon"><svg viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M15.39 17.94 13.3 13.8h-3.07l5.16 10.2 5.15-10.2h-3.07M10.1 0 3.2 13.8h4.06l2.84-5.63 2.84 5.63h4.05z"/></svg></span><span class="acx-row-text"><b>Akun</b><small id="acxAccountName">Masuk dengan Strava</small></span></div>' +
       '<div class="acx-row as-static"><span class="acx-row-ic tone-teal icon"><svg><use href="#i-layers"/></svg></span><span class="acx-row-text"><b>Penyimpanan</b><small id="acxSyncState">Tersinkron dengan server</small><small>' + esc(hostName) + '</small></span></div>' +
-      '<button type="button" class="acx-row" id="acxImportRow"><span class="acx-row-ic tone-green icon"><svg><use href="#i-download"/></svg></span><span class="acx-row-text"><b>Impor dari Google Sheets</b><small>Pakai file ekspor (.json) dari Apps Script lama</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
+      '<button type="button" class="acx-row" id="acxImportRow"><span class="acx-row-ic tone-green icon"><svg><use href="#i-download"/></svg></span><span class="acx-row-text"><b>Pulihkan dari cadangan</b><small>File .json dari Cadangkan data / Google Sheets lama</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxExportRow"><span class="acx-row-ic tone-indigo icon"><svg><use href="#i-share"/></svg></span><span class="acx-row-text"><b>Cadangkan data</b><small>Simpan salinan lengkap (.json)</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<input type="file" id="acxImportFile" accept=".json,application/json,text/plain" hidden>');
     paintSyncState();
@@ -291,32 +415,45 @@
       var f = e.target.files && e.target.files[0]; if (!f) return;
       var data;
       try { data = JSON.parse(await f.text()); } catch (x) { note('File tidak bisa dibaca sebagai JSON'); return; }
-      if (!data || data.format !== 'active-coach-export') { note('Ini bukan file ekspor Active Coach'); return; }
+      if (!data || data.format !== 'active-coach-export') { note('Ini bukan file cadangan Active Coach'); return; }
       var n = Object.keys(data.sheets || {}).length;
-      if (!confirm('Impor akan MENGGANTI semua data di akun ini dengan isi file (' + n + ' sheet). Lanjutkan?')) return;
+      if (!confirm('Pulihkan akan MENGGANTI semua data di akun ini dengan isi file (' + n + ' tabel). Lanjutkan?')) return;
       try {
-        showGlobalLoader('Mengimpor & mengunggah data…');
+        loader('Memulihkan & mengunggah data…');
+        var keep = null; try { keep = await callEngine('appCurrentStrava', []); } catch (x) {}
         var r = await send({ type: 'import', data: data });
-        var s = await sessionFlow();
-        SESSION = { athleteId: s.athleteId, nama: s.nama };
-        hideGlobalLoader();
+        try { await callEngine('appSelectStravaAthlete', [stravaIdOf(currentSession)]); } catch (x) {}
+        var s = await sessionFlow(), nama = s.nama;
+        if (keep && keep.refresh_token) {
+          var nm = displayNameOf(currentSession).split(' ');
+          keep.athlete = { id: keep.athlete && keep.athlete.id || stravaIdOf(currentSession), firstname: nm[0] || '', lastname: nm.slice(1).join(' ') };
+          keep.scope = 'activity:read_all';
+          try { var ap = await callEngine('appApplyStravaLogin', [keep]); if (ap && ap.nama) nama = ap.nama; } catch (x) {}
+        }
+        SESSION = { athleteId: s.athleteId, nama: nama };
+        unloader();
         var rows = r.sheets || {}, logs = rows.LogAktivitas || 0;
-        note('Impor selesai: ' + logs + ' aktivitas, ' + (r.files || 0) + ' file');
+        note('Selesai: ' + logs + ' aktivitas, ' + (r.files || 0) + ' file dipulihkan'); haptic('success');
         try { DATA.bikeGarage = null; DATA.pro = null; DATA.profileExtras = null; } catch (x) {}
         await load(); await loadStrava();
-      } catch (x) { hideGlobalLoader(); note('Impor gagal: ' + x.message); }
+      } catch (x) { unloader(); note('Gagal memulihkan: ' + x.message); haptic('error'); }
     };
     $('#acxExportRow').onclick = async function () {
       try {
-        showGlobalLoader('Menyiapkan cadangan…');
+        loader('Menyiapkan cadangan…');
         var json = await send({ type: 'export' });
-        hideGlobalLoader();
+        unloader();
         var name = 'active-coach-cadangan-' + new Date().toISOString().slice(0, 10) + '.json', blob = new Blob([json], { type: 'application/json' });
         if (NATIVE && P.Filesystem && P.Share) await saveAndShare(blob, name);
         else { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; _click.call(a); }
-      } catch (x) { hideGlobalLoader(); note('Gagal membuat cadangan: ' + x.message); }
+      } catch (x) { unloader(); note('Gagal membuat cadangan: ' + x.message); }
     };
     var rl = $('#reloadBtn small'); if (rl) rl.textContent = 'Ambil ulang data terbaru dari server';
+  }
+  function paintAccount() {
+    var el = $('#acxAccountName'); if (!el || !currentSession) return;
+    var sid = stravaIdOf(currentSession);
+    el.textContent = displayNameOf(currentSession) + (sid ? ' · Strava #' + sid : '');
   }
   var triggerTimer = null;
   function runTriggersSoon(ms) {
@@ -327,67 +464,116 @@
       runTriggersSoon(30 * 60000);
     }, ms);
   }
+  /* Sinkron Strava otomatis & senyap saat aplikasi dibuka/kembali aktif (maks. tiap 20 menit). */
+  var autoBusy = false;
+  function lastSyncKey() { return 'acx_last_sync_' + ((typeof SESSION !== 'undefined' && SESSION.athleteId) || ''); }
+  function markSynced() { LS.set(lastSyncKey(), Date.now()); }
+  async function autoSync(force) {
+    if (autoBusy || !engineReady || typeof SESSION === 'undefined' || !SESSION.athleteId) return;
+    if (!force && Date.now() - (LS.get(lastSyncKey()) || 0) < 20 * 60000) return;
+    if (navigator.onLine === false) return;
+    if (typeof LOAD_BUSY !== 'undefined' && LOAD_BUSY) { setTimeout(function () { autoSync(force); }, 3000); return; }
+    autoBusy = true;
+    var root = document.documentElement; root.classList.add('is-syncing');
+    try {
+      var st = await callEngine('getStravaStatus', [SESSION.athleteId]);
+      if (st && st.connected) {
+        var r = await callEngine('syncStravaAll', [SESSION.athleteId]);
+        markSynced();
+        var n = (r && r.imported) || 0;
+        if (n > 0) { if (typeof softRefresh === 'function') await softRefresh(); note(n + ' aktivitas baru dari Strava ✓'); haptic('success'); }
+      }
+    } catch (e) { console.warn('Sinkron otomatis gagal', e && e.message); }
+    root.classList.remove('is-syncing'); autoBusy = false;
+  }
   function afterLogin() {
+    paintAccount();
     runTriggersSoon(8000);
+    setTimeout(autoSync, 6000);
     if (pendingLink) { var l = pendingLink; pendingLink = null; setTimeout(function () { handleDeepLink(l); }, 1500); }
   }
 
   /* ------------------------------ override fungsi aplikasi ------------------------------ */
   window.initSession = async function () {
     var s = LS.get('acx_session');
+    if (authBusy) { showLoginScreen(); setLoginState('working', { step: 'account' }); return; }
+    if (s && s.refresh_token && !isStravaSession(s)) {
+      // akun email lama → simpan untuk dipindahkan saat masuk dengan Strava
+      LS.set('acx_legacy_session', s); LS.del('acx_session'); s = null;
+    }
     if (!configured()) { showLoginScreen(); toggleServerPanel(true); return; }
-    if (!s || !s.refresh_token) { showLoginScreen(); return; }
-    showGlobalLoader('Membuka Active Coach…');
+    if (!s || !s.refresh_token) {
+      showLoginScreen();
+      if (LS.get('acx_legacy_session')) { var n = $('#lgNotice'); if (n) { n.hidden = false; n.innerHTML = '<b>Sekarang masuk pakai Strava.</b> Data dari akun lamamu di HP ini akan dipindahkan otomatis.'; } }
+      return;
+    }
+    loader('Membuka Active Coach…');
     try {
       await startEngine(s);
+      try { await callEngine('appSelectStravaAthlete', [stravaIdOf(s)]); } catch (x) {}
       var r = await sessionFlow();
       SESSION = { athleteId: r.athleteId, nama: r.nama };
-      hideGlobalLoader();
+      unloader();
       $('#loginScreen').hidden = true;
       startApp();
       afterLogin();
     } catch (e) {
-      hideGlobalLoader();
-      if (W) { W.terminate(); W = null; } engineReady = false;
+      unloader();
+      stopWorker('Gagal membuka');
       showLoginScreen();
-      if (/kedaluwarsa|masuk lagi/i.test(e.message)) LS.del('acx_session');
+      if (/kedaluwarsa|masuk lagi|refresh|invalid/i.test(e.message)) LS.del('acx_session');
       else try { showAuthError('Gagal membuka data: ' + e.message); } catch (x) {}
     }
   };
   var __origLogout = null;
   document.addEventListener('DOMContentLoaded', function () {
-    injectStyles(); tweakLogin(); injectProfileRows();
+    initLoginUi(); injectProfileRows();
     if (typeof logoutAthlete === 'function') {
       __origLogout = logoutAthlete;
       window.logoutAthlete = async function () {
-        try { if (engineReady) { showGlobalLoader('Menyimpan & keluar…'); await Promise.race([send({ type: 'flush' }), new Promise(function (ok) { setTimeout(ok, 8000); })]); } } catch (e) {}
+        try { if (engineReady) { loader('Menyimpan & keluar…'); await Promise.race([send({ type: 'flush' }), new Promise(function (ok) { setTimeout(ok, 8000); })]); } } catch (e) {}
         var s = currentSession || LS.get('acx_session');
-        try { if (s && s.access_token) authReq('logout', {}, s.access_token).catch(function () {}); } catch (e) {}
-        try { hideGlobalLoader(); } catch (e) {}
+        if (s && s.access_token) authLogout(s.access_token);
+        unloader();
         forceLoggedOut();
       };
+    }
+    if (typeof syncStrava === 'function') {
+      var ss = syncStrava;
+      window.syncStrava = async function () { var r = await ss.apply(this, arguments); markSynced(); return r; };
     }
     if (typeof connectStrava === 'function') {
       window.connectStrava = function (s) { if (!s || !s.configured || !s.authUrl) return note('Server belum punya STRAVA_CLIENT_ID. Isi di Supabase › Edge Functions › Secrets.'); window.open(s.authUrl, '_blank'); };
     }
     if (typeof applyTheme === 'function') {
       var at = applyTheme;
-      window.applyTheme = function (t) { at(t); try { if (P.SystemBars) P.SystemBars.setStyle({ style: t === 'dark' ? 'DARK' : 'LIGHT' }); } catch (e) {} };
+      window.applyTheme = function (t) { at(t); try { if (P.SystemBars) P.SystemBars.setStyle({ style: t === 'dark' ? 'DARK' : 'LIGHT' }); } catch (e) {} try { document.dispatchEvent(new CustomEvent('acx:theme', { detail: t })); } catch (e) {} };
       try { window.applyTheme(document.documentElement.getAttribute('data-theme') || 'light'); } catch (e) {}
     }
     var rb = $('#reloadBtn');
     if (rb) rb.onclick = async function () { var p = $('#syncPopup'); if (p) p.hidden = true; note('Mengambil data terbaru dari server…'); try { await send({ type: 'remote' }); } catch (e) {} load(); };
+    window.addEventListener('online', function () { if (engineReady) send({ type: 'flush' }).catch(function () {}); document.documentElement.classList.remove('is-offline'); });
+    window.addEventListener('offline', function () { document.documentElement.classList.add('is-offline'); });
+    if (navigator.onLine === false) document.documentElement.classList.add('is-offline');
   });
 
   /* ------------------------------ Android: tombol kembali, resume, deep link ------------------------------ */
+  if (NATIVE && P.Browser && P.Browser.addListener) {
+    P.Browser.addListener('browserFinished', function () {
+      // pengguna menutup halaman Strava tanpa menyelesaikan login
+      setTimeout(function () { var ls = $('#loginScreen'); if (!authBusy && ls && ls.getAttribute('data-state') === 'waiting') setLoginState('idle'); }, 1200);
+    });
+  }
   if (NATIVE && P.App) {
     P.App.addListener('appUrlOpen', function (e) { handleDeepLink(e && e.url); });
     P.App.addListener('backButton', function () {
+      if (typeof window.acxBackHandler === 'function' && window.acxBackHandler()) return;
+      var pick = $('.acx-pick'); if (pick) return;
       var pal = $('#searchPopup'); if (pal && !pal.hidden) { closeSearch(); return; }
       var sheets = ['syncPopup', 'feedbackPopup', 'loginDisplayPopup'];
       for (var i = 0; i < sheets.length; i++) { var el = document.getElementById(sheets[i]); if (el && !el.hidden) { el.hidden = true; return; } }
       var md = $('#modal'); if (md && md.classList.contains('show')) { closeModal(); return; }
-      var ls = $('#loginScreen'); if (ls && !ls.hidden) { P.App.exitApp(); return; }
+      var ls = $('#loginScreen'); if (ls && !ls.hidden) { if (ls.getAttribute('data-state') === 'waiting') { cancelStravaLogin(); return; } P.App.exitApp(); return; }
       var v = currentPageView();
       if (v === 'detail') { closeDetailPage(); return; }
       if (v === 'profile') { closeProfile(); return; }
@@ -397,13 +583,16 @@
       P.App.exitApp();
     });
     P.App.addListener('resume', function () {
+      var ls = $('#loginScreen');
+      if (ls && !ls.hidden && ls.getAttribute('data-state') === 'waiting' && !authBusy && Date.now() - browserOpenAt > 4000) setTimeout(function () { if (!authBusy && ls.getAttribute('data-state') === 'waiting') setLoginState('idle'); }, 2500);
       if (!engineReady) return;
       send({ type: 'remote' }).then(function (n) { if (n && typeof softRefresh === 'function') softRefresh(); }).catch(function () {});
       runTriggersSoon(3000);
+      setTimeout(autoSync, 2500);
     });
     P.App.addListener('pause', function () { if (engineReady) send({ type: 'flush' }).catch(function () {}); });
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
-  window.ACX = { callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, get ready() { return engineReady; } };
+  window.ACX = { autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

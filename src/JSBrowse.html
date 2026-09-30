@@ -352,7 +352,7 @@ function renderSharing(){
       '<span class="acx-share-cta"><span class="icon"><svg><use href="#i-image"/></svg></span>Kartu</span></button>').join('')||
       '<div class="acx-card acx-empty-sm">Belum ada aktivitas untuk dibagikan.</div>';
     box.querySelectorAll('[data-share-activity]').forEach(b=>b.onclick=()=>{
-      OVL.activityId=b.dataset.shareActivity;ovlSave();switchPage('overlay-editor');
+      studioOpen(b.dataset.shareActivity);
     });
   }
   let priv=$('#sharePrivacyState');

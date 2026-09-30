@@ -60,3 +60,45 @@ function appWorkspaceInfo() {
   Object.keys(s).forEach(function (k) { out[k] = Math.max(0, s[k].length - 1); });
   return { sheets: out, files: Object.keys(ACX_ENGINE.db.files).length };
 }
+
+/* Setelah "Masuk dengan Strava": simpan token, nama & foto dari Strava ke profil atlet aktif. */
+function appSetProfileKey_(athleteId, key, value) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet(), sh = ss.getSheetByName(SHEETS.profile), rows = readRows(ss, SHEETS.profile), row = 0;
+  rows.forEach(function (r, i) { if (r[0] === key && String(r[2] || '') === String(athleteId)) row = i + 2; });
+  if (!row) row = sh.getLastRow() + 1;
+  sh.getRange(row, 1, 1, 3).setValues([[key, String(value == null ? '' : value), String(athleteId)]]);
+}
+function appApplyStravaLogin(strava) {
+  strava = strava || {};
+  var p = PropertiesService.getScriptProperties(), id = p.getProperty('APP_ATHLETE_ID');
+  if (!id) throw new Error('Profil atlet belum siap.');
+  var ath = strava.athlete || {}, name = [ath.firstname, ath.lastname].filter(Boolean).join(' ').trim();
+  if (strava.access_token) saveAthleteStravaToken(id, { access_token: strava.access_token, refresh_token: strava.refresh_token, expires_at: strava.expires_at, athlete: ath });
+  var prof = profileMap(SpreadsheetApp.getActiveSpreadsheet(), id);
+  if (name && (!prof.nama || prof.nama === 'Cyclist' || prof.nama === 'Athlete')) appSetProfileKey_(id, 'nama', name);
+  var avatar = String(ath.profile || ath.profile_medium || '');
+  if (/^https:\/\//.test(avatar) && !/avatar\/athlete\/large/.test(avatar) && !prof.profilePhoto) appSetProfileKey_(id, 'profilePhoto', avatar);
+  var logs = readAthleteLogs(SpreadsheetApp.getActiveSpreadsheet(), id);
+  return { ok: true, athleteId: id, nama: (athleteById(id) || {}).nama || name, needsFirstSync: !logs.length, scopeOk: /activity:read_all/.test(String(strava.scope || 'activity:read_all')) };
+}
+
+/* Pilih profil atlet yang tertaut ke akun Strava ini (kalau data berisi beberapa atlet). */
+function appSelectStravaAthlete(stravaId) {
+  ensureRuntimeDatabase();
+  stravaId = String(stravaId || '');
+  if (!stravaId) return { ok: false };
+  var rows = athleteRows();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][4] || '') === stravaId) { PropertiesService.getScriptProperties().setProperty('APP_ATHLETE_ID', String(rows[i][0])); return { ok: true, athleteId: String(rows[i][0]) }; }
+  }
+  return { ok: false };
+}
+
+/* Token Strava milik profil aktif (dipakai saat memulihkan cadangan agar login Strava tetap tersambung). */
+function appCurrentStrava() {
+  var id = PropertiesService.getScriptProperties().getProperty('APP_ATHLETE_ID'), a = id ? athleteById(id) : null;
+  if (!a || !a.stravaRefreshToken) return null;
+  var rows = athleteRows(), sid = '';
+  for (var i = 0; i < rows.length; i++) if (String(rows[i][0]) === String(id)) sid = String(rows[i][4] || '');
+  return { access_token: a.stravaAccessToken || '', refresh_token: a.stravaRefreshToken, expires_at: Number(a.stravaExpiresAt || 0), athlete: { id: sid } };
+}

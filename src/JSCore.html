@@ -21,7 +21,7 @@ function stravaTag(){let img=document.getElementById('stravaLogoImg');return img
 const COLOR={orange:'#ff9500',orangeDark:'#c96f00',blue:'#0a84ff',green:'#2ea84a',red:'#ff3b30',yellow:'#ffcc00',ink:'#1c1c1e',ink2:'#48484a',muted:'#8a8a8e',grid:'#e5e5ea'};
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function gs(fn,...args){return new Promise((ok,no)=>{let call=google.script.run.withSuccessHandler(ok).withFailureHandler(no);call[fn](...args)})}
-function toast(t){$('#toast').innerHTML=t;$('#toast').classList.add('show');setTimeout(()=>$('#toast').classList.remove('show'),2400)}
+let TOAST_T=0;function toast(t){let el=$('#toast');if(!el)return;el.innerHTML=t;el.classList.remove('show');void el.offsetWidth;el.classList.add('show');clearTimeout(TOAST_T);let plain=String(t).replace(/<[^>]+>/g,'');TOAST_T=setTimeout(()=>el.classList.remove('show'),Math.min(5200,2200+plain.length*35))}
 function fmtDate(s){return new Date(s+'T00:00:00').toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}
 function fmtDateShort(s){return new Date(s+'T00:00:00').toLocaleDateString('id-ID',{day:'numeric',month:'short'})}
 function pace(p){if(!p)return '-';let m=Math.floor(p),s=Math.round((p-m)*60);return m+':'+String(s).padStart(2,'0')+' /km'}
@@ -34,16 +34,11 @@ function svgRouteThumb(polyline,w,h){let pts=decodePolyline(polyline||'');if(pts
 function sportIconId(sport){return sport==='Running'?'i-shoe':sport==='Cycling'?'i-bike':'i-pulse'}
 function miniMap(x){let ic='<span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>';if(!x.polyline)return `<div class="mini-map empty">${ic}</div>`;let svg=svgRouteThumb(x.polyline,320,180);return svg?`<div class="mini-map">${svg}</div>`:`<div class="mini-map empty">${ic}</div>`}
 let detailMap=null;
-function initDetailMap(polyline){let el=document.getElementById('mapContainer');if(!el)return;if(detailMap){detailMap.remove();detailMap=null}let pts=decodePolyline(polyline||'');if(pts.length<2){el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9aa4ab;font-size:12px">Tidak ada data rute GPS</div>';return}
+function initDetailMap(polyline,sport){let el=document.getElementById('mapContainer');if(!el)return;if(detailMap){try{detailMap.remove()}catch(e){}detailMap=null}let pts=decodePolyline(polyline||'');if(pts.length<2){el.innerHTML='<div class="acx-map-empty"><span class="icon"><svg><use href="#i-map"/></svg></span>Tidak ada data rute GPS</div>';return}
   try{
-    detailMap=L.map('mapContainer',{zoomControl:false,attributionControl:true,scrollWheelZoom:false});
-    L.tileLayer('https:\/\/{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,subdomains:'abcd'}).addTo(detailMap);
-    let latlngs=pts.map(p=>[p[0],p[1]]),line=L.polyline(latlngs,{color:COLOR.orange,weight:4,lineJoin:'round'}).addTo(detailMap);
-    detailMap.fitBounds(line.getBounds(),{padding:[20,20]});
-    L.circleMarker(latlngs[0],{radius:6,color:'#fff',weight:2,fillColor:COLOR.green,fillOpacity:1}).addTo(detailMap).bindTooltip('Start');
-    L.circleMarker(latlngs[latlngs.length-1],{radius:6,color:'#fff',weight:2,fillColor:COLOR.red,fillOpacity:1}).addTo(detailMap).bindTooltip('Finish');
-    setTimeout(()=>detailMap&&detailMap.invalidateSize(),60);
-  }catch(e){el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9aa4ab;font-size:12px">Peta gagal dimuat</div>'}
+    if(!sport){let lg=(DATA.logs||[]).find(x=>x.polyline===polyline);sport=lg&&lg.sport}
+    detailMap=acxMap(el,{});acxRoute(detailMap,pts,{sport:sport});
+  }catch(e){console.log(e);el.innerHTML='<div class="acx-map-empty">Peta gagal dimuat</div>'}
 }
 
 let compareSelection=[];
@@ -83,16 +78,14 @@ function initHeatmap(sport){
   if(typeof sport==='string')heatSport=sport;
   let items=heatmapItems(heatSport);
   try{
-    if(!heatMap){heatMap=L.map('heatmapMap',{zoomControl:true,attributionControl:true,scrollWheelZoom:false,preferCanvas:true});L.tileLayer('https:\/\/{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,subdomains:'abcd'}).addTo(heatMap)}
-    if(heatLayer){heatMap.removeLayer(heatLayer)}
-    heatLayer=L.layerGroup();
-    let bounds=[],totalKm=0;
-    items.forEach(x=>{let pts=decodePolyline(x.polyline);if(pts.length<2)return;totalKm+=x.distance||0;let color=x.sport==='Running'?COLOR.blue:x.sport==='Cycling'?COLOR.orange:COLOR.green;L.polyline(pts,{color:color,weight:2,opacity:.35,lineJoin:'round'}).addTo(heatLayer);bounds=bounds.concat(pts)});
-    heatLayer.addTo(heatMap);
-    let summary=$('#heatmapSummary');if(summary)summary.textContent=items.length?items.length+' rute · '+Math.round(totalKm)+' km total':'Belum ada rute GPS';
-    if(bounds.length)heatMap.fitBounds(L.latLngBounds(bounds),{padding:[18,18]});
-    setTimeout(()=>{if(!heatMap)return;try{heatMap.invalidateSize();if(bounds.length)heatMap.fitBounds(L.latLngBounds(bounds),{padding:[18,18]})}catch(err){}},80);
-    setTimeout(()=>{try{heatMap&&heatMap.invalidateSize()}catch(err){}},450);
+    if(!heatMap||!acxAlive(heatMap)||heatMap.getContainer()!==el){if(heatMap){try{heatMap.remove()}catch(e){}}heatMap=acxMap(el,{canvas:true});heatMap.on('unload',()=>{heatMap=null;heatLayer=null})}
+    if(heatLayer){heatMap.removeLayer(heatLayer);heatLayer=null}
+    let totalKm=0,list=[];
+    items.forEach(x=>{let pts=decodePolyline(x.polyline);if(pts.length<2)return;totalKm+=x.distance||0;list.push({pts,sport:x.sport,id:x.id,onClick:it=>{if(typeof showDetail==='function')showDetail(it.id)}})});
+    heatLayer=acxHeat(heatMap,list);
+    let summary=$('#heatmapSummary');if(summary)summary.textContent=items.length?items.length+' rute · '+Math.round(totalKm).toLocaleString('id-ID')+' km':'Belum ada rute GPS';
+    let lg=$('#heatmapLegend');if(lg){let c=items.filter(x=>x.sport==='Cycling').length,r=items.filter(x=>x.sport==='Running').length,o=items.length-c-r;lg.innerHTML=(c?`<span><i style="background:${ACX_SPORT_COLOR.Cycling}"></i>Sepeda ${c}</span>`:'')+(r?`<span><i style="background:${ACX_SPORT_COLOR.Running}"></i>Lari ${r}</span>`:'')+(o?`<span><i style="background:${ACX_SPORT_COLOR.Other}"></i>Lainnya ${o}</span>`:'')}
+    let em=$('#heatmapEmpty');if(em)em.hidden=!!list.length;
   }catch(e){console.log(e)}
 }
 

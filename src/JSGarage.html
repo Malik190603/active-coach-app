@@ -780,12 +780,13 @@ function proSeg(key,opts,cur){return `<div class="seg pro-seg">${opts.map(o=>`<b
 function proStat(label,value,note,color){return `<div class="pro-stat"><small>${esc(label)}</small><b${color?` style="color:${color}"`:''}>${value}</b>${note?`<span>${note}</span>`:''}</div>`}
 function proActRow(log,right,sub){return `<button type="button" class="glist-row" data-pro-act="${esc(log.id)}"><span class="glist-text"><b>${esc(log.title||'Aktivitas')}</b><small>${esc(fmtDate(log.date))}${sub?' · '+sub:''}</small></span>${right?`<span class="glist-value">${right}</span>`:''}<span class="glist-chev icon"><svg><use href="#i-chevron"/></svg></span></button>`}
 
-function proTileUrl(){return isDarkTheme()?'https:\/\/{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png':'https:\/\/{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'}
+function proTileUrl(){let st=ACX_MAP_STYLES[acxMapStyleKey()]||ACX_MAP_STYLES.standard;return st.url}
 function proMap(elId,opts){
   let el=document.getElementById(elId);if(!el||!window.L)return null;
   if(PRO.maps[elId]){try{PRO.maps[elId].remove()}catch(e){}delete PRO.maps[elId]}
-  let m=L.map(el,Object.assign({zoomControl:true,attributionControl:true,scrollWheelZoom:false},opts||{}));
-  L.tileLayer(proTileUrl(),{attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,subdomains:'abcd'}).addTo(m);
+  opts=Object.assign({},opts||{});let lopt={};['preferCanvas'].forEach(k=>{if(k in opts){lopt[k]=opts[k]}});
+  let m=acxMap(el,{zoom:opts.zoomControl!==false,canvas:!!opts.preferCanvas,leaflet:lopt});
+  let fit=m.fitBounds.bind(m);m.fitBounds=function(b,o){try{m.__acxBounds=L.latLngBounds(b.getSouthWest?[b.getSouthWest(),b.getNorthEast()]:b);m.__acxPad=(o&&o.padding)||[24,24]}catch(e){}return fit(b,o)};
   PRO.maps[elId]=m;return m;
 }
 function proDestroyMaps(){Object.keys(PRO.maps).forEach(k=>{try{PRO.maps[k].remove()}catch(e){}delete PRO.maps[k]})}
@@ -1259,8 +1260,8 @@ PRO_ACTIVITY_HOOKS.push(function proInteractiveMap(x,d){
 function proLoadMapLibre(){
   if(window.maplibregl)return Promise.resolve();
   if(PRO.mlLoading)return PRO.mlLoading;
-  PRO.mlLoading=new Promise((ok,no)=>{let css=document.createElement('link');css.rel='stylesheet';css.href='https:\/\/unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css';document.head.appendChild(css);
-    let s=document.createElement('script');s.src='https:\/\/unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js';s.onload=()=>ok();s.onerror=()=>{PRO.mlLoading=null;no(new Error('MapLibre gagal dimuat'))};document.head.appendChild(s)});
+  PRO.mlLoading=new Promise((ok,no)=>{let css=document.createElement('link');css.rel='stylesheet';css.href='vendor/maplibre-gl.css';document.head.appendChild(css);
+    let s=document.createElement('script');s.src='vendor/maplibre-gl.js';s.onload=()=>ok();s.onerror=()=>{PRO.mlLoading=null;no(new Error('MapLibre gagal dimuat'))};document.head.appendChild(s)});
   return PRO.mlLoading;
 }
 async function proFlyover(tr,x){
@@ -1273,7 +1274,7 @@ async function proFlyover(tr,x){
   let root=$('#proFly'),state={playing:true,prog:0,speed:1,raf:0};
   let close=()=>{state.playing=false;cancelAnimationFrame(state.raf);try{state.map&&state.map.remove()}catch(e){}root.remove()};
   $('#proFlyClose').onclick=close;
-  try{await proLoadMapLibre()}catch(e){$('#proFlyLoad').innerHTML='<p>Peta 3D tidak bisa dimuat (butuh koneksi ke unpkg.com).</p>';return}
+  try{await proLoadMapLibre()}catch(e){$('#proFlyLoad').innerHTML='<p>Peta 3D tidak bisa dimuat di perangkat ini.</p>';return}
   let coords=tr.ll.map(p=>[p[1],p[0]]),dist=tr.d,total=dist[dist.length-1]||1;
   let map;try{map=state.map=new maplibregl.Map({container:'proFlyMap',style:{version:8,sources:{
       base:{type:'raster',tiles:['https:\/\/a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png','https:\/\/b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap © CARTO'},
