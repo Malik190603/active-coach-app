@@ -1,0 +1,530 @@
+<script>
+'use strict';
+/* ---------- templates ---------- */
+/* daftar kategori sesuai urutan tampil chip filter */
+const OVL_TPL_CATS=['Klasik & Grid','Minimalis','Data & Grafik','Atletik & Skor','Rute & Peta','Gelap & Bold','Momen & Pencapaian','Editorial','Terang & Lembut','Kekinian (Gen Z)','Aesthetic Vibes','Lainnya'];
+/* template dengan latar terang -> teks kredit di bawah pakai warna gelap, bukan putih */
+const OVL_LIGHT_TPL=['magazine','polaroid','blush','scrapbook','stickerpop','confetti','cleangirl','cottagecore','matcha','ticketstub'];
+function ovlTemplateList(){
+  return [
+    {k:'grid',n:'Grid Klasik',d:'Judul di atas, stat 2 kolom',g:'Klasik & Grid'},
+    {k:'list',n:'List Vertikal',d:'Stat berbaris + garis',g:'Klasik & Grid'},
+    {k:'wall',n:'Dinding Stat',d:'Grid 3×3 angka penuh',g:'Klasik & Grid'},
+    {k:'stack',n:'Tumpuk Rapi',d:'Brand, judul, dua baris stat + garis pemisah',g:'Klasik & Grid'},
+    {k:'minimal',n:'Minimal Besar',d:'Satu angka raksasa',g:'Minimalis'},
+    {k:'sticker',n:'Stiker Transparan',d:'Tanpa latar, siap tempel',g:'Minimalis'},
+    {k:'compact',n:'Kartu Kompak',d:'Panel bulat di tengah',g:'Minimalis'},
+    {k:'numeral',n:'Satu Angka',d:'Fokus total pada satu metrik, tanpa judul',g:'Minimalis'},
+    {k:'splits',n:'Splits Pro',d:'Tabel split + HR',g:'Data & Grafik'},
+    {k:'hrchart',n:'Grafik HR',d:'Kurva heart rate + stat',g:'Data & Grafik'},
+    {k:'elev',n:'Profil Elevasi',d:'Area elevasi di bawah',g:'Data & Grafik'},
+    {k:'powerlab',n:'Power Lab',d:'Grafik power + grid metrik performa',g:'Data & Grafik'},
+    {k:'fulldata',n:'Panel Data Penuh',d:'Splits lengkap + grafik HR',g:'Data & Grafik'},
+    {k:'dialring',n:'Radial Dial',d:'Cincin lingkaran, angka utama di tengah + 3 stat di bawah',g:'Data & Grafik'},
+    {k:'scorecard',n:'Papan Skor',d:'Gaya broadcast olahraga, angka besar rata kiri + kolom stat',g:'Atletik & Skor'},
+    {k:'broadcastbar',n:'Bar Skor Bawah',d:'Rute besar + bar skor bawah ala siaran TV dengan aksen warna',g:'Atletik & Skor'},
+    {k:'maphero',n:'Map Hero',d:'Rute besar + panel stat',g:'Rute & Peta'},
+    {k:'bottombar',n:'Bar Bawah',d:'Stat rapat di bawah',g:'Rute & Peta'},
+    {k:'poster',n:'Poster Rute',d:'Rute tengah, teks besar',g:'Rute & Peta'},
+    {k:'badge',n:'Lencana Rute',d:'Rute + lencana pencapaian',g:'Rute & Peta'},
+    {k:'explorer',n:'Explorer',d:'Peta hampir penuh layar, info mengambang',g:'Rute & Peta'},
+    {k:'pin',n:'Titik Start-Finish',d:'Rute dengan penanda titik start & finish',g:'Rute & Peta'},
+    {k:'routestory',n:'Rute Lengkap',d:'Peta + grafik elevasi + tabel splits sekaligus dalam 1 kartu',g:'Rute & Peta'},
+    {k:'zigzagtrail',n:'Jejak Zigzag',d:'Stat berjajar zigzag ala titik-titik trail, dengan pin lokasi',g:'Rute & Peta'},
+    {k:'mono',n:'Mono Bold',d:'Hitam-putih, angka besar',g:'Gelap & Bold'},
+    {k:'neon',n:'Neon Malam',d:'Latar gelap, grafik kecepatan',g:'Gelap & Bold'},
+    {k:'blackout',n:'Blackout',d:'Hitam pekat, aksen satu warna neon',g:'Gelap & Bold'},
+    {k:'podium',n:'Podium Juara',d:'Ledakan radial keemasan + pita juara, cocok untuk PR/pencapaian',g:'Momen & Pencapaian'},
+    {k:'magazine',n:'Magazine',d:'Judul serif + garis tipis',g:'Editorial'},
+    {k:'quote',n:'Sorotan Personal',d:'Judul besar ala kutipan',g:'Editorial'},
+    {k:'polaroid',n:'Polaroid Rute',d:'Rute dibingkai putih ala polaroid',g:'Editorial'},
+    {k:'ticketstub',n:'Tiket Aktivitas',d:'Gaya boarding pass 2 kolom dengan garis perforasi putus-putus',g:'Editorial'},
+    {k:'pastel',n:'Pastel Horizon',d:'Latar terang, 1 pil besar di atas + 3 gelembung stat sejajar',g:'Terang & Lembut'},
+    {k:'blush',n:'Blush Morning',d:'Krem lembut, judul serif elegan',g:'Terang & Lembut'},
+    {k:'wrapped',n:'Recap Wrapped',d:'Kolase blok warna tak simetris ala Spotify Wrapped',g:'Kekinian (Gen Z)'},
+    {k:'y2kchrome',n:'Y2K Cyber',d:'Grid neon cyan-pink, vibes komputer retro',g:'Kekinian (Gen Z)'},
+    {k:'coquette',n:'Coquette Pita',d:'Pink lembut, 3 pil melangkah diagonal dengan pita',g:'Kekinian (Gen Z)'},
+    {k:'filmstamp',n:'Kamera Vintage',d:'Hitam putih kontras + stempel tanggal',g:'Kekinian (Gen Z)'},
+    {k:'scrapbook',n:'Kolase Jurnal',d:'Kertas krem, washi tape, foto polaroid',g:'Kekinian (Gen Z)'},
+    {k:'auraglow',n:'Aura Glow',d:'Cahaya blur ungu-pink di belakang angka',g:'Kekinian (Gen Z)'},
+    {k:'varsity',n:'Varsity Angka',d:'Biru navy + emas ala jersey tim',g:'Kekinian (Gen Z)'},
+    {k:'sunsetgrid',n:'Synthwave Grid',d:'Matahari retro + garis grid horizon',g:'Kekinian (Gen Z)'},
+    {k:'stickerpop',n:'Sticker Pop',d:'Warna cerah, badge bulat, stiker emoji',g:'Kekinian (Gen Z)'},
+    {k:'glass',n:'Liquid Glass',d:'Panel kaca buram melayang di atas gradient',g:'Kekinian (Gen Z)'},
+    {k:'barbie',n:'Barbiecore',d:'Tumpukan pita pink melengkung, vibes princess',g:'Kekinian (Gen Z)'},
+    {k:'vaporwave',n:'Vaporwave Grid',d:'Grid neon retro, matahari digital 80an',g:'Kekinian (Gen Z)'},
+    {k:'holo',n:'Holo Iridescent',d:'Gradasi warna holografik mengambang',g:'Kekinian (Gen Z)'},
+    {k:'glitch',n:'Glitch Error',d:'Efek glitch RGB split ala layar rusak',g:'Kekinian (Gen Z)'},
+    {k:'rave',n:'Rave Neon',d:'Coretan cahaya neon + stat zigzag asimetris',g:'Kekinian (Gen Z)'},
+    {k:'kawaii',n:'Kawaii Pop',d:'Gelembung pastel tersebar organik, bintang & hati lucu',g:'Kekinian (Gen Z)'},
+    {k:'streetwear',n:'Streetwear Bold',d:'Font besar tegas, aksen merah ala jalanan',g:'Kekinian (Gen Z)'},
+    {k:'confetti',n:'Confetti Party',d:'Kartu putih ceria dikelilingi confetti',g:'Kekinian (Gen Z)'},
+    {k:'chrome',n:'Liquid Chrome',d:'Silver metalik mengkilap, futuristik',g:'Kekinian (Gen Z)'},
+    {k:'diagonalsplit',n:'Split Diagonal',d:'Latar terbelah diagonal, tata letak asimetris pojok bawah',g:'Kekinian (Gen Z)'},
+    {k:'midnight',n:'Midnight Drive',d:'Kota malam gelap, lampu bokeh kuning',g:'Kekinian (Gen Z)'},
+    {k:'cleangirl',n:'Clean Girl',d:'Nude minimalis, napas lega, font tipis',g:'Aesthetic Vibes'},
+    {k:'darkacademia',n:'Dark Academia',d:'Coklat tua, serif klasik, bingkai vintage',g:'Aesthetic Vibes'},
+    {k:'cottagecore',n:'Cottagecore',d:'Hijau sage lembut, aksen bunga & daun',g:'Aesthetic Vibes'},
+    {k:'matcha',n:'Matcha Split',d:'Hijau matcha & krem, kolom angka besar + daftar stat',g:'Aesthetic Vibes'},
+    {k:'goldhour',n:'Golden Hour',d:'Gradasi hangat senja, serif elegan, ruang kosong lega',g:'Aesthetic Vibes'},
+    {k:'haloframe',n:'Bingkai Halo',d:'Bingkai tipis minimalis mengambang, satu angka besar di tengah',g:'Minimalis'},
+    {k:'blank',n:'Kosong',d:'Mulai dari nol',g:'Lainnya'}
+  ];
+}
+function ovlApplyTemplate(key){
+  let x=ovlActivity();if(!x){toast('Pilih aktivitas dulu');return}
+  ovlSnapshot();
+  let avail=OVERLAY_STAT_DEFS.filter(d=>d.ok(x)&&d.group!=='Info').map(d=>d.key);
+  let pick=n=>avail.slice(0,n),els=[],bg=ovlDefaultBg();bg.mode='transparent';
+  let title=(p)=>ovlNewEl('text',{text:x.title||'Aktivitas',pos:Object.assign({size:62,weight:900,align:'center'},p)});
+  let sub=(p)=>ovlNewEl('text',{text:((x.sportType||x.sport||'')+' · '+fmtDate(x.date)).toUpperCase(),pos:Object.assign({size:26,weight:700,color:'#d7d2dd'},p)});
+  let brand=(p)=>ovlNewEl('text',{text:'ACTIVE COACH',pos:Object.assign({size:30,weight:800,color:'#ffffff'},p)});
+  let card=(p)=>ovlNewEl('shape',{pos:Object.assign({x:50,w:88,h:30,color:'#101014',opacity:0.85,radius:32},p)});
+  if(key==='blank'){OVL.els=[];OVL.bg=bg;OVL.sel=null;ovlSave();ovlDraw();ovlRenderPanes();return}
+  if(key==='grid'){
+    els.push(brand({x:50,y:7}),sub({x:50,y:11}),title({x:50,y:17,size:60}));
+    pick(6).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:30+Math.floor(i/2)*13,size:74,fit:44}})));
+  }else if(key==='minimal'){
+    els.push(brand({x:50,y:8}),title({x:50,y:15,size:50}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:40,size:190,fit:90}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:62,size:80,fit:44}})));
+  }else if(key==='list'){
+    els.push(brand({x:50,y:7}),title({x:50,y:14,size:54}));
+    pick(7).forEach((k,i)=>{els.push(ovlNewEl('stat',{key:k,pos:{x:50,y:26+i*8,size:56,fit:80,labelPos:'above'}}));
+      els.push(ovlNewEl('shape',{pos:{x:50,y:30+i*8,w:78,h:0.12,color:'#ffffff',opacity:0.25}}))});
+  }else if(key==='maphero'){
+    els.push(brand({x:50,y:6}),sub({x:50,y:10}));
+    els.push(ovlNewEl('map',{pos:{x:50,y:38,w:86,h:42,lineW:13,marks:true}}));
+    els.push(title({x:50,y:65,size:52}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:74+Math.floor(i/2)*9,size:66,fit:44}})));
+  }else if(key==='splits'){
+    els.push(brand({x:50,y:6}),title({x:50,y:12,size:48}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:22,size:60,fit:30}})));
+    els.push(card({x:50,y:58,w:90,h:58,color:'#0a0a10',opacity:0.55,radius:40}));
+    els.push(ovlNewEl('splits',{pos:{x:50,y:58,w:84,h:52,max:10,cols:['pace','hr']}}));
+  }else if(key==='hrchart'){
+    els.push(brand({x:50,y:6}),title({x:50,y:12,size:50}));
+    els.push(card({x:50,y:34,w:92,h:30,color:'#0a0a10',opacity:0.45,radius:36}));
+    els.push(ovlNewEl('chart',{pos:{x:50,y:34,w:86,h:22,metric:'hr',style:'area',color:'#ff375f'}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:56+Math.floor(i/2)*11,size:72,fit:44}})));
+  }else if(key==='elev'){
+    els.push(brand({x:50,y:6}),title({x:50,y:13,size:52}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:28+Math.floor(i/2)*12,size:72,fit:44}})));
+    els.push(card({x:50,y:62,w:94,h:28,color:'#0a0a10',opacity:0.4,radius:36}));
+    els.push(ovlNewEl('chart',{pos:{x:50,y:62,w:88,h:20,metric:'alt',style:'area',color:'#32d74b'}}));
+  }else if(key==='magazine'){
+    els.push(card({x:50,y:46,w:92,h:88,color:'#f4f1ec',opacity:0.95,radius:28}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:26,weight:700,color:'#8a8177',font:'mono'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:18,size:76,weight:900,color:'#16150f',font:'playfair'}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:25,w:70,h:0.15,color:'#16150f'}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:35+Math.floor(i/2)*13,size:72,fit:44,color:'#16150f',subColor:'#8a8177',font:'playfair'}})));
+    els.push(ovlNewEl('map',{pos:{x:50,y:72,w:74,h:26,stroke:'#16150f',lineW:8}}));
+  }else if(key==='bottombar'){
+    els.push(ovlNewEl('map',{pos:{x:50,y:42,w:92,h:52,lineW:14,marks:true}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:82,w:100,h:22,color:'#000000',opacity:0.55,radius:0}}));
+    els.push(title({x:50,y:75,size:46}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:13+i*24.5,y:84,size:52,fit:23}})));
+  }else if(key==='sticker'){
+    els.push(ovlNewEl('shape',{pos:{x:50,y:45,w:84,h:26,color:'#000000',opacity:0.45,radius:40}}));
+    els.push(title({x:50,y:36,size:48}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?72:28,y:44+Math.floor(i/2)*7,size:60,fit:42}})));
+  }else if(key==='poster'){
+    els.push(ovlNewEl('map',{pos:{x:50,y:44,w:88,h:56,lineW:16,marks:true}}));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:50,y:80,size:74,weight:900,font:'anton'}}));
+    els.push(sub({x:50,y:86}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:92,size:54,fit:30,font:'anton'}})));
+  }else if(key==='wall'){
+    els.push(brand({x:50,y:6}),title({x:50,y:12,size:44}));
+    pick(9).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+(i%3)*32,y:30+Math.floor(i/3)*20,size:56,fit:30}})));
+  }else if(key==='mono'){
+    els.push(card({x:50,y:40,w:90,h:76,color:'#000000',opacity:0.85,radius:40}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:24,weight:800,color:'#ffffff',font:'anton'}}));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:50,y:16,size:54,weight:900,color:'#ffffff',font:'anton'}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:42,size:210,fit:88,color:'#ffffff',font:'anton'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:64,size:66,fit:38,color:'#ffffff',font:'anton'}})));
+  }else if(key==='badge'){
+    els.push(brand({x:50,y:6}));
+    els.push(ovlNewEl('map',{pos:{x:50,y:28,w:60,h:28,lineW:12,marks:true}}));
+    els.push(ovlNewEl('emoji',{text:'🏅',pos:{x:50,y:48,size:76}}));
+    els.push(title({x:50,y:58,size:48}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:73,size:104,fit:56}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?70:30,y:87,size:54,fit:32}})));
+  }else if(key==='neon'){
+    els.push(card({x:50,y:42,w:92,h:78,color:'#0b0b10',opacity:0.78,radius:40}));
+    els.push(brand({x:50,y:6}),title({x:50,y:13,size:50,color:'#30d5c8'}));
+    els.push(ovlNewEl('chart',{pos:{x:50,y:36,w:86,h:20,metric:'speed',style:'bars',color:'#30d5c8'}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:58+Math.floor(i/2)*11,size:70,fit:40,color:'#bf5af2'}})));
+  }else if(key==='quote'){
+    els.push(brand({x:50,y:8}));
+    els.push(ovlNewEl('text',{text:'“',pos:{x:50,y:28,size:120,weight:900,color:'#ffffff',opacity:0.3,font:'playfair'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:46,size:60,weight:800,font:'playfair'}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:76,size:68,fit:40}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?68:32,y:88,size:50,fit:30}})));
+  }else if(key==='compact'){
+    els.push(ovlNewEl('map',{pos:{x:50,y:34,w:100,h:44,lineW:14,marks:true}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:75,w:88,h:36,color:'#000000',opacity:0.5,radius:28}}));
+    els.push(brand({x:50,y:64}));
+    els.push(title({x:50,y:70,size:42}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?68:32,y:79+Math.floor(i/2)*9,size:50,fit:30}})));
+  }else if(key==='stack'){
+    els.push(brand({x:50,y:6}),title({x:50,y:13,size:56}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:22,w:70,h:0.15,color:'#ffffff',opacity:0.25}}));
+    pick(4).slice(0,2).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:36,size:84,fit:44}})));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:48,w:70,h:0.15,color:'#ffffff',opacity:0.25}}));
+    pick(4).slice(2,4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:62,size:84,fit:44}})));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:74,w:70,h:0.15,color:'#ffffff',opacity:0.25}}));
+  }else if(key==='numeral'){
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:48,size:260,fit:92}}));
+    els.push(sub({x:50,y:72,size:28}));
+  }else if(key==='powerlab'){
+    els.push(brand({x:50,y:6}),title({x:50,y:12,size:48}));
+    els.push(card({x:50,y:34,w:92,h:30,color:'#0a0a10',opacity:0.42,radius:36}));
+    els.push(ovlNewEl('chart',{pos:{x:50,y:34,w:86,h:20,metric:'power',style:'bars',color:'#ff9f0a'}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:58+Math.floor(i/2)*13,size:70,fit:42}})));
+  }else if(key==='fulldata'){
+    els.push(brand({x:50,y:5}),title({x:50,y:10,size:42}));
+    pick(2).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:18,size:48,fit:28}})));
+    els.push(card({x:50,y:62,w:92,h:78,color:'#0a0a10',opacity:0.5,radius:40}));
+    els.push(ovlNewEl('splits',{pos:{x:50,y:46,w:84,h:38,max:6,cols:['pace','hr']}}));
+    els.push(ovlNewEl('chart',{pos:{x:50,y:78,w:86,h:14,metric:'hr',style:'area',color:'#ff375f'}}));
+  }else if(key==='explorer'){
+    els.push(ovlNewEl('map',{pos:{x:50,y:46,w:100,h:78,lineW:15,marks:true}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:86,w:100,h:26,color:'#000000',opacity:0.55,radius:0}}));
+    els.push(brand({x:50,y:78}));
+    els.push(title({x:50,y:83,size:42}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:92,size:46,fit:27}})));
+  }else if(key==='pin'){
+    els.push(brand({x:50,y:6}),title({x:50,y:11,size:46}));
+    els.push(ovlNewEl('map',{pos:{x:50,y:42,w:82,h:40,lineW:13,marks:true}}));
+    els.push(ovlNewEl('emoji',{text:'📍',pos:{x:22,y:64,size:52}}));
+    els.push(ovlNewEl('emoji',{text:'🏁',pos:{x:78,y:64,size:52}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:76+Math.floor(i/2)*11,size:64,fit:40}})));
+  }else if(key==='blackout'){
+    let accent='#32d74b';
+    els.push(card({x:50,y:40,w:90,h:76,color:'#000000',opacity:0.85,radius:40}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:7,size:24,weight:800,color:accent,font:'mono'}}));
+    els.push(title({x:50,y:15,size:54,color:accent}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:44,size:200,fit:86,color:'#ffffff',subColor:accent,font:'mono'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:66,size:64,fit:38,color:'#ffffff',subColor:accent,font:'mono'}})));
+  }else if(key==='polaroid'){
+    els.push(card({x:50,y:56,w:92,h:88,color:'#e8e4dc',opacity:0.96,radius:20}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:42,w:88,h:52,color:'#241b2e',opacity:0.08,radius:6}}));
+    els.push(ovlNewEl('map',{pos:{x:50,y:40,w:76,h:40,lineW:10,marks:true,stroke:'#fc4c02'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:74,size:52,weight:700,color:'#241b2e',font:'playfair'}}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:86,size:44,fit:26,color:'#241b2e',subColor:'#6b6560',font:'playfair'}})));
+  }else if(key==='pastel'){
+    let cardc='#efe9fb',cardc2='#f5f1ff',ink='#2b2438';
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:7,size:24,weight:700,color:'#ffffff',font:'inter'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:14,size:44,weight:800,color:'#ffffff'}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:33,w:72,h:24,color:cardc,opacity:1,radius:44}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:33,size:120,fit:56,color:ink,subColor:'#8b83a0'}}));
+    pick(4).slice(1,4).forEach((k,i)=>{
+      let px=22+i*28;
+      els.push(ovlNewEl('shape',{shape:'circle',pos:{x:px,y:60,w:26,h:15,color:cardc2,opacity:1}}));
+      els.push(ovlNewEl('stat',{key:k,pos:{x:px,y:60,size:36,fit:22,color:ink,subColor:'#8b83a0'}}));
+    });
+  }else if(key==='blush'){
+    let ink='#4a2f2a',subc='#a07f76';
+    els.push(card({x:50,y:32,w:88,h:56,color:'#f7ece6',opacity:0.96,radius:32}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:22,weight:700,color:subc,font:'mono'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:20,size:72,weight:700,color:ink,font:'playfair'}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:27,w:36,h:0.15,color:ink,opacity:0.5}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:40+Math.floor(i/2)*15,size:60,fit:36,color:ink,subColor:subc,font:'playfair'}})));
+  }else if(key==='wrapped'){
+    /* kolase blok tak simetris ala Spotify Wrapped, bukan hero+baris rapi */
+    els.push(ovlNewEl('shape',{pos:{x:50,y:8,w:46,h:5.5,color:'#ffffff',opacity:0.16,radius:20}}));
+    els.push(ovlNewEl('text',{text:'RECAP AKTIVITAS',pos:{x:50,y:8,size:22,weight:800,color:'#ffffff',font:'mono',letter:2}}));
+    els.push(title({x:50,y:16,size:42,color:'#ffffff',font:'poppins'}));
+    let blocks=[[30,58,44,15,'#6c2bd9',0],[74,56,34,20,'#a855f7',-2],[26,77,34,15,'#8b3fe8',1.5],[72,79,38,20,'#4c1d95',0]],ks=pick(4);
+    blocks.forEach((b,i)=>{if(!ks[i])return;
+      els.push(ovlNewEl('shape',{pos:{x:b[0],y:b[1],w:b[2],h:b[3],color:b[4],opacity:0.92,radius:20,rot:b[5]}}));
+      els.push(ovlNewEl('stat',{key:ks[i],pos:{x:b[0],y:b[1],size:i===0?68:42,fit:b[2]*0.72,color:'#ffffff',subColor:'#e4d9ff',font:'poppins',rot:b[5]}}));
+    });
+  }else if(key==='y2kchrome'){
+    let cyan='#38f2ff',pink='#ff3ec9';
+    els.push(card({x:50,y:46,w:90,h:82,color:'#05050a',opacity:0.85,radius:36}));
+    [50,58,66,74,82,90].forEach(y=>els.push(ovlNewEl('shape',{pos:{x:50,y:y,w:82,h:0.12,color:cyan,opacity:0.14}})));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:24,weight:800,color:pink,font:'mono',letter:2}}));
+    els.push(ovlNewEl('emoji',{text:'✨',pos:{x:18,y:15,size:52}}));
+    els.push(ovlNewEl('emoji',{text:'✨',pos:{x:84,y:20,size:44}}));
+    els.push(title({x:50,y:17,size:54,color:cyan,font:'poppins'}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:40+Math.floor(i/2)*15,size:70,fit:44,color:'#ffffff',subColor:pink,font:'poppins'}})));
+  }else if(key==='coquette'){
+    let ink='#6b2c43',pink='#ff8fb3';
+    els.push(ovlNewEl('emoji',{text:'🎀',pos:{x:24,y:16,size:56,rot:-8}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:62,y:17,size:46,weight:700,color:'#ffffff',font:'playfair'}}));
+    pick(3).forEach((k,i)=>{
+      let px=30+i*20,py=42+i*15,rot=-6+i*6;
+      els.push(ovlNewEl('shape',{pos:{x:px,y:py,w:34,h:14,color:'#ffe4ee',opacity:0.94,radius:22,rot:rot}}));
+      els.push(ovlNewEl('stat',{key:k,pos:{x:px,y:py,size:44,fit:26,color:ink,subColor:pink,font:'playfair',rot:rot}}));
+    });
+  }else if(key==='filmstamp'){
+    els.push(card({x:50,y:50,w:94,h:92,color:'#111111',opacity:0.82,radius:24}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:22,weight:700,color:'#9a9a9a',font:'mono'}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:50,w:92,h:0.15,color:'#ffffff',opacity:0.15}}));
+    els.push(title({x:50,y:42,size:64,color:'#ffffff',font:'mono'}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:58,size:50,fit:28,color:'#ffffff',subColor:'#9a9a9a',font:'mono'}})));
+    els.push(ovlNewEl('text',{text:fmtDate(x.date).toUpperCase(),pos:{x:78,y:92,size:24,weight:700,color:'#ff6b57',font:'mono'}}));
+  }else if(key==='scrapbook'){
+    let ink='#4a3b2a';
+    els.push(card({x:50,y:50,w:92,h:92,color:'#f3ead9',opacity:0.96,radius:20}));
+    els.push(ovlNewEl('shape',{pos:{x:36,y:9,w:22,h:5,color:'#ffd23f',opacity:0.85,radius:2,rot:-6}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:52,y:9,size:22,weight:700,color:ink,font:'mono'}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:40,w:82,h:52,color:'#ffffff',opacity:1,radius:4,rot:-1.5}}));
+    els.push(ovlNewEl('map',{pos:{x:50,y:38,w:70,h:38,stroke:'#fc4c02',lineW:9,marks:true}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:70,size:44,weight:700,color:ink,font:'playfair'}}));
+    els.push(ovlNewEl('emoji',{text:'📍',pos:{x:18,y:87,size:44}}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:34+i*20,y:88,size:34,fit:22,color:ink,subColor:'#9a8368',font:'playfair'}})));
+  }else if(key==='auraglow'){
+    els.push(card({x:50,y:48,w:92,h:84,color:'#0c0714',opacity:0.8,radius:44}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:46,w:70,h:39,color:'#8b5cf6',opacity:0.35}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:46,w:46,h:26,color:'#ff5fa2',opacity:0.35}}));
+    els.push(brand({x:50,y:8}));
+    els.push(sub({x:50,y:12}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:46,size:220,fit:88,color:'#ffffff',font:'poppins'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:74,size:64,fit:38,color:'#ffffff',subColor:'#d9c9ff',font:'poppins'}})));
+  }else if(key==='varsity'){
+    let accent='#ffd23f';
+    els.push(card({x:50,y:50,w:92,h:90,color:'#0f2f52',opacity:0.85,radius:28}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:56,w:84,h:0.5,color:accent,opacity:0.9}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:9,size:24,weight:800,color:accent,font:'oswald',letter:2}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:42,size:250,fit:88,color:'#ffffff',subColor:accent,font:'anton'}}));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:50,y:70,size:38,weight:800,color:accent,font:'oswald'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:86,size:46,fit:26,color:'#ffffff',subColor:accent,font:'oswald'}})));
+  }else if(key==='sunsetgrid'){
+    els.push(card({x:50,y:52,w:92,h:88,color:'#170a12',opacity:0.55,radius:40}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:30,w:54,h:30,color:'#ffd9c2',opacity:0.22}}));
+    [50,56,62,68,74,80,86].forEach(y=>els.push(ovlNewEl('shape',{pos:{x:50,y:y,w:88,h:0.12,color:'#ffffff',opacity:0.18}})));
+    els.push(brand({x:50,y:7}));
+    els.push(title({x:50,y:15,size:58}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:60+Math.floor(i/2)*15,size:66,fit:40}})));
+  }else if(key==='stickerpop'){
+    let ink='#1a1a1a';
+    els.push(card({x:50,y:50,w:92,h:90,color:'#ffe9a8',opacity:0.96,radius:36}));
+    els.push(ovlNewEl('emoji',{text:'⚡',pos:{x:18,y:14,size:56,rot:-12}}));
+    els.push(ovlNewEl('emoji',{text:'🔥',pos:{x:84,y:20,size:52,rot:10}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:24,weight:800,color:ink,font:'poppins'}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:47,w:66,h:37,color:'#ffffff',opacity:1}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:47,size:150,fit:56,color:ink,subColor:'#a68a1f',font:'poppins'}}));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:50,y:72,size:40,weight:800,color:ink,font:'poppins'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:88,size:44,fit:26,color:ink,subColor:'#a68a1f',font:'poppins'}})));
+  }else if(key==='glass'){
+    els.push(brand({x:50,y:7}));
+    els.push(sub({x:50,y:11}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:52,w:88,h:56,color:'#ffffff',opacity:0.3,radius:36}}));
+    els.push(title({x:50,y:30,size:54}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?70:30,y:46+Math.floor(i/2)*16,size:62,fit:36}})));
+  }else if(key==='barbie'){
+    /* tumpukan pita melengkung, bukan hero+baris simetris */
+    els.push(card({x:50,y:50,w:92,h:90,color:'#ff2fa0',opacity:0.94,radius:52}));
+    els.push(ovlNewEl('emoji',{text:'💗',pos:{x:50,y:10,size:44}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:16,size:20,weight:800,color:'#ffffff',font:'poppins',letter:2}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:30,w:86,h:13,color:'#ffffff',opacity:0.25,radius:26,rot:-2}}));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:50,y:30,size:32,weight:800,color:'#ffffff',font:'poppins',rot:-2}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:49,w:86,h:16,color:'#ffffff',opacity:0.25,radius:30,rot:1.5}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:49,size:64,fit:44,color:'#ffffff',subColor:'#ffd7ef',font:'poppins',weight:900,rot:1.5}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:68,w:86,h:14,color:'#ffffff',opacity:0.25,radius:26,rot:-1.5}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?65:35,y:68,size:40,fit:24,color:'#ffffff',subColor:'#ffd7ef',font:'poppins',rot:-1.5}})));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:85,w:86,h:13,color:'#ffffff',opacity:0.2,radius:24,rot:2}}));
+    if(pick(4)[3])els.push(ovlNewEl('stat',{key:pick(4)[3],pos:{x:50,y:85,size:40,fit:36,color:'#ffffff',subColor:'#ffd7ef',font:'poppins',rot:2}}));
+  }else if(key==='vaporwave'){
+    let pink='#ff6ec7',cyan='#7afcff';
+    els.push(card({x:50,y:54,w:92,h:82,color:'#1a0b2e',opacity:0.62,radius:8}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:28,w:46,h:26,color:pink,opacity:0.5}}));
+    [56,62,68,74,80,86,92].forEach((y,i)=>els.push(ovlNewEl('shape',{pos:{x:50,y:y,w:20+i*11,h:0.18,color:cyan,opacity:0.5}})));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:24,weight:800,color:cyan,font:'mono',letter:3}}));
+    els.push(title({x:50,y:16,size:56,color:pink,font:'poppins'}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:38+Math.floor(i/2)*15,size:66,fit:40,color:'#ffffff',subColor:cyan,font:'poppins'}})));
+  }else if(key==='holo'){
+    els.push(card({x:50,y:50,w:92,h:88,color:'#f2f2f7',opacity:0.22,radius:48}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:32,y:30,w:60,h:34,color:'#7afcff',opacity:0.35}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:68,y:36,w:60,h:34,color:'#ff9ff3',opacity:0.35}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:56,w:70,h:40,color:'#ffe985',opacity:0.28}}));
+    els.push(brand({x:50,y:8}));
+    els.push(sub({x:50,y:12}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:48,size:210,fit:88,color:'#ffffff',subColor:'#e8e8f5',font:'poppins'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:78,size:60,fit:36,color:'#ffffff',subColor:'#e8e8f5',font:'poppins'}})));
+  }else if(key==='glitch'){
+    els.push(card({x:50,y:44,w:92,h:64,color:'#0a0a0c',opacity:0.82,radius:12}));
+    [30,38,46,54,62,70].forEach(y=>els.push(ovlNewEl('shape',{pos:{x:50,y:y,w:92,h:0.35,color:'#ffffff',opacity:0.06}})));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:49,y:22,size:58,weight:900,color:'#ff2f6e',font:'mono',opacity:0.75}}));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:51,y:22,size:58,weight:900,color:'#2fe7ff',font:'mono',opacity:0.75}}));
+    els.push(title({x:50,y:22,size:58,font:'mono'}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:9,size:22,weight:700,color:'#2fe7ff',font:'mono',letter:2}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:44,size:150,fit:80,color:'#ffffff',subColor:'#ff2f6e',font:'mono'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:64,size:56,fit:32,color:'#ffffff',subColor:'#2fe7ff',font:'mono'}})));
+  }else if(key==='rave'){
+    let neon1='#39ff14',neon2='#ff2fd6';
+    els.push(card({x:50,y:50,w:92,h:88,color:'#050505',opacity:0.85,radius:20}));
+    /* coretan cahaya + stat zigzag Z, bukan hero tengah simetris */
+    [[20,20,-30],[85,18,25],[10,50,40],[92,48,-40],[18,82,-20],[86,84,20]].forEach(s=>els.push(ovlNewEl('shape',{pos:{x:s[0],y:s[1],w:2.2,h:16,color:s[2]<0?neon1:neon2,opacity:0.5,rot:s[2]}})));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:22,weight:900,color:neon1,font:'anton',letter:2}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:32,y:32,size:88,fit:46,color:'#ffffff',subColor:neon1,font:'anton'}}));
+    els.push(title({x:70,y:20,size:26,color:neon2,font:'anton',rot:-6}));
+    pick(3).slice(1,2).forEach(k=>els.push(ovlNewEl('stat',{key:k,pos:{x:70,y:55,size:68,fit:40,color:neon2,subColor:'#ffffff',font:'anton'}})));
+    pick(3).slice(2,3).forEach(k=>els.push(ovlNewEl('stat',{key:k,pos:{x:32,y:76,size:54,fit:34,color:'#ffffff',subColor:neon1,font:'anton'}})));
+  }else if(key==='kawaii'){
+    let ink='#5b3a63';
+    els.push(ovlNewEl('emoji',{text:'⭐',pos:{x:14,y:12,size:38,rot:-10}}));
+    els.push(ovlNewEl('emoji',{text:'💕',pos:{x:88,y:16,size:34,rot:10}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:7,size:22,weight:800,color:'#ff8fc8',font:'poppins'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:14,size:40,weight:800,color:'#ffffff',font:'poppins'}}));
+    /* gelembung pastel tersebar organik, bukan grid rapi */
+    let clouds=[[30,34,44],[74,30,34],[22,54,32],[78,58,40],[50,72,50]],cols=pick(5);
+    clouds.forEach((c,i)=>{if(!cols[i])return;
+      els.push(ovlNewEl('shape',{shape:'circle',pos:{x:c[0],y:c[1],w:c[2],h:c[2]*0.62,color:'#ffd9ec',opacity:1,rot:(i%2?4:-4)}}));
+      els.push(ovlNewEl('stat',{key:cols[i],pos:{x:c[0],y:c[1],size:c[2]*1.05,fit:c[2]*0.64,color:ink,subColor:'#c98bb0',font:'poppins',rot:(i%2?4:-4)}}));
+    });
+    els.push(ovlNewEl('emoji',{text:'🎀',pos:{x:50,y:92,size:34}}));
+  }else if(key==='streetwear'){
+    let red='#ff1e3c';
+    els.push(card({x:50,y:48,w:96,h:70,color:'#000000',opacity:0.88,radius:0}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:14,w:110,h:6,color:red,opacity:1,rot:-4}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:14,size:24,weight:900,color:'#ffffff',font:'oswald',letter:3}}));
+    els.push(ovlNewEl('text',{text:(x.title||'Aktivitas').toUpperCase(),pos:{x:50,y:30,size:68,weight:900,color:'#ffffff',font:'anton'}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:54,size:180,fit:86,color:red,font:'anton'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:76,size:56,fit:34,color:'#ffffff',subColor:red,font:'oswald'}})));
+  }else if(key==='confetti'){
+    let ink='#241b2e';
+    let conf=[['#ff6b6b',18,10,-10],['#4ecdc4',82,14,15],['#ffd93d',12,78,20],['#a78bfa',88,74,-15],['#ff8fc8',24,90,8],['#38f2ff',76,88,-8]];
+    conf.forEach(c=>els.push(ovlNewEl('shape',{pos:{x:c[1],y:c[2],w:6,h:2.6,color:c[0],opacity:0.9,radius:2,rot:c[3]}})));
+    els.push(card({x:50,y:50,w:88,h:70,color:'#ffffff',opacity:0.95,radius:40}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:20,size:24,weight:800,color:'#a78bfa',font:'poppins'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:30,size:52,weight:800,color:ink,font:'poppins'}}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:64,size:56,fit:30,color:ink,subColor:'#a78bfa',font:'poppins'}})));
+  }else if(key==='chrome'){
+    els.push(card({x:50,y:50,w:92,h:86,color:'#c7c9d1',opacity:0.28,radius:48}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:38,y:32,w:56,h:30,color:'#ffffff',opacity:0.3}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:64,y:60,w:60,h:32,color:'#9ea3b0',opacity:0.3}}));
+    els.push(brand({x:50,y:8}));
+    els.push(sub({x:50,y:12}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:48,size:220,fit:88,color:'#ffffff',subColor:'#dfe1e8',font:'oswald'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:78,size:60,fit:36,color:'#ffffff',subColor:'#dfe1e8',font:'oswald'}})));
+  }else if(key==='midnight'){
+    els.push(card({x:50,y:48,w:92,h:80,color:'#070b1a',opacity:0.72,radius:32}));
+    let lights=[[20,64],[26,58],[34,66],[70,60],[78,68],[86,56],[58,70],[64,62]];
+    lights.forEach(l=>els.push(ovlNewEl('shape',{shape:'circle',pos:{x:l[0],y:l[1],w:2.2,h:1.2,color:'#ffd166',opacity:0.85}})));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:24,weight:700,color:'#5ec9ff',font:'mono',letter:2}}));
+    els.push(title({x:50,y:16,size:52,font:'poppins'}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:44,size:180,fit:86,color:'#ffffff',subColor:'#5ec9ff',font:'poppins'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?73:27,y:78,size:60,fit:36,color:'#ffffff',subColor:'#5ec9ff',font:'poppins'}})));
+  }else if(key==='cleangirl'){
+    let ink='#3d332c',sub2='#a89a8c';
+    els.push(card({x:50,y:16,w:70,h:12,color:'#faf6f0',opacity:0.95,radius:24}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:11,size:22,weight:500,color:sub2,font:'inter',letter:3}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:20,size:46,weight:600,color:ink,font:'inter'}}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:18+i*32,y:88,size:52,fit:30,color:ink,subColor:sub2,weight:600,font:'inter'}})));
+  }else if(key==='darkacademia'){
+    let cream='#e8dcc4';
+    els.push(card({x:50,y:50,w:88,h:84,color:'#2a1810',opacity:0.82,radius:6}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:12,w:70,h:0.15,color:cream,opacity:0.6}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:22,weight:700,color:cream,font:'playfair',letter:2}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:20,size:58,weight:700,color:cream,font:'playfair'}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:27,w:36,h:0.15,color:cream,opacity:0.6}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:42+Math.floor(i/2)*16,size:58,fit:34,color:cream,subColor:'#a89372',font:'playfair'}})));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:88,w:70,h:0.15,color:cream,opacity:0.6}}));
+  }else if(key==='cottagecore'){
+    let ink='#3f4a34',sage='#9caf88';
+    els.push(card({x:50,y:50,w:88,h:78,color:'#f4f1e6',opacity:0.95,radius:28}));
+    els.push(ovlNewEl('emoji',{text:'🌿',pos:{x:20,y:13,size:44,rot:-15}}));
+    els.push(ovlNewEl('emoji',{text:'🌼',pos:{x:82,y:15,size:40,rot:12}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:10,size:22,weight:600,color:sage,font:'playfair'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:22,size:50,weight:700,color:ink,font:'playfair'}}));
+    pick(4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i%2?73:27,y:40+Math.floor(i/2)*17,size:52,fit:32,color:ink,subColor:sage,font:'playfair'}})));
+  }else if(key==='matcha'){
+    let green='#5f7a4f',ink='#3a3226';
+    els.push(card({x:50,y:50,w:88,h:80,color:'#eef0e2',opacity:0.95,radius:36}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:16,w:20,h:11,color:green,opacity:0.18}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:10,size:22,weight:600,color:green,font:'inter'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:22,size:40,weight:700,color:ink,font:'inter'}}));
+    els.push(ovlNewEl('shape',{pos:{x:60,y:58,w:0.18,h:44,color:green,opacity:0.35}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:30,y:58,size:96,fit:44,color:ink,subColor:green}}));
+    pick(4).slice(1,4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:76,y:42+i*15,size:38,fit:26,color:ink,subColor:green}})));
+  }else if(key==='dialring'){
+    els.push(brand({x:50,y:6}));
+    els.push(title({x:50,y:13,size:34}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:40,w:58,h:31,color:'#fc4c02',opacity:0.22}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:40,w:42,h:22,color:'#0a0a10',opacity:0.85}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:40,size:110,fit:36}}));
+    pick(4).slice(1,4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:27+i*23,y:68,size:52,fit:26}})));
+  }else if(key==='scorecard'){
+    els.push(ovlNewEl('shape',{pos:{x:50,y:50,w:100,h:100,color:'#000000',opacity:0.55,radius:0}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:10,w:100,h:1.2,color:'#fc4c02',opacity:0.9}}));
+    els.push(brand({x:50,y:6}));
+    els.push(sub({x:50,y:15}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:32,y:46,size:230,fit:40,font:'anton'}}));
+    els.push(ovlNewEl('shape',{pos:{x:64,y:46,w:0.35,h:38,color:'#fc4c02',opacity:0.8}}));
+    pick(4).slice(1,4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:80,y:30+i*15,size:44,fit:28,font:'oswald'}})));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:92,w:100,h:1.2,color:'#fc4c02',opacity:0.9}}));
+  }else if(key==='broadcastbar'){
+    els.push(ovlNewEl('map',{pos:{x:50,y:42,w:96,h:56,lineW:14,marks:true}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:84,w:100,h:26,color:'#0a0a0a',opacity:0.8,radius:0}}));
+    els.push(ovlNewEl('shape',{pos:{x:8,y:84,w:16,h:26,color:'#fc4c02',opacity:1,radius:0}}));
+    els.push(ovlNewEl('emoji',{text:'⏱️',pos:{x:8,y:84,size:34}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:44,y:78,size:32,weight:800,color:'#ffffff'}}));
+    pick(3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:32+i*24,y:90,size:32,fit:22,color:'#ffffff',subColor:'#fc4c02'}})));
+  }else if(key==='routestory'){
+    els.push(brand({x:50,y:5}));
+    els.push(title({x:50,y:10,size:34}));
+    els.push(ovlNewEl('map',{pos:{x:50,y:30,w:92,h:32,lineW:11,marks:true}}));
+    els.push(card({x:50,y:55,w:92,h:16,color:'#0a0a10',opacity:0.45,radius:26}));
+    els.push(ovlNewEl('chart',{pos:{x:50,y:55,w:86,h:11,metric:'alt',style:'area',color:'#32d74b'}}));
+    els.push(card({x:50,y:81,w:92,h:30,color:'#0a0a10',opacity:0.5,radius:36}));
+    els.push(ovlNewEl('splits',{pos:{x:50,y:81,w:84,h:26,max:5,cols:['pace','hr']}}));
+  }else if(key==='zigzagtrail'){
+    els.push(brand({x:50,y:6}));
+    els.push(title({x:50,y:14,size:32}));
+    let wp=[[24,28],[76,46],[24,64],[76,82]],ks=pick(4);
+    [[50,37],[50,55],[50,73]].forEach(d=>els.push(ovlNewEl('shape',{shape:'circle',pos:{x:d[0],y:d[1],w:2,h:1.1,color:'#ffffff',opacity:0.3}})));
+    wp.forEach((p,i)=>{if(!ks[i])return;
+      els.push(ovlNewEl('emoji',{text:'📍',pos:{x:p[0],y:p[1],size:28}}));
+      els.push(ovlNewEl('stat',{key:ks[i],pos:{x:p[0],y:p[1]+6,size:44,fit:28}}));
+    });
+  }else if(key==='podium'){
+    for(let i=0;i<8;i++)els.push(ovlNewEl('shape',{pos:{x:50,y:46,w:3,h:60,color:'#ffd23f',opacity:0.16,rot:i*45}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:46,w:70,h:38,color:'#1a1206',opacity:0.55}}));
+    els.push(brand({x:50,y:6}));
+    els.push(ovlNewEl('emoji',{text:'🏆',pos:{x:50,y:14,size:56}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:26,w:58,h:9,color:'#ffd23f',opacity:0.92,radius:18}}));
+    els.push(ovlNewEl('text',{text:'PENCAPAIAN BARU',pos:{x:50,y:26,size:20,weight:800,color:'#3a2a06'}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:50,size:190,fit:64,color:'#ffd23f'}}));
+    pick(4).slice(1,4).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:24+i*26,y:78,size:48,fit:28,color:'#ffffff',subColor:'#ffd23f'}})));
+  }else if(key==='ticketstub'){
+    let ink='#16150f',sub2='#8a8177';
+    els.push(card({x:50,y:50,w:90,h:80,color:'#f4f1ec',opacity:0.97,radius:20}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:18,size:20,weight:700,color:sub2,font:'mono'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:27,size:40,weight:800,color:ink,font:'mono'}}));
+    [42,48,54,60,66,72].forEach(y=>els.push(ovlNewEl('shape',{pos:{x:68,y:y,w:0.3,h:3,color:sub2,opacity:0.5}})));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:34,y:56,size:74,fit:42,color:ink,subColor:sub2,font:'mono'}}));
+    els.push(ovlNewEl('text',{text:fmtDate(x.date),pos:{x:34,y:74,size:18,weight:600,color:sub2,font:'mono'}}));
+    pick(3).slice(1,3).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:84,y:46+i*16,size:30,fit:20,color:ink,subColor:sub2,font:'mono'}})));
+    els.push(ovlNewEl('emoji',{text:'🎫',pos:{x:84,y:76,size:28}}));
+  }else if(key==='diagonalsplit'){
+    els.push(ovlNewEl('shape',{pos:{x:70,y:65,w:140,h:140,color:'#0a84ff',opacity:0.85,radius:0,rot:-35}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:30,y:9,size:22,weight:700,color:'#ffffff'}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:30,y:16,size:38,weight:800,color:'#ffffff'}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:70,y:72,size:130,fit:42,color:'#ffffff'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?82:62,y:88,size:38,fit:24,color:'#ffffff'}})));
+  }else if(key==='goldhour'){
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:24,w:60,h:34,color:'#ffb37a',opacity:0.28}}));
+    els.push(ovlNewEl('shape',{shape:'circle',pos:{x:50,y:24,w:34,h:19,color:'#ff8a5c',opacity:0.32}}));
+    els.push(ovlNewEl('text',{text:'ACTIVE COACH',pos:{x:50,y:8,size:20,weight:600,color:'#ffe3c9',font:'mono',letter:2}}));
+    els.push(ovlNewEl('text',{text:x.title||'Aktivitas',pos:{x:50,y:46,size:52,weight:700,color:'#fff4e8',font:'playfair'}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:53,w:26,h:0.15,color:'#ffe3c9',opacity:0.6}}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:70,size:100,fit:46,color:'#ffffff',subColor:'#ffd9b3',font:'playfair'}}));
+    pick(3).slice(1).forEach((k,i)=>els.push(ovlNewEl('stat',{key:k,pos:{x:i?65:35,y:88,size:38,fit:26,color:'#ffe3c9',subColor:'#c98f66',font:'playfair'}})));
+  }else if(key==='haloframe'){
+    els.push(ovlNewEl('shape',{pos:{x:50,y:8,w:80,h:0.3,color:'#ffffff',opacity:0.7}}));
+    els.push(ovlNewEl('shape',{pos:{x:50,y:92,w:80,h:0.3,color:'#ffffff',opacity:0.7}}));
+    els.push(ovlNewEl('shape',{pos:{x:10,y:50,w:0.3,h:84,color:'#ffffff',opacity:0.7}}));
+    els.push(ovlNewEl('shape',{pos:{x:90,y:50,w:0.3,h:84,color:'#ffffff',opacity:0.7}}));
+    els.push(brand({x:50,y:16}));
+    if(avail[0])els.push(ovlNewEl('stat',{key:avail[0],pos:{x:50,y:50,size:180,fit:70}}));
+    els.push(sub({x:50,y:82,size:24}));
+  }
+  let credit=OVL_LIGHT_TPL.indexOf(key)>=0?'#241b2e':'#ffffff';
+  els.push(ovlNewEl('text',{text:(DATA.profile&&DATA.profile.nama)||'Athlete',pos:{x:50,y:97,size:26,weight:700,color:credit,opacity:0.85}}));
+  OVL.bg=bg;OVL.els=els;OVL.sel=null;ovlSave();ovlDraw();ovlRenderPanes();
+}
+
+</script>

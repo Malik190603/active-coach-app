@@ -1,0 +1,531 @@
+<script>
+'use strict';
+/* ================= REVIEW MINGGUAN CERDAS (tampilan) ================= */
+let WR_CUR=null,WR_BUSY=false;
+const WR_TONE={risk:['var(--red)','▲','Risiko'],warn:['var(--orange)','!','Perhatian'],tip:['var(--blue)','→','Saran'],win:['var(--green)','✓','Bagus'],info:['var(--muted)','i','Info']};
+const WR_ZC=['#8e8e93','#34c759','#ffcc00','#ff9500','#ff3b30'];
+function wrDelta(v){return v===null||v===undefined?'':`<em class="wr-d ${v>0?'up':v<0?'down':''}">${v>0?'▲':v<0?'▼':'•'} ${Math.abs(v)}%</em>`}
+function wrVal(k){let v=k.value;return k.key==='minutes'?durationShort(v):k.key==='distance'?(Math.round(v*10)/10)+' km':k.key==='elevation'?Math.round(v).toLocaleString('id-ID')+' m':Math.round(v)}
+function wrHtml(r){
+  let range=fmtDateShort(r.weekStart)+' – '+fmtDateShort(r.weekEnd),nav=`<div class="wr-nav"><button type="button" data-wr-nav="${esc(r.prevWeek)}" aria-label="Minggu sebelumnya">‹</button><span>${range}${r.inProgress?' · berjalan':''}</span><button type="button" ${r.nextWeek?`data-wr-nav="${esc(r.nextWeek)}"`:'disabled'} aria-label="Minggu berikutnya">›</button></div>`;
+  if(!r.hasData)return `<article class="card wr-hero"><div class="wr-top"><div><span class="eyebrow">REVIEW MINGGUAN</span><h3>${esc(r.grade)}</h3></div>${nav}</div><p class="wr-headline">${esc(r.headline)}</p></article>`;
+  let col=r.score>=85?'var(--green)':r.score>=70?'var(--blue)':r.score>=50?'var(--orange)':'var(--red)',C=2*Math.PI*44;
+  let ring=`<div class="wr-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" class="bg"/><circle cx="50" cy="50" r="44" class="fg" style="stroke:${col};stroke-dasharray:${C}" data-off="${C*(1-r.score/100)}" stroke-dashoffset="${C}"/></svg><div><b>${r.score}</b><small>/100</small></div></div>`;
+  let hero=`<article class="card wr-hero"><div class="wr-top"><div><span class="eyebrow">REVIEW MINGGUAN</span><h3>Evaluasi pelatih</h3></div>${nav}</div><div class="wr-hero-body">${ring}<div><span class="wr-grade" style="color:${col}">${esc(r.grade)}</span><p class="wr-headline">${esc(r.headline)}</p>${r.streak>=2?`<span class="wr-chip">🔥 ${r.streak} minggu konsisten</span>`:''}</div></div></article>`;
+  let kpis=`<div class="wr-kpis">${r.kpis.map(k=>`<div class="wr-kpi"><span>${k.label}</span><b>${wrVal(k)}</b><div>${wrDelta(k.delta)}<small>vs minggu lalu</small></div>${k.vs4!==null?`<small class="wr-sub">${k.vs4>=0?'+':''}${k.vs4}% vs rata-rata 4 minggu</small>`:''}</div>`).join('')}</div>`;
+  let mx=Math.max(1,...r.days.map(d=>Math.max(d.actual,d.planned||0))),stTxt={done:'Tuntas',partial:'Sebagian',missed:'Terlewat',rest:'Rest',bonus:'Latihan di hari Rest',off:'Libur',upcoming:'Belum'};
+  let days=`<article class="card wr-sec"><div class="panel-head"><div><span class="eyebrow">HARI PER HARI</span><h3>${r.plan.has?'Rencana vs realita':'Aktivitas harian'}</h3></div></div><div class="wr-days">${r.days.map(d=>`<div class="wr-day st-${d.status}" title="${esc((d.planTitle?d.planTitle+' · ':'')+stTxt[d.status])}"><div class="wr-bars">${d.planned?`<i class="p" style="height:${Math.round(d.planned/mx*100)}%"></i>`:''}<i class="a" style="height:${Math.round(d.actual/mx*100)}%"></i></div><b>${d.label}</b><small>${d.actual?durationShort(d.actual):stTxt[d.status]}</small></div>`).join('')}</div>${r.plan.has?`<p class="wr-legend"><span class="p"></span> target plan <span class="a"></span> aktual · Kepatuhan <b>${r.plan.adherence===null?'-':r.plan.adherence+'%'}</b> (${r.plan.done} tuntas, ${r.plan.partial} sebagian, ${r.plan.missed} terlewat)</p>`:`<p class="wr-legend muted">Belum ada plan untuk minggu ini — review dihitung dari target mingguan di profil.</p>`}</article>`;
+  let tmx=Math.max(1,...r.trend.map(t=>t.minutes)),trend=`<article class="card wr-sec"><div class="panel-head"><div><span class="eyebrow">TREN 8 MINGGU</span><h3>Volume &amp; kebugaran</h3></div></div><div class="wr-trend">${r.trend.map(t=>`<div class="${t.cur?'cur':''}"><i style="height:${Math.max(4,Math.round(t.minutes/tmx*100))}%"></i><small>${fmtDateShort(t.weekStart).replace(' ','\u00a0')}</small><b>${t.minutes?durationShort(t.minutes):'–'}</b></div>`).join('')}</div><p class="wr-legend">CTL <b>${r.load.ctlStart}</b> → <b>${r.load.ctlEnd}</b> (${r.load.ramp>0?'+':''}${r.load.ramp}, ${esc(r.load.status)}) · ATL ${r.load.atlEnd} · TSB <b>${r.load.tsbEnd}</b></p></article>`;
+  let z=r.zones,zone=z?`<article class="card wr-sec"><div class="panel-head"><div><span class="eyebrow">INTENSITAS</span><h3>${esc(z.label)}</h3></div></div>${z.hasHr?`<div class="wr-zbar">${z.pct.map((p,i)=>p?`<i style="flex:${p};background:${WR_ZC[i]}" title="Z${i+1} ${p}%"></i>`:'').join('')}</div><div class="wr-zleg">${z.pct.map((p,i)=>`<span><s style="background:${WR_ZC[i]}"></s>Z${i+1} ${p}%</span>`).join('')}</div><p class="wr-legend">Berdasarkan HR rata-rata tiap sesi: <b>${z.easy}%</b> ringan · <b>${z.mid}%</b> tempo · <b>${z.hard}%</b> keras.</p>`:'<p class="wr-legend muted">Sebagian besar sesi belum punya data detak jantung, jadi distribusi zona tidak dihitung.</p>'}</article>`:'';
+  let score=`<article class="card wr-sec"><div class="panel-head"><div><span class="eyebrow">RINCIAN SKOR</span><h3>Dari mana skor ${r.score} datang</h3></div></div>${r.components.map(c=>`<div class="wr-comp"><div><b>${esc(c.label)}</b><span>${c.score}</span></div><div class="wr-track"><i style="width:${c.score}%;background:${c.score>=80?'var(--green)':c.score>=60?'var(--orange)':'var(--red)'}"></i></div><small>${esc(c.note)}</small></div>`).join('')}</article>`;
+  let insights=`<article class="card wr-sec"><div class="panel-head"><div><span class="eyebrow">TEMUAN COACH</span><h3>Yang perlu kamu tahu</h3></div></div>${r.insights.length?r.insights.map(i=>{let t=WR_TONE[i.tone]||WR_TONE.info;return `<div class="wr-ins" style="--c:${t[0]}"><span class="wr-ic">${t[1]}</span><div><b>${esc(i.title)}</b><p>${esc(i.text)}</p></div></div>`}).join(''):'<p class="wr-legend muted">Belum ada temuan khusus minggu ini.</p>'}</article>`;
+  let hl=r.highlights.length?`<article class="card wr-sec"><div class="panel-head"><div><span class="eyebrow">SOROTAN</span><h3>Momen terbaik minggu ini</h3></div></div><div class="wr-hl">${r.highlights.map(h=>`<div><span>${esc(h.label)}${h.record?' <em class="wr-rec">REKOR 12 MGG</em>':''}</span><b>${esc(h.value)}</b><small>${esc(h.title)} · ${fmtDateShort(h.date)}</small></div>`).join('')}</div></article>`:'';
+  let nx=r.next,next=nx?`<article class="card wr-sec wr-next"><div class="panel-head"><div><span class="eyebrow">MINGGU DEPAN · ${fmtDateShort(nx.weekStart)}</span><h3>Fokus: ${esc(nx.mode)}</h3></div></div><div class="wr-next-nums"><div><b>${durationShort(nx.minutesLow)}–${durationShort(nx.minutesHigh)}</b><small>target durasi</small></div><div><b>${nx.sessions}</b><small>sesi</small></div></div><p>${esc(nx.why)}</p><p><b>Prioritas:</b> ${esc(nx.focus)}</p>${nx.keySessions.map(k=>`<div class="wr-key"><b>${esc(k.t)}</b><span>${esc(k.d)}</span></div>`).join('')}<button type="button" class="btn primary wr-cta" data-wr-plan>Susun plan minggu depan</button></article>`:'';
+  let note=`<article class="card wr-sec"><div class="panel-head"><div><span class="eyebrow">CATATAN</span><h3>Catatan coach minggu ini</h3></div></div><textarea id="wrNote" rows="3" placeholder="Tulis refleksi: apa yang terasa berat, apa yang berjalan baik...">${esc(r.note||'')}</textarea><button type="button" class="btn wr-save" data-wr-save="${esc(r.weekStart)}">Simpan catatan</button></article>`;
+  return hero+kpis+`<div class="wr-grid">${days}${trend}</div><div class="wr-grid">${insights}${score}</div><div class="wr-grid">${zone}${hl}</div>${next}${note}`;
+}
+function renderWrInto(box,r){WR_CUR=r;box.innerHTML=wrHtml(r);requestAnimationFrame(()=>requestAnimationFrame(()=>box.querySelectorAll('.wr-ring .fg').forEach(c=>c.style.strokeDashoffset=c.dataset.off)))}
+async function wrLoad(ws){
+  let box=$('#planWeekReviewBox');if(!box||WR_BUSY)return;WR_BUSY=true;
+  let prevH=box.offsetHeight,prevHtml=box.innerHTML;box.style.minHeight=(prevH>80?prevH:120)+'px';
+  box.innerHTML='<div class="wr-skeleton">'+inlineSpinner('Memuat review minggu…')+'<div class="skel"></div><div class="skel"></div></div>';
+  try{renderWrInto(box,await gs('getWeeklyReview',currentAthleteId(),ws))}catch(e){box.innerHTML=prevHtml;toast('Gagal memuat review: '+(e.message||e))}
+  WR_BUSY=false;box.style.minHeight='';
+}
+document.addEventListener('click',async e=>{
+  let n=e.target.closest&&e.target.closest('[data-wr-nav]');if(n&&!n.disabled){wrLoad(n.dataset.wrNav);return}
+  if(e.target.closest&&e.target.closest('[data-wr-plan]')){switchPage('plan');return}
+  let s=e.target.closest&&e.target.closest('[data-wr-save]');if(s){s.disabled=true;try{await gs('saveCoachNote',($('#wrNote').value||'').trim(),s.dataset.wrSave,currentAthleteId());if(WR_CUR)WR_CUR.note=$('#wrNote').value;toast('Catatan tersimpan')}catch(err){toast('Gagal menyimpan: '+(err.message||err))}s.disabled=false}
+});
+function renderPlanWeekReview(){
+  let box=$('#planWeekReviewBox');if(!box)return;
+  if(DATA.weeklyReview){renderWrInto(box,DATA.weeklyReview);return}
+  renderPlanWeekReviewLegacy()
+}
+
+/* ---------- Kebugaran: pindah antar section (Beban / Performa / Volume / Data) ---------- */
+function setInsightTab(tab){$$('[data-insight-tab]').forEach(b=>b.classList.toggle('active',b.dataset.insightTab===tab));$$('[data-insight-section]').forEach(s=>s.hidden=s.dataset.insightSection!==tab);requestAnimationFrame(()=>{try{Object.keys(CHARTS).forEach(k=>CHARTS[k]&&CHARTS[k].resize())}catch(e){}})}
+document.addEventListener('click',e=>{let b=e.target.closest&&e.target.closest('[data-insight-tab]');if(b)setInsightTab(b.dataset.insightTab)});
+document.addEventListener('click',e=>{let b=e.target.closest&&e.target.closest('[data-empty-action]');if(b)runBrowseAction(b.dataset.emptyAction)});
+function setProgressTab(tab){let map={insights:'#progressInsights',zones:'#progressZonesTab',records:'#progressRecords',top10:'#progressTop10',compliance:'#progressCompliance',leaderboard:'#progressLeaderboard'},token=(window.__tabToken=(window.__tabToken||0)+1),el=map[tab]?$(map[tab]):null;if(el)el.classList.add('tab-loading');setTimeout(()=>{if(token!==window.__tabToken)return;$$('.sub-tab[data-progress-tab]').forEach(x=>x.classList.toggle('active',x.dataset.progressTab===tab));$('#progressInsights').hidden=tab!=='insights';$('#progressZonesTab').hidden=tab!=='zones';$('#progressRecords').hidden=tab!=='records';$('#progressTop10').hidden=tab!=='top10';$('#progressCompliance').hidden=tab!=='compliance';$('#progressLeaderboard').hidden=tab!=='leaderboard';if(tab==='records')renderRecords();if(tab==='top10')renderTop10();if(tab==='compliance')renderCompliance();if(tab==='leaderboard')renderLeaderboard();refreshPills();let el2=map[tab]?$(map[tab]):null;if(el2)el2.classList.remove('tab-loading')},120)}
+/* ---------- lihat selengkapnya / halaman detail generik ---------- */
+let LAST_REMINDERS=[],DETAIL_ORIGIN='dashboard',PROFILE_ORIGIN='dashboard';
+function openProfile(){PROFILE_ORIGIN=currentPageView();if(PROFILE_ORIGIN==='profile')PROFILE_ORIGIN='dashboard';switchPage('profile')}
+function closeProfile(){switchPage(PROFILE_ORIGIN||'dashboard',{restoreScroll:true})}
+function setAvatarEls(n,photo){let ini=initials(n),img=photo?`url('${photo}')`:'';$$('.js-avatar').forEach(el=>{let active=el.classList.contains('active');el.textContent=ini;el.className='avatar avatar-btn js-avatar'+(photo?' has-photo':'')+(active?' active':'');el.style.backgroundImage=img});let pp=$('#profilePageAvatar');if(pp){pp.textContent=ini;pp.className='profile-avatar'+(photo?' has-photo':'');pp.style.backgroundImage=img}}
+function riegelPredict(baseSeconds,baseKm,targetKm){return Math.round(baseSeconds*Math.pow(targetKm/baseKm,1.06))}
+function fmtHMS(totalSeconds){totalSeconds=Math.round(totalSeconds);let h=Math.floor(totalSeconds/3600),m=Math.floor((totalSeconds%3600)/60),s=totalSeconds%60;return (h?h+':':'')+(h?String(m).padStart(2,'0'):m)+':'+String(s).padStart(2,'0')}
+
+/* ================= SIMULASI TARGET (goal simulator) =================
+   User isi target performa (avg speed/jarak/elevasi/pace/FTP) + opsional waktu (minggu).
+   Kalau waktu dikosongkan, coach memprediksi durasi realistis sendiri.
+   Semua perhitungan berbasis data histori aktivitas, konsistensi latihan, dan TSB atlet yang sedang login. */
+const GOALSIM_METRICS={
+  Cycling:[
+    {key:'avgSpeed',label:'Kecepatan rata-rata',unit:'km/j',better:'higher',step:'0.1',placeholder:'cth. 28'},
+    {key:'distance',label:'Jarak per sesi (long ride)',unit:'km',better:'higher',step:'1',placeholder:'cth. 80'},
+    {key:'elevation',label:'Elevasi per sesi',unit:'m',better:'higher',step:'10',placeholder:'cth. 800'},
+    {key:'ftp',label:'FTP (power)',unit:'watt',better:'higher',step:'1',placeholder:'cth. 220'}
+  ],
+  Running:[
+    {key:'pace',label:'Pace',unit:'menit/km',better:'lower',step:'1',placeholder:''},
+    {key:'distance',label:'Jarak per sesi (long run)',unit:'km',better:'higher',step:'0.5',placeholder:'cth. 15'},
+    {key:'elevation',label:'Elevasi per sesi',unit:'m',better:'higher',step:'10',placeholder:'cth. 400'}
+  ]
+};
+const GOALSIM_BASE_RATE={avgSpeed:0.007,pace:0.007,ftp:0.006,distance:0.08,elevation:0.07};
+const GOALSIM_GUIDANCE={
+  avgSpeed:{focus:'Kecepatan rata-rata naik dari basis aerobik yang besar, ditambah sesi tempo/threshold yang melatih tubuh menahan kecepatan lebih tinggi lebih lama.',
+    zones:[{z:2,role:'Mayoritas volume mingguan — jaga basis aerobik tetap besar'},{z:3,role:'1x/minggu tempo, tahan kecepatan target 15-30 menit total'},{z:4,role:'Interval threshold di fase Build/Peak, misal 4-6x5 menit'}],
+    sessions:{Base:'Perbanyak jam terbang di Zona 2, tambah 1 sesi tempo ringan per minggu.',Build:'Masukkan interval threshold (Zona 4) 1x/minggu, tempo tetap jalan, volume Zona 2 dipertahankan.',Peak:'Turunkan volume ~20-30%, pertahankan intensitas — 1 interval tajam + 1 tempo, sisanya sesi ringan.'}},
+  pace:{focus:'Pace lari ditingkatkan lewat basis aerobik (mileage) yang besar, ditambah tempo run dan interval yang melatih ekonomi lari di kecepatan target.',
+    zones:[{z:2,role:'Mayoritas mileage mingguan (easy run) — jaga basis aerobik'},{z:3,role:'Tempo run 1x/minggu, 15-25 menit di sekitar pace target'},{z:4,role:'Interval VO2/threshold di fase Build-Peak, misal 5-6x3 menit'}],
+    sessions:{Base:'Tambah volume easy run (Zona 2), sisipkan 1 tempo run ringan.',Build:'Tambahkan interval threshold/VO2max (Zona 4) 1x/minggu, tempo run tetap jalan.',Peak:'Turunkan volume ~20-30%, pertahankan 1 interval tajam + strides pendek jelang tes/race.'}},
+  distance:{focus:'Jarak per sesi paling aman naik lewat penambahan volume long session bertahap, bukan lewat kecepatan.',
+    zones:[{z:2,role:'Hampir seluruh long session — jaga di endurance, jangan terpancing ngebut'},{z:3,role:'Opsional, 10-15 menit tempo di akhir sesi untuk latih finishing'}],
+    sessions:{Base:'Tambah jarak long session ~5-10%/minggu, sesi lain tetap ringan untuk pemulihan.',Build:'Lanjutkan penambahan jarak bertahap, selipkan 1 cutback week (volume turun 20-30%) tiap 4 minggu.',Peak:'Kurangi jarak long session mendekati target, fokus jaga kebiasaan tubuh & pemulihan.'}},
+  elevation:{focus:'Kapasitas climbing dibangun dari repetisi tanjakan (hill repeats) dan kekuatan otot kaki, di atas basis daya tahan yang cukup.',
+    zones:[{z:2,role:'Climbing volume santai untuk membiasakan tubuh dengan medan naik'},{z:3,role:'Tanjakan tempo berkelanjutan, 10-20 menit'},{z:4,role:'Hill repeats pendek-intens 1x/minggu di fase Build/Peak'}],
+    sessions:{Base:'Cari rute berkontur, tambah elevasi bertahap ~5-8%/minggu, lengkapi latihan kekuatan kaki 1-2x/minggu.',Build:'Tambahkan hill repeats (Zona 3-4), volume elevasi terus naik bertahap.',Peak:'Kurangi volume total, pertahankan 1 sesi climbing intensitas sedang untuk jaga ketajaman.'}},
+  ftp:{focus:'FTP naik lewat interval terstruktur di sekitar threshold, ditopang volume aerobik yang konsisten.',
+    zones:[{z:2,role:'Basis aerobik mayoritas minggu — jangan dikorbankan demi interval'},{z:3,role:'Sweet spot/tempo, 20-40 menit per sesi'},{z:4,role:'Interval threshold di fase Build, misal 2x/minggu 3x10 menit'}],
+    sessions:{Base:'Bangun volume Zona 2, tambah 1 sesi sweet spot per minggu.',Build:'2x/minggu sesi threshold terstruktur, volume dasar tetap jalan.',Peak:'Turunkan volume, pertahankan 1 sesi threshold pendek untuk jaga adaptasi jelang tes FTP baru.'}}
+};
+let GOALSIM_FORM={sport:'Cycling',metric:'avgSpeed',targetValue:'',targetMin:'',targetSec:'',weeks:'',targetZone:''},GOALSIM_RESULT=null;
+/* Apakah metrik ini punya makna "zona" (avg speed/pace tergantung effort saat dicapai) — distance/elevation/ftp tidak relevan di sini. */
+function goalSimZoneApplicable(metricKey){return metricKey==='avgSpeed'||metricKey==='pace'}
+function goalSimMetricDef(sport,metricKey){let list=GOALSIM_METRICS[sport]||[];return list.find(m=>m.key===metricKey)||list[0]}
+function goalSimBaseline(sport,metricKey){
+  let logs=(DATA.logs||[]).filter(x=>x.sport===sport),now=new Date();
+  let recent=logs.filter(x=>(now-new Date(x.date))/86400000<=60),pool=recent.length>=4?recent:logs;
+  if(metricKey==='avgSpeed'){let arr=pool.filter(x=>x.avgSpeed>0&&x.minutes>=15);if(!arr.length)return null;return{value:Math.round(arr.reduce((s,x)=>s+x.avgSpeed,0)/arr.length*10)/10,n:arr.length}}
+  if(metricKey==='pace'){let arr=pool.filter(x=>x.avgPace>0&&x.distance>=2);if(!arr.length)return null;return{value:Math.round(arr.reduce((s,x)=>s+x.avgPace,0)/arr.length*100)/100,n:arr.length}}
+  if(metricKey==='distance'){let arr=pool.filter(x=>x.distance>0);if(!arr.length)return null;let top=arr.slice().sort((a,b)=>b.distance-a.distance).slice(0,3);return{value:Math.round(top.reduce((s,x)=>s+x.distance,0)/top.length*10)/10,n:arr.length}}
+  if(metricKey==='elevation'){let arr=pool.filter(x=>x.elevation>0);if(!arr.length)return null;let top=arr.slice().sort((a,b)=>b.elevation-a.elevation).slice(0,3);return{value:Math.round(top.reduce((s,x)=>s+x.elevation,0)/top.length),n:arr.length}}
+  if(metricKey==='ftp'){let m=DATA.metrics||{};if(!m.ftp)return null;return{value:m.ftp,n:pool.filter(x=>x.avgPower>0).length,auto:m.ftpAuto}}
+  return null
+}
+/* Baseline "saat ini" yang effort-matched: dibanding goalSimBaseline biasa (yang mencampur semua sesi
+   santai & kencang jadi satu rata-rata), ini hanya memakai sesi yang HR rata-ratanya benar-benar jatuh
+   di zona yang sama dengan zona target user. Ini penting karena avg speed/pace di Zona 2 vs Zona 4 punya
+   makna latihan yang sangat berbeda — membandingkan target dengan baseline yang effort-nya sama jauh lebih
+   jujur ketimbang dibanding rata-rata gado-gado semua intensitas. Kalau data di zona itu belum cukup (<3
+   sesi dalam 90 hari terakhir, atau all-time), fallback otomatis ke baseline biasa dengan flag transparan. */
+function goalSimZoneBaseline(sport,metricKey,zoneNum){
+  let full=goalSimBaseline(sport,metricKey);
+  if(!zoneNum)return full?Object.assign({},full,{zoneNum:null,fallback:false}):null;
+  let zones=DATA.hrZones||[];
+  if(!zones.length)return full?Object.assign({},full,{zoneNum:zoneNum,fallback:true,zoneSampleSize:0}):null;
+  let zoneTag='Z'+zoneNum;
+  let filterMetric=metricKey==='avgSpeed'?(x=>x.avgSpeed>0&&x.minutes>=15):(x=>x.avgPace>0&&x.distance>=2);
+  let logs=(DATA.logs||[]).filter(x=>x.sport===sport&&x.avgHr>0&&zoneForHr_(x.avgHr,zones)===zoneTag&&filterMetric(x));
+  let now=new Date(),recent=logs.filter(x=>(now-new Date(x.date))/86400000<=90),use=recent.length>=3?recent:logs;
+  if(use.length<3)return full?Object.assign({},full,{zoneNum:zoneNum,fallback:true,zoneSampleSize:use.length}):null;
+  let value=metricKey==='avgSpeed'
+    ?Math.round(use.reduce((s,x)=>s+x.avgSpeed,0)/use.length*10)/10
+    :Math.round(use.reduce((s,x)=>s+x.avgPace,0)/use.length*100)/100;
+  return{value:value,n:use.length,zoneNum:zoneNum,fallback:false,zoneSampleSize:use.length}
+}
+function goalSimConsistency(sport){let logs=(DATA.logs||[]).filter(x=>x.sport===sport),now=new Date(),last56=logs.filter(x=>(now-new Date(x.date))/86400000<=56);return{perWeek:Math.round(last56.length/8*10)/10,n:last56.length}}
+/* Deteksi momentum: bandingkan performa 4 minggu terakhir vs 4 minggu sebelumnya untuk metrik terkait.
+   Kalau atlet sedang tren naik, laju aman dipercepat sedikit; kalau melambat, dikonservatifkan. FTP dilewati
+   karena itu metrik profil (bukan rata-rata per sesi) sehingga tren mingguannya kurang bermakna di sini. */
+function goalSimTrendMult(sport,metricKey){
+  if(metricKey==='ftp')return 1;
+  let logs=(DATA.logs||[]).filter(x=>x.sport===sport),now=new Date();
+  let val=x=>{
+    if(metricKey==='avgSpeed')return x.avgSpeed>0&&x.minutes>=15?x.avgSpeed:null;
+    if(metricKey==='pace')return x.avgPace>0&&x.distance>=2?x.avgPace:null;
+    if(metricKey==='distance')return x.distance>0?x.distance:null;
+    if(metricKey==='elevation')return x.elevation>0?x.elevation:null;
+    return null;
+  };
+  let recent=[],older=[];
+  logs.forEach(x=>{let age=(now-new Date(x.date))/86400000,v=val(x);if(v==null)return;if(age>=0&&age<=28)recent.push(v);else if(age>28&&age<=56)older.push(v)});
+  if(recent.length<2||older.length<2)return 1;
+  let avg=a=>a.reduce((s,v)=>s+v,0)/a.length,rAvg=avg(recent),oAvg=avg(older);
+  if(!oAvg)return 1;
+  let higherBetter=metricKey!=='pace',delta=higherBetter?(rAvg-oAvg)/oAvg:(oAvg-rAvg)/oAvg;
+  if(delta>0.03)return 1.15;if(delta>0.01)return 1.05;if(delta<-0.03)return 0.85;if(delta<-0.01)return 0.95;return 1;
+}
+/* Makin tinggi zona target, makin lambat lajunya aman dinaikkan: kecepatan/pace di Zona 2 (aerobik)
+   biasanya merespons volume dengan cepat, sedangkan di Zona 4-5 (threshold/VO2max) perbaikannya jauh
+   lebih lambat dan berisiko overtraining kalau dipaksa — jadi laju amannya dikonservatifkan bertahap. */
+const GOALSIM_ZONE_RATE_MULT={1:1.2,2:1.15,3:1,4:0.8,5:0.55};
+function goalSimSafeRate(metricKey,sport,zoneNum){
+  let base=GOALSIM_BASE_RATE[metricKey]||0.02,cons=goalSimConsistency(sport);
+  let mult=cons.perWeek>=5?1.15:cons.perWeek>=3?1:cons.perWeek>=1.5?0.75:0.5;
+  let tsb=(DATA.trainingLoad||{}).tsb,tsbMult=1;
+  if(tsb!=null){if(tsb<-20)tsbMult=0.6;else if(tsb<-10)tsbMult=0.8;else if(tsb>15)tsbMult=1.1}
+  let trendMult=goalSimTrendMult(sport,metricKey);
+  let zoneMult=zoneNum?(GOALSIM_ZONE_RATE_MULT[zoneNum]||1):1;
+  return{rate:base*mult*tsbMult*trendMult*zoneMult,base:base,consistencyMult:mult,tsbMult:tsbMult,trendMult:trendMult,zoneMult:zoneMult,consistency:cons}
+}
+function goalSimWeeksNeeded(growthNeeded,rate){return Math.log(growthNeeded)/Math.log(1+rate)}
+function computeGoalSim(sport,def,targetVal,weeksInput,zoneNum){
+  let zoneApplicable=goalSimZoneApplicable(def.key),zoneActive=zoneApplicable&&zoneNum?zoneNum:null;
+  let baseline=zoneActive?goalSimZoneBaseline(sport,def.key,zoneActive):goalSimBaseline(sport,def.key);
+  if(!baseline)return{error:true,message:'Data '+(sport==='Cycling'?'cycling':'lari')+' untuk metrik ini belum cukup. Sinkronkan lebih banyak aktivitas dulu, ya.'};
+  let current=baseline.value,higher=def.better==='higher';
+  let growthNeeded=higher?targetVal/current:current/targetVal;
+  let safe=goalSimSafeRate(def.key,sport,zoneActive),alreadyThere=growthNeeded<=1.001;
+  let weeksUsed=0,feasibility,requiredRate=null,predictedRange=null;
+  if(alreadyThere){feasibility='achieved'}
+  else if(weeksInput){
+    requiredRate=Math.pow(growthNeeded,1/weeksInput)-1;weeksUsed=weeksInput;
+    let r=requiredRate/safe.rate;
+    feasibility=r<=0.85?'comfortable':r<=1.25?'challenging':r<=2?'aggressive':'unrealistic';
+  }else{
+    let optimistic=Math.max(1,Math.ceil(goalSimWeeksNeeded(growthNeeded,safe.rate*1.25)));
+    let conservative=Math.max(1,Math.ceil(goalSimWeeksNeeded(growthNeeded,safe.rate*0.75)));
+    let mid=Math.max(1,Math.ceil(goalSimWeeksNeeded(growthNeeded,safe.rate)));
+    weeksUsed=mid;feasibility='predicted';predictedRange={optimistic:optimistic,conservative:conservative,mid:mid};
+  }
+  let usedRate=requiredRate!=null?requiredRate:safe.rate,checkpoints=[];
+  if(!alreadyThere){
+    let nPoints=Math.max(1,Math.min(6,Math.round(weeksUsed/2)));
+    for(let i=1;i<=nPoints;i++){
+      let wk=Math.max(1,Math.round(weeksUsed*i/nPoints));
+      let val=higher?current*Math.pow(1+usedRate,wk):current/Math.pow(1+usedRate,wk);
+      checkpoints.push({week:wk,value:val});
+    }
+    checkpoints[checkpoints.length-1]={week:weeksUsed,value:targetVal};
+  }
+  return{error:false,sport:sport,metricKey:def.key,metricLabel:def.label,unit:def.unit,better:def.better,
+    current:current,target:targetVal,sampleSize:baseline.n,ftpAuto:baseline.auto,
+    zoneNum:zoneActive,zoneFallback:!!baseline.fallback,zoneSampleSize:baseline.zoneSampleSize||0,
+    growthNeeded:growthNeeded,safeRate:safe,usedRate:usedRate,requiredRate:requiredRate,
+    weeksInput:weeksInput,weeksUsed:weeksUsed,feasibility:feasibility,predictedRange:predictedRange,checkpoints:checkpoints}
+}
+function goalSimFmtValue(metricKey,v){
+  if(metricKey==='pace')return pace(v);
+  if(metricKey==='avgSpeed')return (Math.round(v*10)/10)+' km/j';
+  if(metricKey==='distance')return (Math.round(v*10)/10)+' km';
+  if(metricKey==='elevation')return Math.round(v)+' m';
+  if(metricKey==='ftp')return Math.round(v)+' W';
+  return String(v)
+}
+function goalSimFeasibilityInfo(f){
+  return{
+    achieved:{label:'Sudah tercapai',color:'var(--ios-green)',text:'Kemampuanmu saat ini sudah memenuhi atau melewati target ini.'},
+    comfortable:{label:'Realistis & aman',color:'var(--ios-green)',text:'Target ini sesuai kapasitas dan waktu yang kamu punya — progresnya wajar dan risikonya minim.'},
+    challenging:{label:'Menantang, tapi bisa dikejar',color:'var(--ios-blue)',text:'Butuh disiplin latihan, tapi masih dalam batas kemampuan adaptasi tubuh untuk periode ini.'},
+    aggressive:{label:'Agresif — perlu hati-hati',color:'var(--ios-orange)',text:'Lajunya di atas kecepatan adaptasi yang biasanya aman. Risiko kelelahan/cedera naik kalau ini dipaksakan.'},
+    unrealistic:{label:'Kemungkinan besar tidak realistis',color:'var(--ios-red)',text:'Berdasarkan data dan kebiasaan latihanmu, waktu ini kemungkinan tidak cukup. Pertimbangkan perpanjang waktu atau turunkan target.'},
+    predicted:{label:'Estimasi otomatis',color:'var(--ios-blue)',text:'Waktu tidak diisi, jadi durasi berikut diperkirakan dari data dan kebiasaan latihanmu sendiri.'}
+  }[f]
+}
+function goalSimZoneGrid(guidanceZones,targetZoneNum){
+  let zones=DATA.hrZones||[],roleByIndex={};
+  (guidanceZones||[]).forEach(z=>roleByIndex[z.z-1]=z.role);
+  let targetIdx=targetZoneNum?targetZoneNum-1:-1;
+  return `<div class="zone-grid">${zones.map((z,i)=>{
+    let isTarget=i===targetIdx,role=roleByIndex[i];
+    let border=isTarget?'border-left-color:var(--ios-purple)':(role?'border-left-color:var(--ios-blue)':'');
+    let text=isTarget?('🎯 Target kamu'+(role?' · '+role:'')):(role||z.label);
+    return `<div class="zone"${border?` style="${border}"`:''}><b>${esc(z.zone)}</b><span>${z.low}${z.high!==''?'-'+z.high:'+'}</span><small>${esc(text)}</small></div>`
+  }).join('')}</div>`
+}
+/* Catatan fisiologis singkat per zona, ditampilkan begitu user memilih zona target di form simulasi.
+   Zona 1 & 5 dapat catatan peringatan karena keduanya kurang cocok jadi target rata-rata sesi utuh
+   (Zona 1 = pemulihan, bukan untuk dikejar; Zona 5 = cuma sanggup ditahan singkat). */
+const GOALSIM_ZONE_NOTES={
+  1:{warn:true,text:'Zona 1 (Recovery) dipakai untuk pemulihan, bukan untuk dikejar performanya — memaksa lebih cepat di zona ini biasanya cuma berarti sudah pindah ke Zona 2. Kalau maksudnya jadi lebih cepat secara umum, coba pilih Zona 2 ke atas.'},
+  2:{warn:false,text:'Target di Zona 2 (Endurance) paling efektif naik lewat volume aerobik yang besar dan konsisten, bukan dengan dipaksa lebih kencang — tubuh yang makin efisien di HR yang sama akan otomatis lebih cepat di zona ini.'},
+  3:{warn:false,text:'Target di Zona 3 (Tempo) butuh sesi tempo berkelanjutan di sekitar kecepatan/pace target, dengan basis Zona 2 yang tetap dijaga besar — jangan sampai volume dasarnya dikorbankan demi sesi tempo.'},
+  4:{warn:false,text:'Target di Zona 4 (Threshold) tergolong menantang secara fisiologis — butuh interval terstruktur dan recovery yang cukup antar sesi berat, dan biasanya progresnya lebih lambat dibanding zona yang lebih rendah.'},
+  5:{warn:true,text:'Zona 5 pada dasarnya cuma sanggup ditahan puluhan detik sampai beberapa menit, bukan sepanjang sesi — rata-rata sesi utuh di zona ini sulit jadi target yang realistis. Kalau maksudnya kecepatan puncak jangka pendek, cek fitur Power Curve; kalau soal rata-rata sesi, pertimbangkan Zona 3-4.'}
+};
+function goalSimZoneNoteHtml(zoneNum){
+  let n=GOALSIM_ZONE_NOTES[zoneNum];if(!n)return'';
+  return `<div class="insight" style="border-left:4px solid ${n.warn?'var(--ios-orange)':'var(--ios-purple)'}"><b>${n.warn?'Perlu diperhatikan':'Soal Zona '+zoneNum}</b><p>${esc(n.text)}</p></div>`
+}
+/* ---------- Rekomendasi menu latihan pintar (langsung jadi plan mingguan bila dipilih) ----------
+   Berdasarkan metrik target, feasibility, dan fase (Base/Build/Peak/maintain) yang sudah dihitung di
+   computeGoalSim, disusun 3 opsi menu latihan (aman/direkomendasikan/menantang) yang masing-masing
+   sudah dalam bentuk config createWeeklyPlan siap pakai — tinggal ditekan untuk jadi plan minggu ini. */
+function goalSimMenuFamily(metricKey){return metricKey==='distance'?'distance':metricKey==='elevation'?'elevation':'speed'}
+function goalSimMenuPhase(r){if(r.feasibility==='achieved')return'maintain';if(r.weeksUsed<3)return'Build';return'Base'}
+function goalSimMenuTable(){
+  return{
+    speed:{
+      Base:{safe:{types:{Endurance:85,Tempo:15},hard:1},recommended:{types:{Endurance:75,Tempo:25},hard:1},push:{types:{Endurance:65,Tempo:25,Threshold:10},hard:2}},
+      Build:{safe:{types:{Endurance:70,Tempo:15,Threshold:15},hard:1},recommended:{types:{Endurance:55,Tempo:20,Threshold:25},hard:2},push:{types:{Endurance:45,Tempo:20,Threshold:35},hard:3}},
+      Peak:{safe:{types:{Endurance:70,Threshold:30},hard:1},recommended:{types:{Endurance:60,Threshold:40},hard:1},push:{types:{Endurance:50,Threshold:35,VO2max:15},hard:2}},
+      maintain:{safe:{types:{Endurance:80,Tempo:20},hard:1},recommended:{types:{Endurance:70,Tempo:20,Threshold:10},hard:1},push:{types:{Endurance:60,Tempo:20,Threshold:20},hard:2}}
+    },
+    distance:{
+      Base:{safe:{types:{Endurance:100},hard:0,longRide:true},recommended:{types:{Endurance:90,Tempo:10},hard:1,longRide:true},push:{types:{Endurance:80,Tempo:20},hard:1,longRide:true}},
+      Build:{safe:{types:{Endurance:90,Tempo:10},hard:1,longRide:true},recommended:{types:{Endurance:80,Tempo:20},hard:1,longRide:true},push:{types:{Endurance:70,Tempo:20,Threshold:10},hard:2,longRide:true}},
+      Peak:{safe:{types:{Endurance:90,Recovery:10},hard:0,longRide:true},recommended:{types:{Endurance:85,Tempo:15},hard:1,longRide:true},push:{types:{Endurance:75,Tempo:25},hard:1,longRide:true}},
+      maintain:{safe:{types:{Endurance:95,Recovery:5},hard:0,longRide:true},recommended:{types:{Endurance:90,Tempo:10},hard:1,longRide:true},push:{types:{Endurance:85,Tempo:15},hard:1,longRide:true}}
+    },
+    elevation:{
+      Base:{safe:{types:{Endurance:90,Tempo:10},hard:1,longRide:true},recommended:{types:{Endurance:75,Tempo:25},hard:1,longRide:true},push:{types:{Endurance:65,Tempo:20,Threshold:15},hard:2,longRide:true}},
+      Build:{safe:{types:{Endurance:75,Tempo:15,Threshold:10},hard:1,longRide:true},recommended:{types:{Endurance:60,Tempo:15,Threshold:25},hard:2,longRide:true},push:{types:{Endurance:50,Tempo:15,Threshold:35},hard:3,longRide:true}},
+      Peak:{safe:{types:{Endurance:75,Threshold:25},hard:1,longRide:true},recommended:{types:{Endurance:65,Threshold:35},hard:1,longRide:true},push:{types:{Endurance:55,Threshold:35,VO2max:10},hard:2,longRide:true}},
+      maintain:{safe:{types:{Endurance:85,Tempo:15},hard:1,longRide:true},recommended:{types:{Endurance:75,Tempo:15,Threshold:10},hard:1,longRide:true},push:{types:{Endurance:65,Tempo:15,Threshold:20},hard:2,longRide:true}}
+    }
+  }
+}
+function goalSimRunningDistanceBucket(r){
+  let km=null;
+  if(r.metricKey==='distance')km=r.target;
+  else{let base=goalSimBaseline('Running','distance');if(base)km=base.value}
+  if(km==null)return'10K';
+  if(km<=1.5)return'1K';if(km<=6)return'5K';if(km<=12)return'10K';if(km<=25)return'Half Marathon (21K)';return'Marathon (42K)'
+}
+/* Tipe menu latihan yang jadi "tuan rumah" tiap zona (sinkron dengan field zone di workoutTypeCatalog_
+   sisi server: Z1=Recovery, Z2=Endurance, Z3=Tempo, Z4=Threshold, Z5=VO2max). Dipakai untuk mencondongkan
+   komposisi menu ke arah zona yang dipilih user di simulasi. */
+const GOALSIM_ZONE_PRIMARY_TYPE={1:'Recovery',2:'Endurance',3:'Tempo',4:'Threshold',5:'VO2max'};
+/* Menaikkan porsi tipe latihan yang jadi tuan rumah zona target, mengambil porsinya secara proporsional
+   dari tipe-tipe lain (bukan asal potong satu tipe) supaya total tetap 100%. Kalau tipe tuan rumah zona itu
+   memang tidak ada dalam komposisi tier ini, dibiarkan apa adanya — tidak memaksakan tipe baru masuk. */
+function goalSimZoneBiasedTypes(types,zoneNum,boost){
+  let primary=GOALSIM_ZONE_PRIMARY_TYPE[zoneNum];if(!primary)return types;
+  let idx=types.findIndex(t=>t.id===primary);if(idx<0)return types;
+  let others=types.filter((t,i)=>i!==idx),othersTotal=others.reduce((s,t)=>s+t.percent,0);
+  if(othersTotal<=0)return types;
+  let add=Math.min(boost,Math.max(0,92-types[idx].percent),Math.max(0,othersTotal-5*others.length));
+  if(add<=0)return types;
+  let out=types.map((t,i)=>i===idx?{id:t.id,percent:t.percent+add}:{id:t.id,percent:Math.max(0,Math.round(t.percent-add*(t.percent/othersTotal)))});
+  let diff=100-out.reduce((s,t)=>s+t.percent,0);
+  if(diff!==0){let fixIdx=out.findIndex((t,i)=>i!==idx);out[fixIdx<0?idx:fixIdx].percent+=diff}
+  return out.filter(t=>t.percent>0)
+}
+function goalSimBuildMenuConfig(r,tierDef){
+  let offDays=['Senin'];
+  let longRideDay=(tierDef.longRide&&r.sport==='Cycling')?'Minggu':'';
+  let hardCandidates=['Selasa','Jumat','Rabu','Kamis','Sabtu'].filter(d=>offDays.indexOf(d)<0&&d!==longRideDay);
+  let hardDays=hardCandidates.slice(0,tierDef.hard||0);
+  let types=Object.keys(tierDef.types).map(id=>({id:id,percent:tierDef.types[id]}));
+  if(goalSimMenuFamily(r.metricKey)==='speed'&&r.zoneNum)types=goalSimZoneBiasedTypes(types,r.zoneNum,14);
+  let runningDistance=r.sport==='Running'?goalSimRunningDistanceBucket(r):'';
+  return{sportType:r.sport,runningDistance:runningDistance,types:types,offDays:offDays,hardDays:hardDays,longRideDay:longRideDay}
+}
+/* Zona HR asli (bpm) per tipe latihan, dipetakan dari katalog tipe (planBuilder.types, tiap tipe sudah
+   punya field zone Z1-Z5) ke rentang bpm aktual atlet (DATA.hrZones) — supaya menu tidak cuma bilang
+   "Tempo 25%" tapi juga menunjukkan target detak jantung nyata yang harus dikejar. */
+function goalSimZoneRangeForType(typeId){
+  let catalog=(DATA.planBuilder||{}).types||[],def=catalog.find(x=>x.id===typeId);
+  if(!def)return null;
+  let idx=parseInt(String(def.zone||'Z2').replace('Z',''),10)-1,zones=DATA.hrZones||[],z=zones[idx];
+  if(!z)return null;
+  return{zone:def.zone,label:z.label||def.zone,low:z.low,high:z.high}
+}
+function goalSimMenuZoneChips(config){
+  return(config.types||[]).map(t=>goalSimZoneRangeForType(t.id)).filter(Boolean)
+    .map(z=>`<span>${esc(z.zone)} · ${esc(z.label)} <b>${z.low}${z.high!==''&&z.high!=null?'-'+z.high:'+'} bpm</b></span>`).join('')
+}
+function goalSimMenuRecommendations(r){
+  if(!r||r.error)return[];
+  let fam=goalSimMenuFamily(r.metricKey),phase=goalSimMenuPhase(r);
+  let table=(goalSimMenuTable()[fam]||{})[phase];if(!table)return[];
+  let maintain=phase==='maintain';
+  let copy={
+    safe:{title:maintain?'Menu Jaga Performa Santai':'Menu Aman & Bertahap',sub:maintain?'Volume ringan, cukup untuk menahan performa tanpa memaksa.':'Progres pelan tapi stabil, risiko kelelahan minim.'},
+    recommended:{title:maintain?'Menu Jaga Performa':'Menu Sesuai Simulasi',sub:maintain?'Komposisi pas untuk mempertahankan performamu saat ini.':'Komposisi latihan yang cocok dengan laju & waktu hasil simulasi di atas.'},
+    push:{title:maintain?'Naikkan Lagi dari Sini':'Menu Lebih Menantang',sub:maintain?'Sudah tercapai — kalau mau naik level lagi, bukan cuma bertahan.':'Progres lebih cepat, tapi butuh disiplin & pemulihan ekstra.'}
+  };
+  return['safe','recommended','push'].filter(k=>table[k]).map(k=>{
+    let tierDef=table[k],config=goalSimBuildMenuConfig(r,tierDef);
+    let warn=(k==='push'&&(r.feasibility==='aggressive'||r.feasibility==='unrealistic'))?'Waspada risiko overtraining — pastikan tubuh & jadwal istirahatmu siap sebelum memilih menu ini.':'';
+    return{id:k,title:copy[k].title,subtitle:copy[k].sub,badge:k==='recommended'?'Direkomendasikan':'',warn:warn,config:config}
+  })
+}
+function goalSimMenuCardHtml(m){
+  let typeTags=(m.config.types||[]).map(t=>`<span>${esc(t.id)} <b>${t.percent}%</b></span>`).join('');
+  let zoneTags=goalSimMenuZoneChips(m.config);
+  let hardTxt=(m.config.hardDays||[]).length?m.config.hardDays.join(', '):'tanpa hari berat khusus';
+  let lrTxt=m.config.longRideDay?(' · Long Ride '+m.config.longRideDay):'';
+  return `<button type="button" class="menu-day-row" data-goalsim-menu="${m.id}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <b>${esc(m.title)}</b>${m.badge?`<span class="menu-locked-badge">${esc(m.badge)}</span>`:''}
+    </div>
+    <small class="muted" style="display:block;margin-top:2px">${esc(m.subtitle)}</small>
+    <div class="menu-dist" style="margin:8px 0 4px">${typeTags}</div>
+    ${zoneTags?`<small class="muted" style="display:block;margin-top:2px">Target zona (bpm, sesuai HR max/rest kamu)</small><div class="menu-dist" style="margin:4px 0">${zoneTags}</div>`:''}
+    <small class="muted">Hari berat: ${esc(hardTxt)}${lrTxt}</small>
+    ${m.warn?`<small style="display:block;margin-top:6px;color:var(--ios-orange)">${esc(m.warn)}</small>`:''}
+  </button>`
+}
+function goalSimMenuSectionHtml(r){
+  let menus=goalSimMenuRecommendations(r);if(!menus.length)return'';
+  let active=((DATA.planBuilder||{}).selection)||null;
+  let intro=active?'Sudah ada plan aktif (minggu ke-'+(active.weekNo||1)+' dari '+(active.totalWeeks||1)+') — pilih salah satu menu di bawah untuk menggantinya, lalu tentukan berapa minggu dijalankan.':'Belum ada plan aktif — pilih salah satu menu di bawah, lalu tentukan berapa minggu mau dijalankan.';
+  return `<article class="panel"><div class="panel-head"><div><span class="eyebrow">MENU LATIHAN</span><h3>Pilih menu, langsung jadi plan mingguanmu</h3></div></div><p class="muted" style="margin:0 0 4px">${esc(intro)}</p><div class="menu-days">${menus.map(goalSimMenuCardHtml).join('')}</div></article>`
+}
+function goalSimBindMenuActions(){
+  $$('#goalSimResultBox [data-goalsim-menu]').forEach(el=>{
+    el.onclick=()=>{
+      let r=GOALSIM_RESULT;if(!r||r.error)return;
+      let m=goalSimMenuRecommendations(r).find(x=>x.id===el.dataset.goalsimMenu);
+      if(m)goalSimConfirmApplyMenu(r,m)
+    }
+  })
+}
+function goalSimApplyMenu(r,m,replace,getWeeks){
+  return async()=>{
+    let btn=$('#goalSimMenuConfirmBtn');if(btn){btn.disabled=true;btn.textContent=replace?'Mengganti...':'Menyimpan...'}
+    try{
+      if(replace)await gs('resetWeeklyPlan',currentAthleteId());
+      let weeks=getWeeks?getWeeks():1,res=await gs('createWeeklyPlan',Object.assign({},m.config,{weeks:weeks}),currentAthleteId());
+      let selection=(res&&res.selection)||null;
+      DATA.planBuilder=Object.assign({},DATA.planBuilder,{selection:selection});
+      PLAN_FORM=null;closeModal();
+      if(typeof renderPlanCustom==='function')renderPlanCustom();
+      if(typeof renderPlanResult==='function')renderPlanResult();
+      if(typeof syncDashboardPlanToday==='function')syncDashboardPlanToday();
+      let box=$('#goalSimResultBox');if(box&&GOALSIM_RESULT){box.innerHTML=goalSimResultHtml(GOALSIM_RESULT);goalSimBindMenuActions()}
+      toast(res&&res.ok?(replace?'Plan diganti dengan menu ini ('+weeks+' minggu)':'Menu dijalankan selama '+weeks+' minggu'):((res&&res.message)||'Plan sudah dibuat sebelumnya'))
+    }catch(e){toast('Gagal menyimpan plan: '+(e.message||e));if(btn){btn.disabled=false;btn.textContent=replace?'Ya, ganti plan':'Ya, tambahkan'}}
+  }
+}
+function goalSimConfirmApplyMenu(r,m){
+  let active=((DATA.planBuilder||{}).selection)||null,weeks=planWeeksNearest(r.feasibility==='achieved'?0:r.weeksUsed);
+  $('#detailBox').classList.remove('wide');
+  let typeTags=(m.config.types||[]).map(t=>`<span>${esc(t.id)} <b>${t.percent}%</b></span>`).join('');
+  let zoneTags=goalSimMenuZoneChips(m.config);
+  let bodyExtra=active?`<p class="muted">Plan aktif (<b>${esc(active.sportType==='Both'?'Cycling & Running':active.sportType)}</b>, minggu ke-${active.weekNo||1} dari ${active.totalWeeks||1}) akan dihapus dan diganti dengan menu ini.</p>`:`<p class="muted">Menu ini akan langsung jadi plan latihanmu.</p>`;
+  let simHint=r.feasibility!=='achieved'&&r.weeksUsed>0?`<small class="muted" style="display:block;margin-top:6px">Simulasimu memperkirakan sekitar ${r.weeksUsed} minggu untuk mencapai target.</small>`:'';
+  let weeksBlock=`<span class="eyebrow" style="display:block;margin:14px 0 6px">BERAPA MINGGU MENU INI DIJALANKAN?</span>${planWeeksChipsHtml(weeks,'data-goalsim-weeks')}${planWeeksHintHtml(weeks,'goalSimWeeksHint')}${simHint}`;
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">${active?'GANTI PLAN':'TAMBAHKAN KE PLAN'}</span><h2>${esc(m.title)}</h2><p class="muted">${esc(m.subtitle)}</p><div class="menu-dist" style="margin:10px 0">${typeTags}</div>${zoneTags?`<p class="muted" style="margin:0 0 4px;font-size:12px">Target zona (bpm)</p><div class="menu-dist" style="margin:0 0 10px">${zoneTags}</div>`:''}${bodyExtra}${weeksBlock}<div style="display:flex;gap:10px;margin-top:18px"><button type="button" class="btn secondary" id="goalSimMenuCancelBtn" style="flex:1">Batal</button><button type="button" class="btn primary" id="goalSimMenuConfirmBtn" style="flex:1">${active?'Ya, ganti plan':'Ya, tambahkan'}</button></div></div>`;
+  openModal();
+  $('#goalSimMenuCancelBtn').onclick=closeModal;
+  $$('#detailContent [data-goalsim-weeks]').forEach(b=>b.onclick=()=>{
+    weeks=+b.dataset.goalsimWeeks;
+    $$('#detailContent [data-goalsim-weeks]').forEach(x=>x.classList.toggle('active-weeks',+x.dataset.goalsimWeeks===weeks));
+    let h=$('#goalSimWeeksHint');if(h)h.outerHTML=planWeeksHintHtml(weeks,'goalSimWeeksHint')
+  });
+  $('#goalSimMenuConfirmBtn').onclick=goalSimApplyMenu(r,m,!!active,()=>weeks)
+}
+/* ================= akhir rekomendasi menu latihan pintar ================= */
+function goalSimZoneFieldHtml(f,def){
+  if(!goalSimZoneApplicable(def.key))return'';
+  let hrZones=DATA.hrZones||[];
+  if(!hrZones.length)return'';
+  let opts=hrZones.map((z,i)=>{let num=i+1;return `<option value="${num}" ${String(f.targetZone||'')===String(num)?'selected':''}>${esc(z.zone)} · ${esc(z.label)} (${z.low}${z.high!==''?'-'+z.high:'+'} bpm)</option>`}).join('');
+  return `<label>Target dicapai di zona (opsional)<select id="goalSimZone"><option value="" ${!f.targetZone?'selected':''}>Rata-rata semua effort (default)</option>${opts}</select></label>`
+}
+function goalSimFormHtml(){
+  let f=GOALSIM_FORM,metrics=GOALSIM_METRICS[f.sport]||[],def=goalSimMetricDef(f.sport,f.metric);
+  let metricOptions=metrics.map(m=>`<option value="${m.key}" ${m.key===def.key?'selected':''}>${esc(m.label)} (${esc(m.unit)})</option>`).join('');
+  let targetField=def.key==='pace'
+    ?`<label>Target menit/km<input type="number" id="goalSimMin" min="0" step="1" placeholder="mnt" value="${esc(f.targetMin||'')}"></label><label>Target detik<input type="number" id="goalSimSec" min="0" max="59" step="1" placeholder="dtk" value="${esc(f.targetSec||'')}"></label>`
+    :`<label>Target ${esc(def.label)} (${esc(def.unit)})<input type="number" id="goalSimValue" step="${def.step}" min="0" placeholder="${esc(def.placeholder)}" value="${esc(f.targetValue||'')}"></label>`;
+  let zoneField=goalSimZoneFieldHtml(f,def);
+  return `<article class="panel">
+    <div class="panel-head"><div><span class="eyebrow">SIMULASI</span><h3>Atur target latihanmu</h3></div></div>
+    <p class="muted">Isi target yang mau dicapai. Kosongkan kolom waktu kalau mau coach yang memperkirakan durasinya sendiri berdasarkan data kamu.${zoneField?' Isi zona kalau target speed/pace-mu maunya dicapai di intensitas tertentu — biar dibandingkan dengan sesi yang effort-nya setara, bukan rata-rata semua sesi.':''}</p>
+    <div class="settings-form">
+      <div class="zone-inputs">
+        <label>Olahraga<select id="goalSimSport"><option value="Cycling" ${f.sport==='Cycling'?'selected':''}>Cycling</option><option value="Running" ${f.sport==='Running'?'selected':''}>Running</option></select></label>
+        <label>Metrik target<select id="goalSimMetric">${metricOptions}</select></label>
+        ${targetField}
+        ${zoneField}
+        <label>Waktu yang diinginkan (minggu)<input type="number" id="goalSimWeeks" min="1" step="1" placeholder="Kosongkan = auto" value="${esc(f.weeks||'')}"></label>
+      </div>
+      <button type="button" class="btn primary" id="goalSimSubmit">Simulasikan target</button>
+    </div>
+  </article>
+  <div id="goalSimResultBox"></div>`
+}
+function goalSimBind(){
+  $('#goalSimSport').onchange=e=>{GOALSIM_FORM.sport=e.target.value;GOALSIM_FORM.metric=GOALSIM_METRICS[e.target.value][0].key;GOALSIM_FORM.targetValue='';GOALSIM_FORM.targetMin='';GOALSIM_FORM.targetSec='';GOALSIM_FORM.targetZone='';renderGoalSim()};
+  $('#goalSimMetric').onchange=e=>{GOALSIM_FORM.metric=e.target.value;GOALSIM_FORM.targetValue='';GOALSIM_FORM.targetMin='';GOALSIM_FORM.targetSec='';GOALSIM_FORM.targetZone='';renderGoalSim()};
+  let vEl=$('#goalSimValue');if(vEl)vEl.oninput=e=>GOALSIM_FORM.targetValue=e.target.value;
+  let mEl=$('#goalSimMin');if(mEl)mEl.oninput=e=>GOALSIM_FORM.targetMin=e.target.value;
+  let sEl=$('#goalSimSec');if(sEl)sEl.oninput=e=>GOALSIM_FORM.targetSec=e.target.value;
+  let zEl=$('#goalSimZone');if(zEl)zEl.onchange=e=>GOALSIM_FORM.targetZone=e.target.value;
+  $('#goalSimWeeks').oninput=e=>GOALSIM_FORM.weeks=e.target.value;
+  $('#goalSimSubmit').onclick=goalSimSubmit;
+  if(GOALSIM_RESULT){$('#goalSimResultBox').innerHTML=goalSimResultHtml(GOALSIM_RESULT);goalSimBindMenuActions()}
+}
+function renderGoalSim(){$('#detailPageBody').innerHTML=goalSimFormHtml();goalSimBind()}
+function goalSimSubmit(){
+  let f=GOALSIM_FORM,def=goalSimMetricDef(f.sport,f.metric),targetVal;
+  if(def.key==='pace'){
+    let mn=Number(f.targetMin||0),sc=Number(f.targetSec||0);
+    if(!mn&&!sc){toast('Isi target pace dulu');return}
+    targetVal=mn+sc/60;
+  }else{
+    targetVal=Number(f.targetValue);
+    if(!targetVal||targetVal<=0){toast('Isi nilai target dulu');return}
+  }
+  let weeksInput=f.weeks?Number(f.weeks):null;
+  if(weeksInput&&weeksInput<1){toast('Waktu minimal 1 minggu');return}
+  let zoneNum=goalSimZoneApplicable(def.key)&&f.targetZone?Number(f.targetZone):null;
+  GOALSIM_RESULT=computeGoalSim(f.sport,def,targetVal,weeksInput,zoneNum);
+  let box=$('#goalSimResultBox');box.innerHTML=goalSimResultHtml(GOALSIM_RESULT);goalSimBindMenuActions();box.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function goalSimZoneMetricCard(r){
+  if(!r.zoneNum)return'';
+  let zoneDef=(DATA.hrZones||[])[r.zoneNum-1];
+  let val=zoneDef?(zoneDef.zone+' · '+zoneDef.label):('Z'+r.zoneNum);
+  let note=zoneDef?(zoneDef.low+(zoneDef.high!==''?'-'+zoneDef.high:'+')+' bpm'):'';
+  return metric('ZONA TARGET',val,note)
+}
+function goalSimZoneFallbackNote(r){
+  if(!r.zoneNum||!r.zoneFallback)return'';
+  return `<p class="detail-note">Sesi dengan HR di Zona ${r.zoneNum} yang tercatat baru ${r.zoneSampleSize||0} — belum cukup untuk baseline khusus zona ini, jadi "SAAT INI" di atas masih dihitung dari rata-rata semua sesi. Makin banyak sesi dengan HR di zona itu tersinkron, makin akurat pembandingnya.</p>`
+}
+function goalSimZoneRateNote(r){
+  let zm=(r.safeRate||{}).zoneMult;
+  if(!r.zoneNum||!zm||zm===1)return'';
+  return `<p class="detail-note">${zm<1?'Karena target ini di zona intensitas yang lebih tinggi, laju proyeksi di atas sudah dibuat lebih konservatif — perbaikan di zona ini biasanya lebih lambat.':'Karena target ini di zona yang lebih ringan/aerobik, laju proyeksi sedikit lebih optimis — zona ini umumnya merespons volume latihan lebih cepat.'}</p>`
+}
+function goalSimResultHtml(r){
+  if(r.error)return `<article class="panel"><div class="insight"><b>Data belum cukup</b><p>${esc(r.message)}</p></div></article>`;
+  let fx=goalSimFeasibilityInfo(r.feasibility),curFmt=goalSimFmtValue(r.metricKey,r.current),tgtFmt=goalSimFmtValue(r.metricKey,r.target);
+  let deltaPct=Math.abs(Math.round((r.growthNeeded-1)*100));
+  let waktuNote=r.feasibility==='achieved'?'-':r.weeksInput?'sesuai input kamu':(r.predictedRange?'perkiraan '+r.predictedRange.optimistic+'-'+r.predictedRange.conservative+' mgg':'');
+  let curNote=r.zoneNum&&!r.zoneFallback?(r.sampleSize+' sesi khusus di Zona '+r.zoneNum):(r.sampleSize+' sesi jadi acuan');
+  let head=`<article class="panel"><div class="panel-head"><div><span class="eyebrow">RINGKASAN</span><h3>${esc(r.metricLabel)} · ${esc(r.sport)}</h3></div></div>
+    <div class="metric-grid">
+      ${metric('SAAT INI',curFmt,curNote)}
+      ${metric('TARGET',tgtFmt,(r.better==='higher'?'naik ':'lebih cepat ')+deltaPct+'%')}
+      ${metric('WAKTU',r.feasibility==='achieved'?'-':r.weeksUsed+' minggu',waktuNote)}
+      ${goalSimZoneMetricCard(r)}
+    </div>
+    <div class="insight" style="border-left:4px solid ${fx.color}"><b>${esc(fx.label)}</b><p>${esc(fx.text)}</p></div>
+    ${goalSimZoneFallbackNote(r)}
+  </article>`;
+  let g=GOALSIM_GUIDANCE[r.metricKey]||{};
+  let zoneNoteHtml=r.zoneNum?goalSimZoneNoteHtml(r.zoneNum):'';
+  if(r.feasibility==='achieved'){
+    return head+(zoneNoteHtml?`<article class="panel">${zoneNoteHtml}</article>`:'')+goalSimMenuSectionHtml(r)+`<article class="panel"><div class="panel-head"><div><span class="eyebrow">JAGA KONSISTENSI</span><h3>Zona HR untuk mempertahankan performa ini</h3></div></div>${goalSimZoneGrid(g.zones,r.zoneNum)}</article>`;
+  }
+  let cpRows=r.checkpoints.map((c,i)=>`<div class="glist-row as-toggle"><span class="glist-text"><b>Minggu ke-${c.week}</b><small>${i===r.checkpoints.length-1?'Target akhir':'Checkpoint'}</small></span><span class="glist-value">${goalSimFmtValue(r.metricKey,c.value)}</span></div>`).join('');
+  let phaseRows;
+  if(r.weeksUsed<3){
+    phaseRows=`<div class="insight"><b>Fokus tiap minggu</b><p>Waktunya cukup singkat untuk periodisasi bertahap — jalankan langsung sesi kunci: ${esc((g.sessions||{}).Build||(g.sessions||{}).Base||'')}</p></div>`;
+  }else{
+    let baseWk=Math.max(1,Math.round(r.weeksUsed*0.5)),buildWk=Math.max(1,Math.round(r.weeksUsed*0.3)),peakWk=Math.max(1,r.weeksUsed-baseWk-buildWk);
+    phaseRows=[['Base',baseWk],['Build',buildWk],['Peak',peakWk]].map(p=>`<div class="insight"><b>${p[0]} (~${p[1]} minggu)</b><p>${esc((g.sessions||{})[p[0]]||'')}</p></div>`).join('');
+  }
+  let tsbVal=(DATA.trainingLoad||{}).tsb,tsbNote=tsbVal!=null&&tsbVal<-10?`<p class="detail-note">TSB kamu saat ini ${Math.round(tsbVal)} (beban masih tinggi) — proyeksi di atas sudah dibuat lebih konservatif. Prioritaskan pemulihan dulu sebelum menambah beban baru.</p>`:'';
+  let dataNote=r.sampleSize<4?`<p class="detail-note">Baru ${r.sampleSize} sesi ${r.sport==='Cycling'?'cycling':'lari'} relevan yang tercatat — makin banyak data, makin akurat estimasi ini.</p>`:'';
+  let consNote=`<p class="detail-note">Estimasi memakai rata-rata ${r.safeRate.consistency.perWeek} sesi ${r.sport==='Cycling'?'cycling':'lari'} per minggu dalam 8 minggu terakhir. Makin konsisten latihanmu, makin cepat target ini bisa dikejar.</p>`;
+  let trendMult=r.safeRate.trendMult||1,trendNote=trendMult!==1?`<p class="detail-note">${trendMult>1?'Progresmu 4 minggu terakhir sedang naik dibanding 4 minggu sebelumnya':'Progresmu 4 minggu terakhir agak melambat dibanding 4 minggu sebelumnya'} — estimasi laju di atas sudah ${trendMult>1?'sedikit dipercepat':'sedikit dikonservatifkan'} mengikuti tren ini.</p>`:'';
+  let zoneRateNote=goalSimZoneRateNote(r);
+  return head+
+    `<article class="panel"><div class="panel-head"><div><span class="eyebrow">RENCANA CAPAI TARGET</span><h3>${esc(g.focus||'')}</h3></div></div>${phaseRows}${zoneNoteHtml}${consNote}${zoneRateNote}${trendNote}${tsbNote}${dataNote}</article>`+
+    goalSimMenuSectionHtml(r)+
+    `<article class="panel"><div class="panel-head"><div><span class="eyebrow">CHECKPOINT MINGGUAN</span><h3>Progres bertahap menuju target</h3></div></div><div class="group-list">${cpRows}</div></article>`+
+    `<article class="panel"><div class="panel-head"><div><span class="eyebrow">ZONA HEART RATE</span><h3>Zona yang relevan untuk target ini</h3></div></div>${goalSimZoneGrid(g.zones,r.zoneNum)}<p class="detail-note">Batas zona dihitung dari ${(DATA.metrics||{}).hrMaxAuto?'HR max estimasi otomatis':'HR max yang kamu atur'} di Settings — makin akurat HR max/rest-nya, makin akurat juga rentang zona ini.</p></article>`;
+}
+/* ================= akhir Simulasi Target ================= */
+function detailBadgeState(){
+  let logs=DATA.logs||[],today=dateKey(new Date()),monday=startOfWeek(new Date()),sunday=new Date(monday);sunday.setDate(monday.getDate()+6);
+  let week=logs.filter(x=>x.date>=dateKey(monday)&&x.date<=dateKey(sunday));
+  let target=DATA.weeklyTarget||{},cyc=target.cycling||{distance:0,goal:100},elevWeek=week.reduce((s,x)=>s+x.elevation,0),trainedToday=logs.some(x=>x.date===today);
+  return [
+    {title:'Konsisten',detail:'Latihan minimal 3 sesi dalam satu minggu.',progress:week.length+' / 3 sesi minggu ini',unlocked:week.length>=3},
+    {title:'100 KM Club',detail:'Tempuh 100 km cycling dalam satu minggu.',progress:(cyc.distance||0).toFixed(1)+' / '+(cyc.goal||100)+' km',unlocked:(cyc.distance||0)>=(cyc.goal||100)},
+    {title:'Climbing Week',detail:'Kumpulkan 1.000 m elevasi dalam satu minggu.',progress:Math.round(elevWeek)+' / 1000 m',unlocked:elevWeek>=1000},
+    {title:'Active Today',detail:'Catat minimal satu aktivitas hari ini.',progress:trainedToday?'Sudah tercatat hari ini':'Belum ada aktivitas hari ini',unlocked:trainedToday}
+  ]
+}
+function restHistoryList(days){days=days||30;let logs=DATA.logs||[],minMap={};logs.forEach(x=>minMap[x.date]=(minMap[x.date]||0)+(x.minutes||0));let dates=new Set(logs.map(x=>x.date)),today=new Date();today.setHours(0,0,0,0);let rows=[];for(let i=0;i<days;i++){let d=new Date(today);d.setDate(today.getDate()-i);let key=dateKey(d),m=minMap[key]||0;rows.push({date:key,active:dates.has(key),minutes:Math.round(m),isToday:i===0})}return rows}
+</script>

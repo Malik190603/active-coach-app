@@ -1,0 +1,408 @@
+<script>
+'use strict';
+/* ---------- plan latihan kustom mingguan (sport/tipe/persenan/hari off/hari berat) ---------- */
+let PLAN_FORM=null;
+let PLAN_DONUT_FILTER=null;
+function defaultPlanForm(pb){
+  let types=pb.types||[],typesOn={},typesPct={};
+  types.forEach(t=>{typesOn[t.id]=t.id==='Endurance'||t.id==='Threshold';typesPct[t.id]=t.id==='Endurance'?80:(t.id==='Threshold'?20:0)});
+  return {sportType:'Cycling',runningDistance:(pb.runningDistances||['5K'])[0],typesOn:typesOn,types:typesPct,offDays:['Senin'],hardDays:['Jumat','Minggu'],longRideOn:false,longRideDay:'Minggu',weeks:1}
+}
+/* ---------- durasi plan (berapa minggu): dipakai di form Custom Plan dan di Simulasi Target ---------- */
+const PLAN_WEEK_OPTIONS_FALLBACK=[1,2,3,4,6,8,12];
+function planWeekOptions(){let o=(DATA.planBuilder||{}).weekOptions;return o&&o.length?o:PLAN_WEEK_OPTIONS_FALLBACK}
+/* Pilihan durasi yang paling dekat dengan estimasi minggu dari simulasi (seri -> yang lebih pendek); 4 minggu kalau tidak ada estimasi. */
+function planWeeksNearest(weeks){let opts=planWeekOptions();if(!weeks||weeks<1)return opts.indexOf(4)>=0?4:opts[0];return opts.reduce((best,w)=>Math.abs(w-weeks)<Math.abs(best-weeks)?w:best,opts[0])}
+/* Rentang plan kalau dibuat sekarang: dihitung dari Senin minggu ini (minggu berjalan ikut terhitung) + tanggal Senin saat plan otomatis reset. */
+function planWeeksSpan(weeks){let mon=startOfWeek(new Date(DATA.today+'T00:00:00')),end=new Date(mon),reset=new Date(mon);end.setDate(mon.getDate()+weeks*7-1);reset.setDate(mon.getDate()+weeks*7);return{start:dateKey(mon),end:dateKey(end),reset:dateKey(reset)}}
+function planWeeksChipsHtml(current,attr){return `<div class="day-chip-row">${planWeekOptions().map(w=>`<button type="button" class="day-chip week-chip ${w===current?'active-weeks':''}" ${attr}="${w}">${w}</button>`).join('')}</div>`}
+function planWeeksHintHtml(weeks,id){let sp=planWeeksSpan(weeks);return `<small class="muted" id="${id}" style="display:block;margin-top:8px">${weeks} minggu (termasuk minggu ini): ${fmtDateShort(sp.start)} – ${fmtDateShort(sp.end)}. Setelah itu plan otomatis reset di hari Senin, ${fmtDateShort(sp.reset)}.</small>`}
+/* Status plan aktif: minggu ke berapa dari berapa, sampai kapan, dan kapan otomatis reset. */
+function planProgressHtml(s){let n=s.totalWeeks||1,k=s.weekNo||1;return n>1?`Plan ${n} minggu · sekarang <b>minggu ke-${k}</b> dari ${n} (sampai ${fmtDateShort(s.planEnd)}). Otomatis reset di Senin, ${fmtDateShort(s.resetsOn)}.`:`Plan 1 minggu · berlaku sampai ${fmtDateShort(s.planEnd)}. Otomatis reset di Senin, ${fmtDateShort(s.resetsOn)}.`}
+const PLAN_SWAP_FIELDS=['title','sport','zone','minutes','distance','detail','steps','type'];
+function planTypeMeta(type){
+  const M={
+    Rest:{icon:'i-moon',fg:'var(--muted)',bg:'rgba(142,142,147,.14)'},
+    Recovery:{icon:'i-battery',fg:'var(--ios-teal)',bg:'rgba(48,176,199,.14)'},
+    Endurance:{icon:'i-heart',fg:'var(--ios-blue)',bg:'rgba(0,122,255,.14)'},
+    Tempo:{icon:'i-flame',fg:'var(--ios-orange)',bg:'rgba(255,149,0,.14)'},
+    Threshold:{icon:'i-gauge',fg:'var(--ios-red)',bg:'rgba(255,59,48,.14)'},
+    VO2max:{icon:'i-bolt',fg:'var(--ios-purple)',bg:'rgba(175,82,222,.14)'}
+  };
+  return M[type]||{icon:'i-dot',fg:'var(--ios-blue)',bg:'rgba(0,122,255,.14)'}
+}
+function planDayStatusMeta(x){
+  if(x.date===DATA.today)return{cls:'today',label:'Hari ini'};
+  if(x.date>DATA.today)return{cls:'upcoming',label:'Akan datang'};
+  if(x.type==='Rest')return{cls:'done',label:'Rest'};
+  let done=(DATA.logs||[]).some(a=>a.date===x.date);
+  return done?{cls:'done',label:'Selesai'}:{cls:'missed',label:'Terlewat'}
+}
+function planDayRow(x){
+  let tm=planTypeMeta(x.type),st=planDayStatusMeta(x),editable=x.date>=DATA.today;
+  let sportTag=x.sport&&x.sport!=='-'?esc(x.sport)+' · ':'';let distTag=x.distance?' · ~'+x.distance+' km':'';
+  let meta=x.type==='Rest'?'Hari istirahat penuh':`${sportTag}${esc(x.zone)} · ${duration(x.minutes)}${distTag}`;
+  return `<div class="plan-day-row" data-day-type="${esc(x.type||'')}"><button type="button" class="plan-day-main" data-plan-date="${esc(x.date)}"><span class="plan-day-icon" style="background:${tm.bg};color:${tm.fg}"><svg viewBox="0 0 24 24"><use href="#${tm.icon}"/></svg></span><span class="plan-day-body"><span class="plan-day-top"><b>${esc(x.day)}</b><span class="plan-day-date">${fmtDateShort(x.date)}</span><span class="plan-day-badge ${st.cls}">${esc(st.label)}</span></span><span class="plan-day-title">${esc(x.title)}</span><small class="muted">${meta}</small></span></button>${editable?`<button type="button" class="plan-day-edit" data-plan-edit="${esc(x.date)}" aria-label="Ubah plan ${esc(x.day)}"><svg viewBox="0 0 24 24"><use href="#i-sliders"/></svg></button>`:''}</div>`
+}
+// Strip ringkas 7 kolom (ikon tipe + hari singkat + durasi) di atas daftar My Plan -
+// dipakai renderPlanResult(), sempat hilang definisinya (planWeekStrip is not defined)
+// meski CSS .plan-week-strip/.plan-week-cell sudah tersedia dan siap dipakai.
+function planWeekStrip(days){
+  return `<div class="plan-week-strip">${(days||[]).map(x=>{
+    let tm=planTypeMeta(x.type),st=planDayStatusMeta(x);
+    let sub=x.type==='Rest'?'Rest':(Math.round(x.minutes||0)+'m');
+    return `<button type="button" class="plan-week-cell ${st.cls}" data-plan-date="${esc(x.date)}" aria-label="${esc(x.day)} · ${esc(x.title)}"><span style="color:${tm.fg}"><svg viewBox="0 0 24 24"><use href="#${tm.icon}"/></svg></span><b>${esc((x.day||'').slice(0,3))}</b><small>${esc(sub)}</small></button>`;
+  }).join('')}</div>`;
+}
+function syncDashboardPlanToday(){let days=((DATA.planBuilder||{}).selection||{}).days||[],td=days.find(d=>d.date===DATA.today);if(td)DATA.dashboardPlan=Object.assign({},td)}
+function openPlanDayActions(dateStr){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  $('#detailBox').classList.remove('wide');
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">UBAH PLAN</span><h2>${esc(day.day)} · ${fmtDate(day.date)}</h2><p class="muted">${esc(day.title)}${day.type&&day.type!=='Rest'?' · '+esc(day.type):''}</p><div class="plan-action-list" style="margin-top:14px"><button type="button" class="menu-day-row" id="planActionSwap"><b>Tukar dengan hari lain</b><small class="muted">Pindahkan sesi ini ke hari lain minggu ini, dan sebaliknya</small></button><button type="button" class="menu-day-row" id="planActionType"><b>Ubah tipe &amp; durasi sesi</b><small class="muted">Ganti jenis latihan hari ini atau atur ulang durasinya</small></button>${day.type!=='Rest'?`<button type="button" class="menu-day-row" id="planActionSport"><b>Ganti Olahraga</b><small class="muted">Sesi ini jadi ${day.sport==='Running'?'Cycling':'Running'} — cocok kalau tiba-tiba ganti rencana</small></button>`:''}${day.type!=='Rest'?'<button type="button" class="menu-day-row" id="planActionRest"><b>Jadikan hari istirahat</b><small class="muted">Ganti sesi hari ini jadi Rest</small></button>':''}</div><button type="button" class="btn secondary" id="planActionCancel" style="width:100%;margin-top:14px">Batal</button></div>`;
+  openModal();
+  $('#planActionCancel').onclick=closeModal;
+  $('#planActionSwap').onclick=()=>renderPlanSwapPicker(dateStr);
+  $('#planActionType').onclick=()=>renderPlanTypePicker(dateStr);
+  let rs=$('#planActionSport');if(rs)rs.onclick=()=>renderPlanSportPicker(dateStr);
+  let ra=$('#planActionRest');if(ra)ra.onclick=()=>confirmPlanDayRest(dateStr)
+}
+// Pilih olahraga baru (Cycling/Running) untuk satu hari saja - tipe & durasi sesi tetap sama,
+// cuma detail/steps yang dihitung ulang sesuai olahraga barunya.
+function renderPlanSportPicker(dateStr){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  let opts=[{id:'Cycling',label:'Cycling',icon:'i-bike',fg:'var(--ios-orange)',bg:'rgba(255,149,0,.14)'},{id:'Running',label:'Running',icon:'i-shoe',fg:'var(--ios-blue)',bg:'rgba(0,122,255,.14)'}];
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">GANTI OLAHRAGA</span><h2>${esc(day.day)} mau olahraga apa?</h2><p class="muted">Tipe sesi (${esc(day.type)}) dan durasinya (${duration(day.minutes)}) tetap sama, cuma olahraganya yang diganti.</p><div class="menu-days" style="margin-top:12px">${opts.map(o=>`<button type="button" class="menu-day-row" data-sport-pick="${o.id}"><span class="plan-day-icon" style="background:${o.bg};color:${o.fg};margin-right:10px"><svg viewBox="0 0 24 24"><use href="#${o.icon}"/></svg></span><span><b>${o.label}</b>${day.sport===o.id?'<small class="muted" style="display:block">Sedang dipakai</small>':''}</span></button>`).join('')}</div><button type="button" class="btn secondary" id="planSportBack" style="width:100%;margin-top:14px">Kembali</button></div>`;
+  $('#planSportBack').onclick=()=>openPlanDayActions(dateStr);
+  $$('#detailContent [data-sport-pick]').forEach(el=>el.onclick=()=>confirmPlanDaySport(dateStr,el.dataset.sportPick))
+}
+function confirmPlanDaySport(dateStr,sport){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  if(day.sport===sport){closeModal();return}
+  let types=(DATA.planBuilder||{}).types||[],typeDef=types.find(t=>t.id===day.type);
+  Object.assign(day,{sport:sport,title:(typeDef?typeDef.name:day.type)+(sport==='Running'?' Run':' Ride'),distance:null});
+  syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+  // Sama seperti confirmPlanDayType: tampilan sudah berubah duluan (optimistic), dibiarkan
+  // begitu kalau backend belum punya setWeeklyPlanDaySport - bukan di-revert.
+  closeModal();
+  gs('setWeeklyPlanDaySport',dateStr,sport,currentAthleteId()).then(res=>{
+    if(res&&res.ok&&res.selection){
+      DATA.planBuilder=Object.assign({},DATA.planBuilder,{selection:res.selection});
+      syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+      toast(esc(day.day)+' diganti jadi '+sport)
+    }else{
+      toast((res&&res.message)||'Diubah untuk sesi ini saja — belum tersimpan permanen')
+    }
+  }).catch(()=>{
+    toast('Diubah untuk sesi ini saja — tambahkan setWeeklyPlanDaySport ke Code.gs supaya tersimpan permanen')
+  })
+}
+// Pilih tipe latihan baru untuk satu hari (mengganti Rest jadi sesi aktif juga didukung).
+function renderPlanTypePicker(dateStr){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  let types=(DATA.planBuilder||{}).types||[];
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">UBAH TIPE SESI</span><h2>${esc(day.day)} mau diganti jadi apa?</h2><p class="muted">Pilih tipe latihan baru, durasinya diatur di langkah berikutnya.</p><div class="menu-days" style="margin-top:12px">${types.map(t=>{let tm=planTypeMeta(t.id);return `<button type="button" class="menu-day-row" data-type-pick="${esc(t.id)}"><span class="plan-day-icon" style="background:${tm.bg};color:${tm.fg};margin-right:10px"><svg viewBox="0 0 24 24"><use href="#${tm.icon}"/></svg></span><span><b>${esc(t.name)}</b><small class="muted" style="display:block">${esc(t.zone)}</small></span></button>`}).join('')}</div><button type="button" class="btn secondary" id="planTypeBack" style="width:100%;margin-top:14px">Kembali</button></div>`;
+  $('#planTypeBack').onclick=()=>openPlanDayActions(dateStr);
+  $$('#detailContent [data-type-pick]').forEach(el=>el.onclick=()=>renderPlanDurationPicker(dateStr,el.dataset.typePick))
+}
+function renderPlanDurationPicker(dateStr,typeId){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  let types=(DATA.planBuilder||{}).types||[],typeDef=types.find(t=>t.id===typeId)||{name:typeId,zone:''};
+  let current=day.minutes||45,presets=[30,45,60,75,90,120];
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">DURASI SESI</span><h2>${esc(typeDef.name)} · berapa lama?</h2><p class="muted">Pilih salah satu durasi cepat, atau atur manual di bawah.</p><div class="day-chip-row" id="planDurationChips" style="margin-top:12px">${presets.map(m=>`<button type="button" class="day-chip${current===m?' active-hard':''}" data-duration="${m}">${m}m</button>`).join('')}</div><div class="plan-form-section" style="margin-top:14px"><label>Durasi manual (menit)</label><input type="number" id="planDurationInput" min="15" max="240" step="5" value="${current}"></div><div style="display:flex;gap:10px;margin-top:18px"><button type="button" class="btn secondary" id="planDurationBack" style="flex:1">Kembali</button><button type="button" class="btn primary" id="planDurationConfirm" style="flex:1">Ya, simpan</button></div></div>`;
+  $('#planDurationBack').onclick=()=>renderPlanTypePicker(dateStr);
+  $$('#planDurationChips [data-duration]').forEach(el=>el.onclick=()=>{$('#planDurationInput').value=el.dataset.duration;$$('#planDurationChips .day-chip').forEach(c=>c.classList.toggle('active-hard',c===el))});
+  $('#planDurationConfirm').onclick=()=>confirmPlanDayType(dateStr,typeId,+$('#planDurationInput').value||current)
+}
+function confirmPlanDayType(dateStr,typeId,minutes){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  minutes=Math.min(240,Math.max(15,Math.round(minutes/5)*5));
+  let types=(DATA.planBuilder||{}).types||[],typeDef=types.find(t=>t.id===typeId),sportType=((DATA.planBuilder||{}).selection||{}).sportType;
+  let sport=day.sport&&day.sport!=='-'?day.sport:(sportType==='Running'?'Running':'Cycling');
+  Object.assign(day,{type:typeId,minutes:minutes,sport:sport,zone:typeDef?typeDef.zone:day.zone,title:(typeDef?typeDef.name:typeId)+(sport==='Running'?' Run':sport==='Cycling'?' Ride':''),distance:null,detail:typeDef?typeDef.detail:day.detail,steps:day.steps||[]});
+  syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+  // Sama seperti swap/rest: tampilan sudah berubah duluan, dibiarkan begitu kalau backend
+  // belum punya setWeeklyPlanDayType — bukan di-revert.
+  closeModal();
+  gs('setWeeklyPlanDayType',dateStr,typeId,minutes,currentAthleteId()).then(res=>{
+    if(res&&res.ok&&res.selection){
+      DATA.planBuilder=Object.assign({},DATA.planBuilder,{selection:res.selection});
+      syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+      toast(esc(day.day)+' berhasil diubah')
+    }else{
+      toast((res&&res.message)||'Diubah untuk sesi ini saja — belum tersimpan permanen')
+    }
+  }).catch(()=>{
+    toast('Diubah untuk sesi ini saja — tambahkan setWeeklyPlanDayType ke Code.gs supaya tersimpan permanen')
+  })
+}
+function renderPlanSwapPicker(dateStr){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  let others=days.filter(d=>d.date!==dateStr&&d.date>=DATA.today);
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">TUKAR PLAN</span><h2>Tukar ${esc(day.day)} dengan hari apa?</h2><p class="muted">Sesi "${esc(day.title)}" akan pindah ke hari yang kamu pilih, dan sebaliknya.</p><div class="menu-days" style="margin-top:12px">${others.map(o=>`<button type="button" class="menu-day-row" data-swap-target="${esc(o.date)}"><b>${esc(o.day)} · ${esc(o.title)}</b><small class="muted">${fmtDateShort(o.date)} · ${o.type==='Rest'?'Rest':esc(o.zone)+' · '+duration(o.minutes)}</small></button>`).join('')||'<div class="insight"><b>Tidak ada hari lain</b><p>Tidak ada hari lain yang tersedia untuk ditukar minggu ini.</p></div>'}</div><button type="button" class="btn secondary" id="planSwapBack" style="width:100%;margin-top:14px">Kembali</button></div>`;
+  $('#planSwapBack').onclick=()=>openPlanDayActions(dateStr);
+  $$('#detailContent [data-swap-target]').forEach(el=>el.onclick=()=>confirmPlanDaySwap(dateStr,el.dataset.swapTarget))
+}
+function confirmPlanDaySwap(dateA,dateB){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],a=days.find(d=>d.date===dateA),b=days.find(d=>d.date===dateB);if(!a||!b)return;
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">KONFIRMASI</span><h2>Tukar plan ${esc(a.day)} &amp; ${esc(b.day)}?</h2><p class="muted">${esc(a.day)} akan berisi "${esc(b.title)}", dan ${esc(b.day)} akan berisi "${esc(a.title)}".</p><div style="display:flex;gap:10px;margin-top:18px"><button type="button" class="btn secondary" id="planSwapCancel" style="flex:1">Batal</button><button type="button" class="btn primary" id="planSwapConfirm" style="flex:1">Ya, tukar</button></div></div>`;
+  $('#planSwapCancel').onclick=closeModal;
+  $('#planSwapConfirm').onclick=async()=>{
+    let btn=$('#planSwapConfirm');btn.disabled=true;btn.textContent='Menukar...';
+    PLAN_SWAP_FIELDS.forEach(k=>{let t=a[k];a[k]=b[k];b[k]=t});
+    syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+    // Tampilan sudah diubah duluan (optimistic). Kalau backend belum punya swapWeeklyPlanDay
+    // (mis. Code.gs belum di-deploy ulang), JANGAN di-revert — biarkan berubah untuk sesi ini
+    // saja dan kasih tahu user kalau ini belum tersimpan permanen ke Spreadsheet.
+    closeModal();
+    try{
+      let res=await gs('swapWeeklyPlanDay',dateA,dateB,currentAthleteId());
+      if(res&&res.ok&&res.selection){
+        DATA.planBuilder=Object.assign({},DATA.planBuilder,{selection:res.selection});
+        syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+        toast(esc(a.day)+' & '+esc(b.day)+' berhasil ditukar')
+      }else{
+        toast((res&&res.message)||'Tertukar untuk sesi ini saja — belum tersimpan permanen')
+      }
+    }catch(e){
+      toast('Tertukar untuk sesi ini saja — tambahkan swapWeeklyPlanDay ke Code.gs supaya tersimpan permanen')
+    }
+  }
+}
+function confirmPlanDayRest(dateStr){
+  let days=((DATA.planBuilder||{}).selection||{}).days||[],day=days.find(d=>d.date===dateStr);if(!day)return;
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">KONFIRMASI</span><h2>Jadikan ${esc(day.day)} hari istirahat?</h2><p class="muted">Sesi "${esc(day.title)}" akan diganti jadi Rest.</p><div style="display:flex;gap:10px;margin-top:18px"><button type="button" class="btn secondary" id="planRestCancel" style="flex:1">Batal</button><button type="button" class="btn primary" id="planRestConfirm" style="flex:1">Ya, jadikan Rest</button></div></div>`;
+  $('#planRestCancel').onclick=closeModal;
+  $('#planRestConfirm').onclick=async()=>{
+    let btn=$('#planRestConfirm');btn.disabled=true;btn.textContent='Menyimpan...';
+    Object.assign(day,{title:'Rest',sport:'-',zone:'-',minutes:0,distance:null,detail:'Hari istirahat.',steps:[],type:'Rest'});
+    syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+    // Sama seperti swap: tampilan sudah berubah duluan, dan tetap dibiarkan begitu kalau
+    // backend belum punya setWeeklyPlanDayRest — bukan di-revert.
+    closeModal();
+    try{
+      let res=await gs('setWeeklyPlanDayRest',dateStr,currentAthleteId());
+      if(res&&res.ok&&res.selection){
+        DATA.planBuilder=Object.assign({},DATA.planBuilder,{selection:res.selection});
+        syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
+        toast(esc(day.day)+' berhasil dijadikan hari istirahat')
+      }else{
+        toast((res&&res.message)||'Jadi Rest untuk sesi ini saja — belum tersimpan permanen')
+      }
+    }catch(e){
+      toast('Jadi Rest untuk sesi ini saja — tambahkan setWeeklyPlanDayRest ke Code.gs supaya tersimpan permanen')
+    }
+  }
+}
+function planTypeTotal(pb,f){return (pb.types||[]).reduce((s,t)=>s+(f.typesOn[t.id]?(+f.types[t.id]||0):0),0)}
+function renderPlanFormHtml(pb,f){
+  let showDistance=f.sportType!=='Cycling';
+  let showLongRide=f.sportType!=='Running';
+  let typeRows=(pb.types||[]).map(t=>`<div class="type-percent-row"><label><input type="checkbox" data-type-check="${t.id}" ${f.typesOn[t.id]?'checked':''}> ${esc(t.name)} <small class="muted">(${esc(t.zone)})</small></label><input type="number" min="0" max="100" data-type-percent="${t.id}" value="${f.types[t.id]||0}" ${f.typesOn[t.id]?'':'disabled'}>%</div>`).join('');
+  let total=planTypeTotal(pb,f);
+  let dayChips=(group,active)=>(pb.days||[]).map(d=>`<button type="button" class="day-chip ${active.indexOf(d)>=0?(group==='off'?'active-off':'active-hard'):''}" data-day-${group}="${esc(d)}">${esc(d)}</button>`).join('');
+  let longRideDayOptions=(pb.days||[]).filter(d=>f.offDays.indexOf(d)<0);
+  if(showLongRide&&longRideDayOptions.indexOf(f.longRideDay)<0)f.longRideDay=longRideDayOptions[0]||'';
+  return `<p class="muted" style="margin:0 0 14px">Susun plan latihanmu sesuai kebutuhan, lalu pilih berapa minggu plan ini berjalan. Setelah dibuat, plan terkunci sampai masa plan habis dan otomatis reset di hari Senin.</p>
+    <div class="plan-form-section"><label>Tipe Olahraga</label><select id="planSportType"><option value="Cycling" ${f.sportType==='Cycling'?'selected':''}>Cycling</option><option value="Running" ${f.sportType==='Running'?'selected':''}>Running</option><option value="Both" ${f.sportType==='Both'?'selected':''}>Cycling &amp; Running</option></select></div>
+    <div class="plan-form-section" id="planDistanceSection" ${showDistance?'':'hidden'}><label>Jarak Lari yang Dituju</label><select id="planRunningDistance">${(pb.runningDistances||[]).map(d=>`<option value="${esc(d)}" ${f.runningDistance===d?'selected':''}>${esc(d)}</option>`).join('')}</select></div>
+    <div class="plan-form-section"><label>Tipe Menu Latihan &amp; Persentase</label>${typeRows}<div class="type-percent-total ${total===100?'ok':''}" id="planPercentTotal">Total: ${total}% ${total===100?'✓':'(harus 100%)'}</div></div>
+    <div class="plan-form-section"><label>Hari Off</label><div class="day-chip-row" id="planOffDays">${dayChips('off',f.offDays)}</div></div>
+    <div class="plan-form-section"><label>Hari Sesi Berat</label><div class="day-chip-row" id="planHardDays">${dayChips('hard',f.hardDays)}</div></div>
+    <div class="plan-form-section" id="planLongRideSection" ${showLongRide?'':'hidden'}>
+      <label><input type="checkbox" id="planLongRideOn" ${f.longRideOn?'checked':''}> Long Ride (minimal 2 jam)</label>
+      <select id="planLongRideDay" ${f.longRideOn?'':'disabled'} style="margin-top:8px">${longRideDayOptions.map(d=>`<option value="${esc(d)}" ${f.longRideDay===d?'selected':''}>${esc(d)}</option>`).join('')||'<option value="">Semua hari off</option>'}</select>
+    </div>
+    <div class="plan-form-section"><label>Durasi Plan (minggu)</label>${planWeeksChipsHtml(f.weeks||1,'data-plan-weeks')}${planWeeksHintHtml(f.weeks||1,'planWeeksHint')}</div>
+    <button type="button" class="btn primary" id="planSubmitBtn" style="width:100%">${(f.weeks||1)>1?'Buat Plan '+f.weeks+' Minggu':'Buat Plan Minggu Ini'}</button>`
+}
+function wirePlanFormEvents(pb){
+  $('#planSportType').onchange=e=>{PLAN_FORM.sportType=e.target.value;renderPlanCustom()};
+  let rd=$('#planRunningDistance');if(rd)rd.onchange=e=>PLAN_FORM.runningDistance=e.target.value;
+  $$('[data-type-check]').forEach(cb=>cb.onchange=()=>{PLAN_FORM.typesOn[cb.dataset.typeCheck]=cb.checked;renderPlanCustom()});
+  $$('[data-type-percent]').forEach(inp=>inp.oninput=()=>{PLAN_FORM.types[inp.dataset.typePercent]=+inp.value||0;let total=planTypeTotal(pb,PLAN_FORM),el=$('#planPercentTotal');el.textContent='Total: '+total+'% '+(total===100?'✓':'(harus 100%)');el.className='type-percent-total'+(total===100?' ok':'')});
+  $$('[data-day-off]').forEach(btn=>btn.onclick=()=>{let d=btn.dataset.dayOff,i=PLAN_FORM.offDays.indexOf(d);if(i>=0)PLAN_FORM.offDays.splice(i,1);else{PLAN_FORM.offDays.push(d);let hi=PLAN_FORM.hardDays.indexOf(d);if(hi>=0)PLAN_FORM.hardDays.splice(hi,1)}renderPlanCustom()});
+  $$('[data-day-hard]').forEach(btn=>btn.onclick=()=>{let d=btn.dataset.dayHard,i=PLAN_FORM.hardDays.indexOf(d);if(i>=0)PLAN_FORM.hardDays.splice(i,1);else if(PLAN_FORM.offDays.indexOf(d)<0)PLAN_FORM.hardDays.push(d);renderPlanCustom()});
+  let lro=$('#planLongRideOn');if(lro)lro.onchange=e=>{PLAN_FORM.longRideOn=e.target.checked;renderPlanCustom()};
+  let lrd=$('#planLongRideDay');if(lrd)lrd.onchange=e=>PLAN_FORM.longRideDay=e.target.value;
+  $$('[data-plan-weeks]').forEach(b=>b.onclick=()=>{PLAN_FORM.weeks=+b.dataset.planWeeks;renderPlanCustom()});
+  $('#planSubmitBtn').onclick=()=>confirmPlanSubmit(pb)
+}
+function renderPlanCustom(){
+  let box=$('#planCustomBox');if(!box)return;
+  let pb=DATA.planBuilder||{types:[],runningDistances:[],days:[],selection:null};
+  if(pb.selection){
+    let s=pb.selection,sportLabel=s.sportType==='Both'?'Cycling & Running':s.sportType;
+    box.innerHTML=`<div class="menu-locked"><div class="menu-card-head"><div><span class="eyebrow">PLAN AKTIF</span><h3 style="margin:2px 0 0">${esc(sportLabel)}${s.runningDistance?' · Target '+esc(s.runningDistance):''}</h3></div><span class="menu-locked-badge">🔒 Aktif</span></div><p class="muted" style="margin:8px 0 4px;font-size:12px">${planProgressHtml(s)} Plan terkunci sampai masa plan habis. Lihat menu latihan 7 harinya di tab <b>My Plan</b>, atau reset untuk menyusun ulang dari awal.</p><div style="display:flex;gap:10px;margin-top:12px"><button type="button" class="btn primary" id="planGoMyPlanBtn" style="flex:1">Lihat My Plan</button><button type="button" class="btn secondary" id="planResetBtn" style="flex:1">Reset Plan</button></div></div>`;
+    $('#planGoMyPlanBtn').onclick=()=>setPlanTab('myplan');
+    $('#planResetBtn').onclick=()=>confirmPlanReset();
+    return
+  }
+  if(!PLAN_FORM)PLAN_FORM=defaultPlanForm(pb);
+  box.innerHTML=renderPlanFormHtml(pb,PLAN_FORM);
+  wirePlanFormEvents(pb)
+}
+// Ringkasan minggu ini: total waktu, progres selesai/terlewat, dan distribusi effort per
+// zona (dihitung dari zone tiap hari yang sudah dijadwalkan) — dipakai di atas daftar 7 hari
+// My Plan supaya ada gambaran cepat sebelum scroll ke tiap hari.
+function planWeekSummary(s){
+  let days=s.days||[],trainingDays=days.filter(x=>x.type!=='Rest'),restDays=days.filter(x=>x.type==='Rest');
+  let totalMinutes=s.totalMinutes||days.reduce((a,x)=>a+(x.minutes||0),0),totalDistance=days.reduce((a,x)=>a+(x.distance||0),0);
+  let done=0,missed=0;
+  trainingDays.forEach(x=>{let st=planDayStatusMeta(x);if(st.cls==='done')done++;else if(st.cls==='missed')missed++});
+  let metrics=metric('TOTAL WAKTU',duration(totalMinutes),trainingDays.length+' sesi latihan minggu ini')
+    +metric('SESI SELESAI',done+'/'+trainingDays.length,'dibanding target minggu ini')
+    +metric('TERLEWAT',String(missed),missed?'perlu perhatian':'aman, belum ada yang terlewat')
+    +(totalDistance?metric('TOTAL JARAK',totalDistance.toFixed(1)+' km','akumulasi target lari'):metric('HARI REST',String(restDays.length),'istirahat penuh minggu ini'));
+  let zoneTotals={},all=0;
+  trainingDays.forEach(x=>{if(!x.minutes)return;let z=(String(x.zone||'Z2').match(/Z[1-5]/)||['Z2'])[0];zoneTotals[z]=(zoneTotals[z]||0)+x.minutes;all+=x.minutes});
+  let effort=Object.keys(zoneTotals).sort().map(z=>({zone:z,minutes:zoneTotals[z],pct:all?Math.round(zoneTotals[z]/all*100):0}));
+  let effortBar=effort.map(x=>`<span class="${zoneClass(x.zone)}" style="width:${x.pct}%" title="${x.zone} · ${duration(x.minutes)}"></span>`).join('');
+  return `<div class="metric-grid" style="margin:12px 0 4px">${metrics}</div>${all?`<span class="eyebrow" style="display:block;margin-top:10px">DISTRIBUSI EFFORT MINGGU INI</span><div class="effort-bar">${effortBar}</div><p class="effort-label">${esc(effort.map(x=>x.zone+' '+x.pct+'%').join(' · '))}</p>${planWeekDonut(trainingDays)}`:''}`
+}
+/* Donut komposisi effort minggu ini berdasarkan tipe menu (Endurance/Tempo/Threshold/VO2max) —
+   pelengkap effort-bar horizontal di atas. Ketuk slice atau item legenda untuk filter daftar 7 hari
+   di bawahnya (lihat bindPlanDonutFilter & applyPlanDonutFilter). */
+function planWeekDonut(trainingDays){
+  let totals={},all=0;
+  (trainingDays||[]).forEach(x=>{if(!x.minutes)return;let t=x.type||'Endurance';totals[t]=(totals[t]||0)+x.minutes;all+=x.minutes});
+  let order=['Endurance','Tempo','Threshold','VO2max','Recovery'],types=Object.keys(totals).sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+  if(!all||types.length<2)return'';
+  let r=42,c=2*Math.PI*r,cum=0;
+  let segs=types.map(t=>{let pct=totals[t]/all*100,tm=planTypeMeta(t),len=pct/100*c,dash=len.toFixed(2)+' '+(c-len).toFixed(2),offset=(-cum/100*c).toFixed(2);cum+=pct;return{t,pct:Math.round(pct),color:tm.fg,dash,offset,minutes:totals[t]}});
+  let arcs=segs.map(s=>`<circle class="donut-seg" data-donut-type="${esc(s.t)}" cx="60" cy="60" r="${r}" stroke="${s.color}" stroke-width="16" fill="none" stroke-dasharray="${s.dash}" stroke-dashoffset="${s.offset}" title="${esc(s.t)} · ${s.pct}%"></circle>`).join('');
+  let legend=segs.map(s=>`<button type="button" class="donut-legend-item" data-donut-type="${esc(s.t)}"><i class="donut-dot" style="background:${s.color}"></i>${esc(s.t)}<b>${s.pct}%</b></button>`).join('');
+  return `<span class="eyebrow" style="display:block;margin-top:16px">KOMPOSISI EFFORT MINGGU INI</span><div class="donut-wrap" id="planWeekDonut"><div class="donut-chart"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--ios-fill)" stroke-width="16"></circle><g transform="rotate(-90 60 60)">${arcs}</g></svg><div class="donut-center"><b>${trainingDays.filter(x=>x.minutes).length}</b><small>sesi</small></div></div><div class="donut-legend">${legend}</div></div>`
+}
+function bindPlanDonutFilter(root){
+  if(!root)return;
+  root.querySelectorAll('#planWeekDonut [data-donut-type]').forEach(el=>el.onclick=()=>{let t=el.dataset.donutType;PLAN_DONUT_FILTER=PLAN_DONUT_FILTER===t?null:t;applyPlanDonutFilter(root)});
+  applyPlanDonutFilter(root)
+}
+function applyPlanDonutFilter(root){
+  root=root||$('#planMyPlanBox');if(!root)return;
+  root.querySelectorAll('#planWeekDonut [data-donut-type]').forEach(el=>{let match=!PLAN_DONUT_FILTER||el.dataset.donutType===PLAN_DONUT_FILTER;el.classList.toggle('donut-dim',!match)});
+  root.querySelectorAll('.plan-day-row').forEach(row=>{row.hidden=!!PLAN_DONUT_FILTER&&row.dataset.dayType!==PLAN_DONUT_FILTER});
+}
+function renderPlanResult(){
+  let box=$('#planMyPlanBox');if(!box)return;
+  let pb=DATA.planBuilder||{types:[],runningDistances:[],days:[],selection:null};
+  if(!pb.selection){
+    let dbg=pb.debug||null, dbgHtml='';
+    if(dbg&&dbg.rows&&dbg.rows.length){
+      let rowsTxt=dbg.rows.map(r=>esc(r.athleteId)+' @ '+esc(r.weekStart)).join(', ');
+      dbgHtml=`<p class="muted" style="margin:8px 0 0;font-size:11px">Diagnostik: mencari minggu <b>${esc(dbg.expectWeekStart||pb.expectWeekStart||'')}</b> untuk akun <b>${esc(currentAthleteId())}</b>. Isi MenuPlan terakhir: ${rowsTxt}. Kalau WeekStart beda minggu, itu plan minggu lalu (sudah reset otomatis). Kalau AthleteId beda, itu plan milik akun lain.</p>`;
+    } else if(dbg){
+      dbgHtml=`<p class="muted" style="margin:8px 0 0;font-size:11px">Diagnostik: mencari minggu <b>${esc(dbg.expectWeekStart||pb.expectWeekStart||'')}</b>, sheet MenuPlan masih kosong untuk akun ini.</p>`;
+    }
+    box.innerHTML=`<div class="insight"><b>Belum ada plan aktif</b><p>Susun plan latihan mingguanmu dulu di tab Custom Plan, hasilnya akan tampil di sini.</p></div>${dbgHtml}<button type="button" class="btn primary" id="planGoCustomBtn" style="width:100%;margin-top:12px">Buka Custom Plan</button>`;
+    $('#planGoCustomBtn').onclick=()=>setPlanTab('custom');
+    return
+  }
+  let s=pb.selection,sportLabel=s.sportType==='Both'?'Cycling & Running':s.sportType,typeTags=(s.types||[]).map(t=>`<span>${esc(t.id)} <b>${t.percent}%</b></span>`).join('');
+  PLAN_DONUT_FILTER=null;
+  box.innerHTML=`<div class="menu-locked"><div class="menu-card-head"><div><span class="eyebrow">MENU 7 HARI</span><h3 style="margin:2px 0 0">${esc(sportLabel)}${s.runningDistance?' · Target '+esc(s.runningDistance):''}</h3></div><span class="menu-locked-badge">🔒 Aktif</span></div>${planWeekStrip(s.days)}<div class="menu-dist">${typeTags}</div><p class="muted" style="margin:8px 0 4px;font-size:11px">Hari off: ${esc((s.offDays||[]).join(', ')||'-')} · Hari sesi berat: ${esc((s.hardDays||[]).join(', ')||'-')}${s.longRideDay?' · Long Ride: '+esc(s.longRideDay):''}</p><p class="muted" style="margin:0 0 4px;font-size:11px">${planProgressHtml(s)}</p>${planWeekSummary(s)}<p class="muted" style="margin:12px 0 4px;font-size:11px">Ketuk salah satu hari untuk lihat plan vs aktivitas aktual.</p><div class="menu-days">${(s.days||[]).map(planDayRow).join('')}</div><button type="button" class="btn secondary" id="planResetBtn2" style="width:100%;margin-top:12px">Reset Plan</button></div>`;
+  $('#planResetBtn2').onclick=()=>confirmPlanReset();
+  $$('#planMyPlanBox [data-plan-date]').forEach(el=>el.onclick=()=>showPlanDayDetail(el.dataset.planDate));
+  $$('#planMyPlanBox [data-plan-edit]').forEach(el=>el.onclick=e=>{e.stopPropagation();openPlanDayActions(el.dataset.planEdit)});
+  bindPlanDonutFilter($('#planMyPlanBox'));
+}
+/* ---------- Review plan vs actual: bukan cuma durasi, tapi juga zona/intensitas ---------- */
+// Label ramah untuk nomor zona 1-5, dipetakan mirip classifySessionType di backend supaya
+// pesan review mudah dipahami (mis. "Z4 (Threshold)" bukan cuma "Z4").
+function zoneIntensityLabel_(n){return {1:'Recovery',2:'Endurance/Easy',3:'Tempo',4:'Threshold',5:'VO2max/Interval'}[n]||''}
+// Ambil rentang target zona (angka 1-5) dari string zona plan, mis. "Z2"->{min:2,max:2},
+// "Z2/Z3"->{min:2,max:3}, "-"/kosong -> null (tidak ada target zona untuk dibandingkan).
+function planZoneRange_(zoneStr){
+  let nums=(String(zoneStr||'').match(/[1-5]/g)||[]).map(Number);
+  return nums.length?{min:Math.min(...nums),max:Math.max(...nums)}:null;
+}
+// Bandingkan zona intensitas aktual (dari agregat DATA.planActual, yang sudah dihitung
+// backend dari avgHr tertimbang) dengan target zona plan hari itu. Return null kalau tidak
+// ada cukup data (belum ada HR) atau plan hari itu tidak punya target zona.
+function planIntensityVerdict_(day,agg){
+  if(!agg||!agg.hrZone||agg.hrZone==='-')return null;
+  let range=planZoneRange_(day.zone);if(!range)return null;
+  let actualNum=Number(String(agg.hrZone).replace(/[^1-5]/g,''));if(!actualNum)return null;
+  if(actualNum>range.max){
+    let diff=actualNum-range.max;
+    return{status:'harder',text:`Intensitas lebih berat dari rencana — target ${esc(day.zone)} (${zoneIntensityLabel_(range.max)}), tapi aktivitas aktual rata-rata di ${esc(agg.hrZone)} (${zoneIntensityLabel_(actualNum)}).${diff>=2?' Selisihnya cukup jauh, jaga recovery setelah sesi ini.':''}`};
+  }
+  if(actualNum<range.min){
+    return{status:'easier',text:`Intensitas lebih ringan dari rencana — target ${esc(day.zone)} (${zoneIntensityLabel_(range.min)}), tapi aktivitas aktual rata-rata di ${esc(agg.hrZone)} (${zoneIntensityLabel_(actualNum)}). Sesi ini mungkin belum memberi stimulus sesuai tujuan latihannya.`};
+  }
+  return{status:'match',text:`Intensitas sesuai rencana (${esc(agg.hrZone)} · ${zoneIntensityLabel_(actualNum)}).`};
+}
+/* Bandingkan satu hari plan kustom dengan aktivitas aktual di tanggal yang sama, lalu tentukan
+   verdict review-nya (sesuai/tidak/belum ada data/belum berlangsung) — mempertimbangkan durasi
+   DAN zona/intensitas aktual (bukan cuma jumlah menit). */
+function planDayVerdict(day,actual){
+  let actualMinutes=actual.reduce((s,a)=>s+a.minutes,0);
+  if(day.date>DATA.today)return{level:'',text:'Sesi ini belum berlangsung — review otomatis muncul di sini setelah tanggal berjalan.'};
+  if(day.type==='Rest')return actual.length?{level:'warn',text:`Dijadwalkan istirahat, tapi tercatat ${duration(actualMinutes)} aktivitas. Pastikan tetap cukup waktu recovery.`}:{level:'ok',text:'Rest day terpenuhi — tidak ada aktivitas tercatat, sesuai jadwal istirahat.'};
+  if(!actual.length)return{level:'alert',text:'Belum ada aktivitas tercatat untuk hari ini. Sesi plan sepertinya belum dijalani.'};
+  let sportMatch=!day.sport||day.sport==='-'||actual.some(a=>a.sport===day.sport),ratio=actualMinutes/(day.minutes||1);
+  if(!sportMatch){let actualSports=[...new Set(actual.map(a=>a.sport))].join(', ');return{level:'warn',text:`Olahraga aktual (${esc(actualSports)}) beda dari plan (${esc(day.sport)}). Durasi aktual ${duration(actualMinutes)}.`}}
+  let agg=(DATA.planActual||[]).find(a=>a.date===day.date),intensity=planIntensityVerdict_(day,agg);
+  let durText=ratio>=0.8?`Durasi sesuai target — aktual ${duration(actualMinutes)} dari target ${duration(day.minutes)} (${Math.round(ratio*100)}%).`:`Durasi di bawah target — aktual ${duration(actualMinutes)} dari target ${duration(day.minutes)} (${Math.round(ratio*100)}%).`;
+  if(intensity&&intensity.status!=='match')return{level:'warn',text:`${durText} ${intensity.text}`};
+  if(ratio>=0.8)return{level:'ok',text:intensity?`${durText} ${intensity.text}`:durText};
+  return{level:'warn',text:durText};
+}
+function planActualRow(x){return `<button type="button" class="menu-day-row" data-id="${esc(x.id)}"><b>${esc(x.title)}</b><small class="muted">${esc(x.sport)} · ${duration(x.minutes)}${x.distance?' · '+x.distance.toFixed(1)+' km':''}${x.avgHr?' · '+Math.round(x.avgHr)+' bpm':''} · Tap untuk detail</small></button>`}
+function showPlanDayDetail(dateStr){
+  let day=((DATA.planBuilder||{}).selection||{}).days?.find(d=>d.date===dateStr)||(DATA.plan||[]).find(d=>d.date===dateStr);
+  if(!day)return;
+  let actual=(DATA.logs||[]).filter(x=>x.date===dateStr),v=planDayVerdict(day,actual);
+  let planMetrics=[['Sport',day.sport&&day.sport!=='-'?day.sport:'Rest'],['Zona',day.zone],['Target durasi',duration(day.minutes)]];
+  if(day.distance)planMetrics.push(['Target jarak',day.distance+' km']);
+  $('#detailBox').classList.remove('wide');
+  let stepData=day.steps||[],steps=stepData.map(s=>{let z=(String(s.target||'').match(/Z[1-5]/)||['Z2'])[0];return `<div class="workout-step ${zoneClass(z)}"><b>${esc(s.label)} · ${duration(s.minutes)}</b><small><i class="zone-dot ${zoneClass(z)}"></i>${esc(z)} · ${esc(s.target)}</small></div>`}).join(''),effort=workoutEffort(stepData).map(x=>`<span class="${zoneClass(x.zone)}" style="width:${x.pct}%" title="${x.zone} · ${duration(x.minutes)}"></span>`).join(''),effortLabel=workoutEffort(stepData).map(x=>`${x.zone} ${x.pct}%`).join(' · ');$('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">PLAN VS ACTUAL</span><h2>${esc(day.day)} · ${esc(day.title)}</h2><p class="muted">${fmtDate(day.date)}</p><div class="detail-metrics">${planMetrics.map(a=>`<div class="detail-metric"><small>${esc(a[0])}</small><b>${esc(a[1])}</b></div>`).join('')}</div><p class="muted" style="margin-top:12px">${esc(day.detail)}</p>${steps?`<span class="eyebrow" style="display:block;margin-top:16px">DISTRIBUSI EFFORT</span><div class="effort-bar">${effort}</div><p class="effort-label">${esc(effortLabel)}</p><span class="eyebrow" style="display:block;margin-top:16px">STRUKTUR WORKOUT</span><div class="workout-steps">${steps}</div>`:''}<div class="insight-list" style="margin-top:14px"><div class="insight${v.level?' rest-'+(v.level==='ok'?'ok':v.level==='alert'?'alert':'warn'):''}"><b>Review</b><p>${v.text}</p></div></div><span class="eyebrow" style="display:block;margin-top:16px">AKTIVITAS AKTUAL</span><div class="menu-days" style="margin-top:8px">${actual.length?actual.map(planActualRow).join(''):'<div class="insight"><b>Tidak ada aktivitas</b><p>Belum ada aktivitas Strava tercatat pada tanggal ini.</p></div>'}</div></div>`;
+  openModal();
+  $$('#detailContent [data-id]').forEach(el=>el.onclick=()=>showDetail(el.dataset.id))
+}
+function confirmPlanSubmit(pb){
+  let f=PLAN_FORM,types=(pb.types||[]).filter(t=>f.typesOn[t.id]).map(t=>({id:t.id,percent:+f.types[t.id]||0})),total=types.reduce((s,t)=>s+t.percent,0);
+  if(!types.length||total<=0)return toast('Pilih minimal satu tipe menu latihan dengan persentase');
+  if(total!==100)return toast('Total persentase tipe menu latihan harus 100%');
+  if(!f.hardDays.length)return toast('Pilih minimal satu hari sesi berat');
+  if(f.longRideOn&&!f.longRideDay)return toast('Pilih hari untuk Long Ride');
+  let weeks=f.weeks||1,sp=planWeeksSpan(weeks);
+  $('#detailBox').classList.remove('wide');
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">KONFIRMASI</span><h2>Buat plan latihan ${weeks>1?weeks+' minggu':'minggu ini'}?</h2><p class="muted">Berjalan ${fmtDateShort(sp.start)} – ${fmtDateShort(sp.end)}, lalu otomatis reset di hari Senin, ${fmtDateShort(sp.reset)}. Menu latihan 7 harinya akan ditampilkan di sini. Kalau mau menyusun ulang, gunakan tombol Reset Plan.</p><div style="display:flex;gap:10px;margin-top:18px"><button type="button" class="btn secondary" id="planCancelBtn" style="flex:1">Batal</button><button type="button" class="btn primary" id="planConfirmBtn" style="flex:1">Ya, buat plan</button></div></div>`;
+  openModal();
+  $('#planCancelBtn').onclick=closeModal;
+  $('#planConfirmBtn').onclick=async()=>{
+    let btn=$('#planConfirmBtn');btn.disabled=true;btn.textContent='Menyimpan...';
+    try{
+      let config={sportType:f.sportType,runningDistance:f.runningDistance,types:types,offDays:f.offDays,hardDays:f.hardDays,longRideDay:f.longRideOn?f.longRideDay:'',weeks:weeks};
+      let res=await gs('createWeeklyPlan',config,currentAthleteId());
+      let selection=(res&&res.selection)||null;
+      DATA.planBuilder=Object.assign({},DATA.planBuilder,{selection:selection});
+      PLAN_FORM=null;closeModal();renderPlanCustom();renderPlanResult();if(res&&res.ok)setPlanTab('myplan');
+      toast(res&&res.ok?(weeks>1?'Plan latihan '+weeks+' minggu dibuat':'Plan latihan minggu ini dibuat'):((res&&res.message)||'Plan sudah dibuat sebelumnya'));
+    }catch(e){toast('Gagal menyimpan plan: '+(e.message||e));btn.disabled=false;btn.textContent='Ya, buat plan'}
+  }
+}
+function confirmPlanReset(){
+  let sel=(DATA.planBuilder||{}).selection||{},left=(sel.totalWeeks||1)-(sel.weekNo||1);
+  $('#detailBox').classList.remove('wide');
+  $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">KONFIRMASI</span><h2>Reset plan latihan?</h2><p class="muted">${left>0?'Plan yang sedang aktif beserta '+left+' minggu sisanya akan dihapus':'Plan yang sedang aktif akan dihapus'} dan kamu bisa menyusun plan baru dari awal.</p><div style="display:flex;gap:10px;margin-top:18px"><button type="button" class="btn secondary" id="planResetCancelBtn" style="flex:1">Batal</button><button type="button" class="btn primary" id="planResetConfirmBtn" style="flex:1">Ya, reset plan</button></div></div>`;
+  openModal();
+  $('#planResetCancelBtn').onclick=closeModal;
+  $('#planResetConfirmBtn').onclick=async()=>{
+    let btn=$('#planResetConfirmBtn');btn.disabled=true;btn.textContent='Mereset...';
+    try{
+      let res=await gs('resetWeeklyPlan',currentAthleteId());
+      DATA.planBuilder=Object.assign({},DATA.planBuilder,{selection:(res&&res.selection)||null});
+      PLAN_FORM=null;closeModal();renderPlanCustom();renderPlanResult();setPlanTab('custom');toast('Plan latihan direset')
+    }catch(e){toast('Gagal mereset plan: '+(e.message||e));btn.disabled=false;btn.textContent='Ya, reset plan'}
+  }
+}
+function renderPlanWeekReviewLegacy(){
+  let box=$('#planWeekReviewBox');if(!box)return;
+  let r=DATA.planWeekReview;
+  if(!r){box.innerHTML='<div class="insight"><b>Belum ada review</b><p>Buat plan latihan kustom minggu lalu untuk melihat evaluasinya di sini setelah minggu itu selesai.</p></div>';return}
+  let pct=Math.round(r.ratio*100),typeRows=(r.byType||[]).map(t=>`<div class="insight"><b>${esc(t.type)}</b><p>${duration(t.actual)} aktual dari target ${duration(t.planned)}</p></div>`).join('');
+  box.innerHTML=`<div class="insight"><b>Minggu ${fmtDate(r.weekStart)} - ${fmtDate(r.weekEnd)}</b><p>${r.daysDone}/${r.totalDays} hari beraktivitas · ${duration(r.actualMinutes)} dari target ${duration(r.plannedMinutes)} (${pct}%)</p></div>${typeRows}`
+}
+</script>

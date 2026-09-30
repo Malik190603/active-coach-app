@@ -1,0 +1,438 @@
+<script>
+'use strict';
+function focusAnchor(sel){
+  let el=typeof sel==='string'?$(sel):sel;if(!el)return;
+  let det=el.closest?el.closest('details'):null;if(det&&!det.open)det.open=true;if(el.tagName==='DETAILS')el.open=true;
+  el.scrollIntoView({behavior:'smooth',block:'start'});
+  el.classList.remove('anchor-flash');void el.offsetWidth;el.classList.add('anchor-flash');
+  setTimeout(()=>el.classList.remove('anchor-flash'),1600);
+}
+const PROGRESS_TAB_MAP={insights:['performance','fitness'],zones:['performance','intensity'],records:['performance','records'],top10:['performance','records','#top10Card'],compliance:['training','plan','#complianceCard'],leaderboard:['performance','records','#segmentsCard']};
+const LEGACY_ANCHOR={'#paceTrendWrap':['performance','speed'],'#fitnessChartWrap':['performance','fitness'],'#volumeChartWrap':['dashboard',''],'.heatmap-panel':['training','routes'],'#openWrapped':['sharing',''],'#downloadReport':['sharing','']};
+function locateAnchor(anchor){
+  if(!anchor)return null;if(LEGACY_ANCHOR[anchor])return LEGACY_ANCHOR[anchor];
+  let el=null;try{el=$(anchor)}catch(e){}if(!el)return null;
+  let pg=el.closest('.page');if(!pg)return null;let sv=el.closest('.acx-sub');
+  return [pg.dataset.pageView,sv?sv.dataset.subView:''];
+}
+function goWithAnchor(page,tab,anchor,sub){
+  if(page==='progress'&&tab&&PROGRESS_TAB_MAP[tab]){let m=PROGRESS_TAB_MAP[tab];page=m[0];sub=sub||m[1];anchor=anchor||m[2]}
+  if(anchor&&!sub){let loc=locateAnchor(anchor);if(loc){if(loc[0]==='profile'){openProfile();setTimeout(()=>focusAnchor(anchor),180);return}page=loc[0];sub=loc[1]}}
+  if(page==='profile'){openProfile();if(anchor)setTimeout(()=>focusAnchor(anchor),180);return}
+  switchPage(page,{sub:sub,skipScroll:!!anchor});
+  if(anchor)setTimeout(()=>focusAnchor(anchor),180);
+}
+function bindNavTargets(root){
+  if(!root)return;
+  root.querySelectorAll('[data-go]').forEach(el=>el.onclick=e=>{if(e)e.stopPropagation();goWithAnchor(el.dataset.go,el.dataset.progressTab,el.dataset.anchor,el.dataset.sub);if(el.dataset.planCustom)setTimeout(()=>{try{setPlanTab('custom')}catch(x){}},60)});
+  root.querySelectorAll('[data-detail]').forEach(el=>el.onclick=e=>{if(e)e.stopPropagation();openDetailPage(el.dataset.detail,el)});
+  root.querySelectorAll('[data-action]').forEach(el=>el.onclick=e=>{if(e)e.stopPropagation();runBrowseAction(el.dataset.action,el.dataset.anchor)});
+  root.querySelectorAll('[data-open-profile]').forEach(el=>el.onclick=e=>{if(e)e.stopPropagation();openProfile();if(el.dataset.anchor)setTimeout(()=>focusAnchor(el.dataset.anchor),180)});
+  if(root.matches&&root.matches('[data-go]'))root.onclick=()=>goWithAnchor(root.dataset.go,root.dataset.progressTab,root.dataset.anchor,root.dataset.sub);
+}
+function runBrowseAction(key,anchor){
+  if(key==='profile'){openProfile();if(anchor)setTimeout(()=>focusAnchor(anchor),180);return}
+  if(key==='sync'){openSyncSheet();return}
+  if(key==='theme'){openProfile();setTimeout(()=>focusAnchor('#themeSeg'),180);return}
+  if(key==='feedback'){let p=$('#feedbackPopup');if(p)p.hidden=false;return}
+  if(key==='wrapped'){openWrappedCard();return}
+  if(key==='pdf'){downloadReportPdf();return}
+  if(key==='sharetext'){shareSummaryText();return}
+  if(key==='plancustom'){switchPage('training',{sub:'plan'});setTimeout(()=>{try{setPlanTab('custom')}catch(e){}},60);return}
+}
+function openSyncSheet(){let p=$('#syncPopup');if(p)p.hidden=false}
+
+function toolValue(key){
+  let logs=DATA.logs||[];
+  try{
+    if(key==='vo2max')return (DATA.vo2max&&DATA.vo2max.value)?DATA.vo2max.value+' ml/kg':'';
+    if(key==='prediction'){let p=(DATA.analytics||{}).performancePrediction;if(p&&p.running)return '5K '+fmtHMS(riegelPredict(p.running.fiveKmPace*60*5,5,5));if(p&&p.cycling)return p.cycling.avgSpeed+' km/j';return ''}
+    if(key==='rest'){let r=computeRestStatus(logs);return r.streak===0?'Aktif hari ini':r.streak+' hari rest'}
+    if(key==='hravg'){let h=logs.filter(x=>x.avgHr>0);return h.length?Math.round(h.reduce((s,x)=>s+x.avgHr,0)/h.length)+' bpm':''}
+    if(key==='hrmax'){let m=Math.max.apply(null,[0].concat(logs.map(x=>x.maxHr||0)));return m?m+' bpm':''}
+    if(key==='powercurve'){let r=DATA.records||{};return r.power&&r.power.value?Math.round(r.power.value)+' W':''}
+    if(key==='calories'){let v=logs.reduce((s,x)=>s+(x.calories||0),0);return v?hFmtNum(v,0)+' kkal':''}
+    if(key==='badges'){let b=DATA.badges||[];return b.length?b.length+' terbuka':''}
+    if(key==='targets'){let rows=weeklyTargetRows().filter(r=>r.goal>0);return rows.length?Math.round(rows.reduce((s,r)=>s+r.pct,0)/rows.length)+'%':''}
+    if(key==='events'){let ev=(typeof proStore==='function'&&DATA.pro)?(proStore('events',[])||[]):[];let up=ev.filter(e=>e&&e.date>=dateKey(new Date())).sort((a,b)=>a.date<b.date?-1:1)[0];if(up){let d=Math.round((new Date(up.date+'T00:00:00')-new Date(dateKey(new Date())+'T00:00:00'))/86400000);return d+' hari lagi'}return ''}
+  }catch(e){}
+  return '';
+}
+const TOOL_META={
+  tomorrow:{n:'Rencana besok',s:'Jam terbaik latihan dari prakiraan cuaca per jam',i:'i-cloudsun',t:'indigo'},
+  events:{n:'Event hub',s:'Hitung mundur, fase taper, cuaca & checklist',i:'i-flag',t:'pink'},
+  pacer:{n:'Pacing & fueling',s:'Target watt per bagian rute + rencana makan',i:'i-bolt',t:'orange'},
+  reminder:{n:'Catatan coach hari ini',s:'Semua fokus & pengingat',i:'i-bell',t:'orange'},
+  targets:{n:'Target mingguan',s:'Progres jarak, durasi, elevasi & sesi',i:'i-target',t:'green'},
+  explorer:{n:'Explorer tiles',s:'Kotak peta yang sudah kamu jelajahi',i:'i-grid',t:'blue'},
+  stops:{n:'Peta berhenti',s:'Lampu merah & macet di rutemu',i:'i-traffic',t:'orange'},
+  ghost:{n:'Ghost ride',s:'Adu dua ride di rute yang sama',i:'i-ghost',t:'indigo'},
+  comparetool:{n:'Bandingkan sesi',s:'Sandingkan dua aktivitas berdampingan',i:'i-compare',t:'indigo'},
+  vo2max:{n:'VO2max',s:'Kapasitas aerobik & metode perhitungannya',i:'i-lungs',t:'teal'},
+  prediction:{n:'Prediksi performa',s:'Estimasi 5K–marathon & 20–100 km',i:'i-gauge',t:'blue'},
+  goalsim:{n:'Simulasi target',s:'Rencana menuju target speed, jarak, atau FTP',i:'i-target',t:'indigo'},
+  durability:{n:'Ketahanan & efisiensi',s:'Kekuatan saat lelah + EF terkoreksi suhu',i:'i-battery',t:'green'},
+  heat:{n:'Aklimatisasi panas',s:'Kesiapan berlatih di cuaca panas',i:'i-thermo',t:'red'},
+  rest:{n:'Pola istirahat',s:'Riwayat rest day 30 hari',i:'i-moon',t:'indigo'},
+  timeline:{n:'Timeline karier',s:'Milestone otomatis & catatan hidup',i:'i-history',t:'blue'},
+  intensity:{n:'Distribusi intensitas',s:'Polarized, pyramidal, atau threshold',i:'i-zones',t:'purple'},
+  decoupling:{n:'HR decoupling',s:'Stabilitas aerobik & drift jantung',i:'i-trend',t:'orange'},
+  hravg:{n:'Rata-rata detak',s:'Tren HR rata-rata per sesi',i:'i-heart',t:'pink'},
+  hrmax:{n:'Detak maksimum',s:'HR tertinggi yang pernah tercatat',i:'i-pulse',t:'red'},
+  runform:{n:'Form lari',s:'Cadence, panjang langkah & overstriding',i:'i-cadence',t:'blue'},
+  powercurve:{n:'Power curve',s:'Power terbaik per durasi',i:'i-bolt',t:'purple'},
+  climbs:{n:'Library tanjakan',s:'Tanjakan otomatis, riwayat & simulasi W/kg',i:'i-mountain',t:'orange'},
+  wind:{n:'Angin',s:'Kecepatan setara tanpa angin',i:'i-wind',t:'teal'},
+  records:{n:'Rekor unik',s:'Rekor yang tidak dicatat Strava',i:'i-star',t:'yellow'},
+  badges:{n:'Badge & pencapaian',s:'Progres tiap badge, termasuk yang terkunci',i:'i-medal',t:'purple'},
+  trophies:{n:'Trofi Strava',s:'KOM, PR segmen & achievement',i:'i-trophy',t:'red'},
+  calories:{n:'Kalori terbakar',s:'Estimasi energi latihan',i:'i-flame',t:'red'},
+  prohub:{n:'Pusat analisis',s:'Status analisis stream & insight lanjutan',i:'i-sparkles',t:'indigo'},
+  clubs:{n:'Klub',s:'Komunitas Strava yang kamu ikuti',i:'i-users',t:'blue'},
+  challenges:{n:'Tantangan',s:'Challenge Strava',i:'i-flag',t:'red'},
+  about:{n:'Tentang Active Coach',s:'Versi aplikasi & pembuatnya',i:'i-info',t:'gray'},
+  shoes:{n:'Rak sepatu',s:'Umur tiap sepatu lari & rotasi',i:'i-shoe',t:'orange'},
+  commute:{n:'Commute',s:'Penghematan bensin, ongkos & CO₂',i:'i-leaf',t:'green'},
+  bikegarage:{n:'Garasi sepeda',s:'Part, odometer & riwayat upgrade',i:'i-bike',t:'amber'},
+  bikeservice:{n:'Bengkel & servis',s:'Prioritas perawatan komponen',i:'i-wrench',t:'red'}
+};
+const TOOLSETS={
+  'training-plan':['tomorrow','events','pacer'],
+  'training-map':['explorer','stops','ghost'],
+  'perf-fitness':['vo2max','prediction','goalsim','durability','heat','timeline'],
+  'perf-intensity':['intensity','decoupling','hravg','hrmax','runform'],
+  'perf-speed':['powercurve','climbs','wind'],
+  'perf-records':['records','badges','trophies']
+};
+function toolRowHtml(key){
+  let m=TOOL_META[key];if(!m||!DETAIL_RENDERERS[key]&&!DETAIL_REDIRECT_KEYS().includes(key))return '';
+  let v=toolValue(key);
+  return '<button type="button" class="acx-row acx-tool" data-detail="'+key+'"><span class="acx-row-ic tone-'+m.t+' icon"><svg><use href="#'+m.i+'"/></svg></span><span class="acx-row-text"><b>'+esc(m.n)+'</b><small>'+esc(m.s)+'</small></span>'+(v?'<span class="acx-row-val">'+esc(v)+'</span>':'')+'<span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>';
+}
+function DETAIL_REDIRECT_KEYS(){try{return Object.keys(DETAIL_REDIRECT)}catch(e){return []}}
+function paintTools(scope){(scope||document).querySelectorAll('[data-tools]').forEach(box=>{let keys=TOOLSETS[box.dataset.tools]||[];box.innerHTML='<div class="acx-list">'+keys.map(toolRowHtml).join('')+'</div>';bindNavTargets(box)})}
+
+function renderTrainingSub(sub){
+  let page=document.querySelector('.page[data-page-view="training"]');
+  if(sub==='plan'){renderPlanWeek();renderWeeklyTargets();try{renderCompliance()}catch(e){console.error('compliance',e)}}
+  else if(sub==='calendar'){renderProgressCalendar();renderCalStreak()}
+  else if(sub==='activities'){renderActivityQuick();renderActivities()}
+  else if(sub==='routes'){let act=$('#heatmapTabs .sub-tab.active');requestAnimationFrame(()=>{try{initHeatmap(act?act.dataset.heatSport:'All')}catch(e){console.error('heatmap',e)}});renderRoutesPage()}
+  paintTools(page);
+  let k=$('#trainKicker');if(k){let n=(DATA.logs||[]).length;k.textContent=n?n+' aktivitas tercatat':'Rencana, kalender & riwayat'}
+}
+function renderCalStreak(){
+  let box=$('#calStreakBox');if(!box)return;
+  let seen={};(DATA.logs||[]).forEach(x=>seen[x.date]=1);
+  let keys=Object.keys(seen).sort(),best=0,run=0,prev=null;
+  keys.forEach(k=>{if(prev){let d=Math.round((new Date(k+'T00:00:00')-new Date(prev+'T00:00:00'))/86400000);run=d===1?run+1:1}else run=1;best=Math.max(best,run);prev=k});
+  let now=new Date(),mStart=dateKey(new Date(now.getFullYear(),now.getMonth(),1)),mDays=keys.filter(k=>k>=mStart&&k<=dateKey(now)).length,r=computeRestStatus(DATA.logs||[]);
+  box.innerHTML='<div class="acx-kpis acx-kpis-3">'+
+    '<div class="acx-kpi tone-coral"><small>Streak</small><b>'+hCurrentStreak()+'<span>hari</span></b></div>'+
+    '<div class="acx-kpi tone-amber"><small>Terpanjang</small><b>'+best+'<span>hari</span></b></div>'+
+    '<div class="acx-kpi tone-green"><small>Bulan ini</small><b>'+mDays+'<span>/ '+now.getDate()+'</span></b></div></div>'+
+    '<div class="acx-list"><button type="button" class="acx-row acx-tool" data-detail="rest"><span class="acx-row-ic tone-indigo icon"><svg><use href="#i-moon"/></svg></span><span class="acx-row-text"><b>'+esc(r.title)+'</b><small>'+esc(r.advice)+'</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button></div>';
+  bindNavTargets(box);
+}
+function activityQuickRange(key){let now=new Date(),t=dateKey(now),f='';if(key==='7'){let d=new Date(now);d.setDate(now.getDate()-6);f=dateKey(d)}else if(key==='30'){let d=new Date(now);d.setDate(now.getDate()-29);f=dateKey(d)}else if(key==='year'){f=now.getFullYear()+'-01-01'}else return ['',''];return [f,t]}
+function renderActivityQuick(){
+  let box=$('#activityQuick');if(!box)return;
+  let f=($('#activityFrom')||{}).value||'',t=($('#activityTo')||{}).value||'',cur='custom';
+  ['all','7','30','year'].forEach(k=>{let r=activityQuickRange(k);if(r[0]===f&&(r[1]===t||(!r[0]&&!t)))cur=k});
+  let chips=[['all','Semua'],['7','7 hari'],['30','30 hari'],['year','Tahun ini']];
+  box.innerHTML=chips.map(c=>'<button type="button" class="acx-chipbtn'+(cur===c[0]?' active':'')+'" data-quick="'+c[0]+'">'+c[1]+'</button>').join('')+(cur==='custom'&&(f||t)?'<button type="button" class="acx-chipbtn active" data-quick="all">'+esc((f?fmtDateShort(f):'…')+' – '+(t?fmtDateShort(t):'…'))+' <span class="icon"><svg><use href="#i-close"/></svg></span></button>':'')+
+    '<span class="acx-chip-sep"></span><button type="button" class="acx-chipbtn is-tool" data-detail="comparetool"><span class="icon"><svg><use href="#i-compare"/></svg></span>Bandingkan</button><button type="button" class="acx-chipbtn is-tool" data-detail="ghost"><span class="icon"><svg><use href="#i-ghost"/></svg></span>Ghost ride</button>';
+  box.querySelectorAll('[data-quick]').forEach(b=>b.onclick=()=>{let r=activityQuickRange(b.dataset.quick);$('#activityFrom').value=r[0];$('#activityTo').value=r[1];renderActivityQuick();renderActivities()});
+  bindNavTargets(box);
+}
+
+function renderPerformanceSub(sub){
+  let page=document.querySelector('.page[data-page-view="performance"]');
+  renderPerfAnalysis();
+  if(sub==='fitness'){renderPerfKpis();renderFitnessChart();renderPotential()}
+  else if(sub==='intensity'){syncRangeSegs();mountRenderer('hrinsight',$('#perfIntensityHost'))}
+  else if(sub==='speed'){renderSpeedTrendChart();renderPaceTrendChart()}
+  else if(sub==='records'){renderRecords();renderTop10();renderLeaderboard();renderSegments()}
+  paintTools(page);
+  let k=$('#perfKicker'),tl=DATA.trainingLoad||{};if(k)k.textContent=tl.ctl!=null?'Fitness '+Math.round(tl.ctl)+' · Form '+((tl.tsb>0?'+':'')+Math.round(tl.tsb||0)):'Kebugaran, intensitas & rekor';
+}
+function renderPerfAnalysis(){
+  let box=$('#perfAnalysis');if(!box)return;
+  let s=typeof proState==='function'?proState():null;
+  if(!s){box.innerHTML='';if(typeof proLoad==='function'&&!PRO.loadErr)proLoad().then(()=>{if(currentPageView()==='performance')renderPerfAnalysis()}).catch(()=>{});return}
+  let total=s.total||0,done=Math.max(0,total-(s.pending||0)),pct=total?Math.round(done/total*100):0,full=total&&done>=total;
+  box.innerHTML='<button type="button" class="acx-analysis'+(full?' is-full':'')+'" data-detail="prohub"><span class="acx-analysis-ic icon"><svg><use href="#i-sparkles"/></svg></span><span class="acx-analysis-text"><b>'+(PRO.running?'Menganalisis aktivitas…':full?'Analisis lanjutan aktif':'Analisis lanjutan '+pct+'%')+'</b><small>'+proN(done)+' dari '+proN(total)+' aktivitas dianalisis dari stream detik-per-detik</small></span><span class="acx-analysis-bar"><i style="width:'+pct+'%"></i></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>';
+  bindNavTargets(box);
+}
+function renderPerfKpis(){
+  let box=$('#perfFitnessKpis');if(!box)return;
+  let tl=DATA.trainingLoad||{},series=tl.series||[],prev=series.length>7?series[series.length-8]:null,vo2=DATA.vo2max||{};
+  let tr=(cur,old)=>{if(old==null||cur==null)return '';let d=Math.round(cur-old);return d?'<em class="'+(d>0?'up':'down')+'">'+(d>0?'▲ ':'▼ ')+Math.abs(d)+' / 7h</em>':'<em>stabil</em>'};
+  let tsb=tl.tsb,tsbTone=tsb==null?'gray':tsb<=-20?'red':tsb<=-10?'orange':tsb>=15?'blue':'green';
+  box.innerHTML=
+    '<div class="acx-kpi tone-blue"><small>Fitness · CTL</small><b>'+(tl.ctl!=null?Math.round(tl.ctl):'–')+'</b>'+tr(tl.ctl,prev&&prev.ctl)+'</div>'+
+    '<div class="acx-kpi tone-orange"><small>Lelah · ATL</small><b>'+(tl.atl!=null?Math.round(tl.atl):'–')+'</b>'+tr(tl.atl,prev&&prev.atl)+'</div>'+
+    '<div class="acx-kpi tone-'+tsbTone+'"><small>Form · TSB</small><b>'+(tsb!=null?((tsb>0?'+':'')+Math.round(tsb)):'–')+'</b><em>'+esc((DATA.recommendation||{}).level||'')+'</em></div>'+
+    '<button type="button" class="acx-kpi tone-teal" data-detail="vo2max"><small>VO2max</small><b>'+(vo2.value||'–')+'</b><em>ml/kg/menit</em></button>';
+  bindNavTargets(box);
+}
+function renderPotential(){
+  let box=$('#potentialList');if(!box)return;
+  let items=DATA.logs||[],run=items.filter(x=>x.sport==='Running'),ride=items.filter(x=>x.sport==='Cycling'),hrItems=items.filter(x=>x.avgHr),avgHr=hrItems.reduce((a,x)=>a+x.avgHr,0)/(hrItems.length||1),ins=[];
+  if(run.length)ins.push(['Lari konsisten','Kamu memiliki '+run.length+' aktivitas running yang bisa dikembangkan menjadi base pace.']);
+  if(ride.length)ins.push(['Basis endurance','Volume cycling tercatat '+duration(ride.reduce((a,x)=>a+x.minutes,0))+'.']);
+  if(hrItems.length)ins.push(['Kontrol intensitas','Rata-rata HR aktivitas: '+Math.round(avgHr)+' bpm.']);
+  ins.push(['Potensi berikutnya','Ikuti rencana 7 hari dari coach, lalu evaluasi ulang setelah 3–4 minggu sinkronisasi '+stravaTag()+'.']);
+  box.innerHTML=ins.map(x=>'<div class="insight"><b>'+x[0]+'</b><p>'+x[1]+'</p></div>').join('');
+}
+function renderSegments(){
+  let box=$('#segmentList');if(!box)return;
+  let segments=(DATA.segments||[]).slice(0,12);
+  box.innerHTML=segments.length?segments.map(s=>'<div class="segment-row"><div class="segment-row-head"><b>'+esc(s.name)+'</b><span>'+(Number(s.distance)||0).toFixed(2)+' km</span></div><small>'+esc(s.activityTitle)+' · '+fmtDate(s.date)+' · '+duration(s.minutes)+(s.prRank?' · PR #'+s.prRank:'')+'</small></div>').join(''):'<div class="feed-empty">Belum ada segmen Strava. Sinkronkan ulang aktivitas untuk memuat segmen terbaru.</div>';
+}
+function setRangeInputs(range){let now=new Date(),from=new Date(now),to=new Date(now);if(range==='week'){from=startOfWeek(now);to=new Date(from);to.setDate(from.getDate()+6)}else if(range==='28')from.setDate(now.getDate()-27);else if(range==='month')from=new Date(now.getFullYear(),now.getMonth(),1);else if(range==='year')from=new Date(now.getFullYear(),0,1);$('#dashFrom').value=dateKey(from);$('#dashTo').value=dateKey(to);window.__dashRange=range;syncRangeSegs()}
+function syncRangeSegs(){let r=window.__dashRange||'week';$$('[data-dash-range]').forEach(b=>b.classList.toggle('active',b.dataset.dashRange===r))}
+
+let GARAGE_ENTRY='garage';
+function renderGarageSub(sub){
+  if(sub==='bikes'){let host=$('#garageHost');if(!host)return;if(host.dataset.mounted==='bikegarage'||host.dataset.mounted==='bikeservice'){if(GARAGE_UI.entry!==(GARAGE_ENTRY==='service'?'service':'garage')){mountRenderer(GARAGE_ENTRY==='service'?'bikeservice':'bikegarage',host)}else{GARAGE_UI.active=true;garageRender({})}}else mountRenderer(GARAGE_ENTRY==='service'?'bikeservice':'bikegarage',host)}
+  else{let bb=$('#garageBackBtn');if(bb)bb.hidden=true;let t=$('#garageTitle');if(t)t.textContent='Garasi';let k=$('#garageKicker');if(k)k.textContent=sub==='shoes'?'Umur sepatu lari & rotasi':'Hemat bensin, ongkos & CO₂';mountRenderer(sub==='shoes'?'shoes':'commute',sub==='shoes'?$('#shoesHost'):$('#commuteHost'))}
+}
+
+function ensureProfileExtras(){
+  if(DATA.profileExtras)return Promise.resolve(DATA.profileExtras);
+  if(window.__pxLoading)return window.__pxLoading;
+  window.__pxLoading=gs('getStravaProfileExtras',currentAthleteId()).then(r=>{DATA.profileExtras=r||{};return DATA.profileExtras}).catch(()=>{DATA.profileExtras={};return DATA.profileExtras}).finally(()=>{window.__pxLoading=null});
+  return window.__pxLoading;
+}
+function renderCommunity(){
+  let c=$('#profileClubs'),ch=$('#profileChallenges');if(!c&&!ch)return;
+  let paint=()=>{let e=DATA.profileExtras||{},clubs=e.clubs||[],chs=e.challenges||[];
+    if(c)c.innerHTML=clubs.length?'<b>'+clubs.length+' klub</b><small>'+esc(clubs.slice(0,2).map(x=>x.name).join(', '))+'</small>':'<b>Belum ada</b><small>Tidak tersedia dari scope Strava saat ini</small>';
+    if(ch)ch.innerHTML=chs.length?'<b>'+chs.length+' tantangan</b><small>'+esc(chs[0].name)+'</small>':'<b>Belum ada</b><small>Strava API tidak menyediakan daftar challenge</small>'};
+  if(DATA.profileExtras)paint();else{if(c)c.innerHTML='<small>Memuat…</small>';if(ch)ch.innerHTML='<small>Memuat…</small>';ensureProfileExtras().then(paint)}
+}
+function renderProfileExtras(){
+  let pb=$('#profileBackBtn');if(pb){let o=NAV_ORIGIN.profile||PROFILE_ORIGIN||'dashboard';pb.innerHTML='<span class="icon"><svg><use href="#i-back"/></svg></span>'+esc(o==='detail'?'Kembali':(TAB_LABEL[o]||'Kembali'))}
+  let st=$('#profileSyncState');if(st)st.innerHTML=STRAVA_CONNECTED?stravaTag()+' tersambung':(STRAVA_CONNECTED===false?stravaTag()+' belum tersambung':'Memeriksa…');
+  let q=DATA.dataQuality||{},items=DATA.logs||[],ql=$('#qualityList');
+  if(ql)ql.innerHTML=[['HR kosong',q.avgHr||0],['Cadence kosong',q.avgCadence||0],['Elevasi kosong',q.elevation||0],['Rute kosong',q.polyline||0],['Power kosong',q.avgPower||0]].map(x=>'<div class="insight"><b>'+x[0]+'</b><p>'+x[1]+' dari '+(q.total||items.length)+' aktivitas</p></div>').join('');
+  let fy=$('#footerYearProfile');if(fy)fy.textContent=new Date().getFullYear();
+}
+
+const FEATURE_GROUPS=[
+  {title:'Hari Ini',tab:'dashboard',rows:[
+    {n:'Kesiapan tubuh',s:'Form, fitness & kelelahan hari ini',i:'i-today',t:'coral',go:'dashboard',anchor:'#dashReadyCard',k:'readiness tsb ring'},
+    {n:'Sesi hari ini',s:'Briefing plan & catatan coach',i:'i-stopwatch',t:'coral',go:'dashboard',anchor:'#dashBriefing',k:'briefing plan hari ini'},
+    {n:'Ringkasan periode',s:'Jarak, waktu, elevasi & grafik',i:'i-chart',t:'green',go:'dashboard',anchor:'#dashMetrics',k:'volume jarak waktu elevasi grafik'},
+    {n:'Insight coach',s:'Kalimat singkat dari datamu',i:'i-sparkles',t:'indigo',go:'dashboard',anchor:'#dashInsights',k:'insight'},
+    {detail:'reminder'},{detail:'calories'}
+  ]},
+  {title:'Latihan',tab:'training',rows:[
+    {n:'Menu minggu ini',s:'Sesi harian dari plan aktif',i:'i-calendar',t:'blue',go:'training',sub:'plan',k:'plan my plan jadwal'},
+    {n:'Susun plan',s:'Plan kustom Senin–Minggu',i:'i-edit',t:'blue',action:'plancustom',k:'custom plan buat'},
+    {detail:'targets'},
+    {n:'Kepatuhan plan',s:'Review mingguan & kepatuhan',i:'i-check',t:'green',go:'training',sub:'plan',anchor:'#complianceCard',k:'review compliance'},
+    {n:'Kalender latihan',s:'Intensitas harian & streak',i:'i-grid',t:'pink',go:'training',sub:'calendar',k:'kalender streak'},
+    {detail:'rest'},
+    {n:'Riwayat aktivitas',s:'Semua sesi, filter & perbandingan',i:'i-list',t:'orange',go:'training',sub:'activities',k:'aktivitas riwayat list'},
+    {detail:'comparetool'},{detail:'ghost'},
+    {n:'Heatmap rute',s:'Gabungan semua rute GPS',i:'i-map',t:'teal',go:'training',sub:'routes',k:'peta heatmap gps'},
+    {n:'Rekomendasi rute',s:'Arah baru dari heatmap pribadimu',i:'i-route',t:'teal',go:'training',sub:'routes',anchor:'#routeRecoPanel',k:'rute baru saran'},
+    {detail:'explorer'},{detail:'stops'},{detail:'tomorrow'},{detail:'events'},{detail:'pacer'}
+  ]},
+  {title:'Performa',tab:'performance',rows:[
+    {detail:'prohub'},
+    {n:'Training load',s:'Grafik CTL, ATL & TSB',i:'i-heart',t:'violet',go:'performance',sub:'fitness',k:'ctl atl tsb beban'},
+    {n:'Zona heart rate',s:'Distribusi & zona dominan',i:'i-zones',t:'pink',go:'performance',sub:'intensity',k:'zona hr heart rate'},
+    {n:'Tren kecepatan & pace',s:'Perkembangan speed & pace',i:'i-bolt',t:'orange',go:'performance',sub:'speed',k:'pace speed tren'},
+    {n:'Personal record',s:'Rekor pace, speed, elevasi & power',i:'i-trophy',t:'yellow',go:'performance',sub:'records',k:'pr rekor'},
+    {n:'Top 10 aktivitas',s:'Sesi terbaik per metrik',i:'i-star',t:'orange',go:'performance',sub:'records',anchor:'#top10Card',k:'top terbaik'},
+    {n:'Segmen Strava',s:'Leaderboard pribadi & segmen terbaru',i:'i-flag',t:'indigo',go:'performance',sub:'records',anchor:'#segmentsCard',k:'segment leaderboard'},
+    {detail:'vo2max'},{detail:'prediction'},{detail:'goalsim'},{detail:'durability'},{detail:'heat'},{detail:'timeline'},
+    {detail:'intensity'},{detail:'decoupling'},{detail:'hravg'},{detail:'hrmax'},{detail:'runform'},
+    {detail:'powercurve'},{detail:'climbs'},{detail:'wind'},{detail:'records'},{detail:'badges'},{detail:'trophies'}
+  ]},
+  {title:'Garasi',tab:'garage',rows:[
+    {detail:'bikegarage',go:'garage',sub:'bikes'},{detail:'bikeservice'},
+    {detail:'shoes',go:'garage',sub:'shoes'},{detail:'commute',go:'garage',sub:'commute'}
+  ]},
+  {title:'Berbagi',tab:'sharing',rows:[
+    {n:'Overlay Studio',s:'Editor kartu story 1080×1920',i:'i-image',t:'indigo',go:'overlay-editor',k:'story kartu template'},
+    {n:'Kartu Wrapped',s:'Rekap periode dalam satu kartu',i:'i-sparkles',t:'pink',action:'wrapped',k:'wrapped'},
+    {n:'Laporan PDF',s:'Ringkasan & daftar aktivitas',i:'i-doc',t:'blue',action:'pdf',k:'report pdf laporan'},
+    {n:'Ringkasan teks',s:'Kirim ke chat atau salin',i:'i-chat',t:'green',action:'sharetext',k:'teks share'},
+    {detail:'clubs'},{detail:'challenges'}
+  ]},
+  {title:'Profil & pengaturan',tab:'profile',rows:[
+    {n:'FTP & zona heart rate',s:'Pengukuran, batas HR & zona',i:'i-heart',t:'red',action:'profile',anchor:'#metricsCard',k:'ftp hr max zona pengaturan'},
+    {n:'Target & catatan',s:'Target mingguan & berat badan',i:'i-target',t:'green',action:'profile',anchor:'#goalsForm',k:'goal target berat'},
+    {n:'Sinkronisasi Strava',s:'Sambungkan & tarik aktivitas terbaru',i:'i-sync',t:'strava',action:'sync',k:'strava sync connect'},
+    {n:'Tema & tata letak',s:'Terang, gelap, desktop atau HP',i:'i-moon',t:'indigo',action:'theme',k:'dark mode tema tampilan'},
+    {n:'Privasi rute',s:'Sembunyikan peta rute',i:'i-eye',t:'gray',action:'profile',anchor:'#hideRoutesRow',k:'privasi gps'},
+    {n:'Kualitas data',s:'Kelengkapan HR, power & GPS',i:'i-shield',t:'green',action:'profile',anchor:'#qualityList',k:'data quality'},
+    {n:'Saran & kritik',s:'Kirim masukan ke pengembang',i:'i-chat',t:'orange',action:'feedback',k:'feedback bug'},
+    {detail:'about'}
+  ]}
+];
+var BROWSE_GROUPS=FEATURE_GROUPS;
+function featureRows(){
+  let out=[];
+  FEATURE_GROUPS.forEach(g=>g.rows.forEach(r=>{let m=r.detail?TOOL_META[r.detail]:null,row=Object.assign({},m?{n:m.n,s:m.s,i:m.i,t:m.t}:{},r);if(!row.n)return;row.group=g.title;row.tab=g.tab;out.push(row)}));
+  return out;
+}
+let SEARCH_SEL=0;
+function openSearch(){let p=$('#searchPopup');if(!p)return;p.hidden=false;let i=$('#acxSearch');if(i){i.value='';renderSearch();setTimeout(()=>i.focus(),30)}}
+function closeSearch(){let p=$('#searchPopup');if(p)p.hidden=true}
+function renderSearch(){
+  let box=$('#acxSearchList');if(!box)return;
+  let q=(($('#acxSearch')||{}).value||'').trim().toLowerCase(),rows=featureRows();
+  let list=q?rows.filter(r=>(r.n+' '+r.s+' '+r.group+' '+(r.k||'')).toLowerCase().indexOf(q)>=0):rows;
+  SEARCH_SEL=0;
+  if(!list.length){box.innerHTML='<div class="acx-palette-empty">Tidak ada hasil untuk “'+esc(q)+'”.</div>';return}
+  let html='',lastG='';
+  list.forEach((r,idx)=>{if(r.group!==lastG){html+='<div class="acx-palette-group">'+esc(r.group)+'</div>';lastG=r.group}
+    html+='<button type="button" class="acx-row acx-palette-row'+(idx===0?' is-sel':'')+'" data-idx="'+idx+'"><span class="acx-row-ic tone-'+(r.t||'gray')+' icon"><svg><use href="#'+(r.i||'i-dot')+'"/></svg></span><span class="acx-row-text"><b>'+esc(r.n)+'</b><small>'+esc(r.s||'')+'</small></span><span class="acx-row-chev icon"><svg><use href="#i-arrow-right"/></svg></span></button>'});
+  box.innerHTML=html;
+  box.querySelectorAll('[data-idx]').forEach(b=>b.onclick=()=>runFeature(list[Number(b.dataset.idx)]));
+  box.__list=list;
+}
+function runFeature(r){
+  if(!r)return;closeSearch();
+  if(r.go){goWithAnchor(r.go,null,r.anchor,r.sub);return}
+  if(r.detail){openDetailPage(r.detail);return}
+  if(r.action){runBrowseAction(r.action,r.anchor);return}
+}
+function searchKey(e){
+  let box=$('#acxSearchList'),list=box&&box.__list;if(!list)return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();SEARCH_SEL=Math.max(0,Math.min(list.length-1,SEARCH_SEL+(e.key==='ArrowDown'?1:-1)));box.querySelectorAll('[data-idx]').forEach(b=>b.classList.toggle('is-sel',Number(b.dataset.idx)===SEARCH_SEL));let s=box.querySelector('.is-sel');if(s)s.scrollIntoView({block:'nearest'})}
+  else if(e.key==='Enter'){e.preventDefault();runFeature(list[SEARCH_SEL])}
+  else if(e.key==='Escape'){closeSearch()}
+}
+function renderBrowse(){}
+function refreshBrowseSyncLabel(){}
+
+function shareSummaryText(){
+  let r=monthRange(),from=$('#shareFrom').value||r.from,to=$('#shareTo').value||r.to,sport=$('#shareSport').value;
+  let items=activityItems({from:from,to:to,sport:sport}),tl=DATA.trainingLoad||{};
+  let mins=items.reduce((s,x)=>s+x.minutes,0),dist=items.reduce((s,x)=>s+x.distance,0),elev=items.reduce((s,x)=>s+x.elevation,0);
+  let hr=items.filter(x=>x.avgHr>0),avgHr=hr.length?Math.round(hr.reduce((s,x)=>s+x.avgHr,0)/hr.length):0;
+  let best=items.slice().sort((a,b)=>b.distance-a.distance)[0];
+  let lines=['🏁 Active Coach · '+fmtDateShort(from)+' – '+fmtDateShort(to),'',
+    '• Jarak: '+hFmtNum(dist,1)+' km','• Waktu bergerak: '+duration(mins),'• Elevasi: '+hFmtNum(elev,0)+' m','• Sesi: '+items.length];
+  if(avgHr)lines.push('• Rata-rata HR: '+avgHr+' bpm');
+  if(tl.tsb!=null)lines.push('• Form (TSB): '+(tl.tsb>=0?'+':'')+Math.round(tl.tsb));
+  if(best)lines.push('','Sesi terjauh: '+best.title+' — '+hFmtNum(best.distance,1)+' km');
+  let text=lines.join('\n');
+  if(navigator.share){navigator.share({title:'Ringkasan Active Coach',text:text}).catch(()=>{});return}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(()=>toast('Ringkasan disalin ke papan klip')).catch(()=>toast('Gagal menyalin ringkasan'));return}
+  toast('Perangkat ini tidak mendukung berbagi otomatis');
+}
+function renderSharing(){
+  let r=monthRange(),from=$('#shareFrom').value||r.from,to=$('#shareTo').value||r.to,sport=$('#shareSport').value;
+  let items=activityItems({from:from,to:to,sport:sport});
+  let note=$('#shareRangeNote');if(note)note.textContent=fmtDateShort(from)+' – '+fmtDateShort(to);
+  let mins=items.reduce((s,x)=>s+x.minutes,0),dist=items.reduce((s,x)=>s+x.distance,0),elev=items.reduce((s,x)=>s+x.elevation,0);
+  let best=items.slice().sort((a,b)=>b.distance-a.distance)[0];
+  let sum=$('#shareSummary');
+  if(sum){
+    sum.innerHTML=
+      hTile({name:'Jarak',icon:'i-route',tone:'green',value:hFmtNum(dist,1),unit:'km',sub:items.length+' aktivitas'})+
+      hTile({name:'Waktu',icon:'i-clock',tone:'blue',value:durationShort(mins),sub:'total bergerak'})+
+      hTile({name:'Elevasi',icon:'i-mountain',tone:'amber',value:Math.round(elev).toLocaleString('id-ID'),unit:'m',sub:'total kenaikan'})+
+      hTile({name:'Terjauh',icon:'i-star',tone:'pink',value:best?hFmtNum(best.distance,1):'—',unit:best?'km':'',sub:best?best.title:'Belum ada aktivitas'});
+    sum.querySelectorAll('.acx-tile').forEach(t=>t.setAttribute('tabindex','-1'));
+  }
+  let recent=(DATA.logs||[]).slice().sort((a,b)=>a.date<b.date?1:-1).slice(0,6),hide=DATA.privacy&&DATA.privacy.hideRoutes;
+  let box=$('#shareRecent');
+  if(box){
+    box.innerHTML=recent.map(x=>'<button type="button" class="acx-row acx-share-row" data-share-activity="'+esc(x.id)+'">'+
+      '<span class="acx-share-thumb">'+((!hide&&x.polyline)?svgRouteThumb(x.polyline,96,96):'<span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>')+'</span>'+
+      '<span class="acx-row-text"><b>'+esc(x.title)+'</b><small>'+esc(fmtDateShort(x.date))+' · '+(x.distance?x.distance.toFixed(1)+' km · ':'')+duration(x.minutes)+'</small></span>'+
+      '<span class="acx-share-cta"><span class="icon"><svg><use href="#i-image"/></svg></span>Kartu</span></button>').join('')||
+      '<div class="acx-card acx-empty-sm">Belum ada aktivitas untuk dibagikan.</div>';
+    box.querySelectorAll('[data-share-activity]').forEach(b=>b.onclick=()=>{
+      OVL.activityId=b.dataset.shareActivity;ovlSave();switchPage('overlay-editor');
+    });
+  }
+  let priv=$('#sharePrivacyState');
+  if(priv)priv.textContent=(DATA.privacy&&DATA.privacy.hideRoutes)?'Rute GPS disembunyikan di seluruh aplikasi':'Rute GPS ditampilkan — ketuk untuk mengubah';
+  renderCommunity();
+}
+
+function initNavScrollState(){
+  let onScroll=()=>{let y=window.scrollY||document.documentElement.scrollTop;$$('.ios-nav').forEach(n=>n.classList.toggle('stuck',y>6))};
+  window.addEventListener('scroll',onScroll,{passive:true});onScroll();
+}
+
+function computeRestStatus(logs){let dates=new Set((logs||[]).map(x=>x.date));let today=new Date();today.setHours(0,0,0,0);let streak=0,cursor=new Date(today);while(streak<365&&!dates.has(dateKey(cursor))){streak++;cursor.setDate(cursor.getDate()-1)}
+  let tsb=(DATA.trainingLoad||{}).tsb;
+  let level='ok',title=streak===0?'Aktif hari ini':streak+' hari tanpa latihan',advice=streak===0?'Aktivitas hari ini sudah tercatat. Pertahankan ritme ini 👍':streak===1?'Istirahat 1 hari itu wajar — lanjutkan sesuai rencana kalau sudah siap.':streak<=3?'Sudah '+streak+' hari tanpa latihan. Masih dalam batas wajar, tapi jangan ditunda terlalu lama.':'Sudah '+streak+' hari tanpa latihan. Waktunya gerak lagi, walau cuma sesi ringan.';
+  if(streak>=4)level='alert';else if(streak>=2)level='warn';
+
+  if(streak>=4&&tsb!=null&&tsb<=-15){level='warn';advice='Sudah '+streak+' hari tanpa latihan — wajar karena tubuhmu masih lelah (TSB '+Math.round(tsb)+'). Mulai lagi dengan sesi Z1 ringan 20-30 menit, bukan sesi berat.'}
+  if(streak===0&&tsb!=null&&tsb<=-20){level='warn';advice='Hari ini aktif, tapi tubuhmu sangat lelah (TSB '+Math.round(tsb)+'). Besok jadwalkan easy/recovery — memaksa sesi berat dalam kondisi ini berisiko.'}
+  return {streak:streak,title:title,advice:advice,level:level}}
+function renderRestStatus(){let r=computeRestStatus(DATA.logs),el=$('#dashRest');if(!el)return;el.innerHTML=`<div class="insight rest-${r.level}"><b>${esc(r.title)}</b><p>${esc(r.advice)}</p></div>`}
+
+function wrapText(ctx,text,x,y,maxWidth,lineHeight,maxLines){let words=(text||'').split(' '),line='',lines=0;for(let n=0;n<words.length;n++){let test=line+words[n]+' ';if(ctx.measureText(test).width>maxWidth&&n>0){ctx.fillText(line,x,y);line=words[n]+' ';y+=lineHeight;lines++;if(maxLines&&lines>=maxLines-1){line=words.slice(n+1).length?line.trim()+'…':line.trim();break}}else line=test}ctx.fillText(line,x,y);return y}
+function roundRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function weekRangeLabel(start,end){return start&&end?fmtDateShort(start)+' – '+fmtDate(end):''}
+function drawWrappedCard(){
+  let r=monthRange(),from=$('#shareFrom').value||r.from,to=$('#shareTo').value||r.to,sport=$('#shareSport').value||'All';
+  let items=activityItems({from:from,to:to,sport:sport});
+  let p=DATA.profile||{},name=p.nama||'Athlete',tl=DATA.trainingLoad||{},rec=DATA.recommendation||{};
+  let totalKm=items.reduce((a,x)=>a+x.distance,0),elevation=Math.round(items.reduce((a,x)=>a+x.elevation,0)),mins=Math.round(items.reduce((a,x)=>a+x.minutes,0)),sessions=items.length,tsb=tl.tsb??0;
+  let sportLabel=(!sport||sport==='All')?'SEMUA OLAHRAGA':sport.toUpperCase();
+  let W=1080,H=1920,c=document.createElement('canvas');c.width=W;c.height=H;let ctx=c.getContext('2d');
+  let g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,'#fc4c02');g.addColorStop(.5,'#3a1240');g.addColorStop(1,'#0b0b10');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha=.16;ctx.beginPath();ctx.arc(920,230,300,0,Math.PI*2);ctx.fillStyle='#ffffff';ctx.fill();
+  ctx.beginPath();ctx.arc(70,1800,340,0,Math.PI*2);ctx.fillStyle='#fc4c02';ctx.fill();ctx.globalAlpha=1;
+  ctx.textAlign='left';ctx.fillStyle='#ffffff';ctx.font='800 32px Inter,sans-serif';ctx.fillText('ACTIVE COACH',70,110);
+  ctx.font='800 26px Inter,sans-serif';ctx.fillStyle='#ffd9c2';ctx.fillText('WRAPPED · '+sportLabel,70,150);
+  ctx.font='500 24px Inter,sans-serif';ctx.fillStyle='#d8d2df';ctx.fillText(weekRangeLabel(from,to),70,188);
+  ctx.font='900 210px Inter,sans-serif';ctx.fillStyle='#ffffff';ctx.fillText(totalKm.toFixed(1),66,470);
+  ctx.font='800 42px Inter,sans-serif';ctx.fillStyle='#ffd9c2';ctx.fillText('KM DITEMPUH SESUAI FILTER',72,522);
+  function statBlock(x,y,label,value){ctx.font='900 74px Inter,sans-serif';ctx.fillStyle='#ffffff';ctx.fillText(value,x,y);ctx.font='700 24px Inter,sans-serif';ctx.fillStyle='#d8d2df';ctx.fillText(label,x,y+38)}
+  statBlock(70,700,'ELEVASI (M)',String(elevation));
+  statBlock(575,700,'DURASI',duration(mins));
+  statBlock(70,872,'SESI LATIHAN',String(sessions));
+  statBlock(575,872,'TSB',String(tsb));
+  ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(70,950);ctx.lineTo(W-70,950);ctx.stroke();
+  ctx.font='700 30px Inter,sans-serif';ctx.fillStyle='#ffffff';ctx.fillText('CATATAN COACH',70,1010);
+  ctx.font='500 32px Inter,sans-serif';ctx.fillStyle='#eaeaee';
+  wrapText(ctx,rec.text||'Terus konsisten minggu depan, evaluasi progres tiap minggu.',70,1060,W-140,42,6);
+  roundRect(ctx,70,H-210,W-140,1,1);
+  ctx.font='700 32px Inter,sans-serif';ctx.fillStyle='#ffffff';ctx.fillText(name,70,H-96);
+  ctx.font='500 24px Inter,sans-serif';ctx.fillStyle='#d8d2df';ctx.fillText('Dibuat otomatis dari data Strava',70,H-58);
+  ctx.textAlign='right';ctx.font='900 46px Inter,sans-serif';ctx.fillStyle='#fc4c02';ctx.fillText('↗',W-70,H-72);
+  return c}
+async function openWrappedCard(){
+  let canvas=drawWrappedCard(),dataUrl=canvas.toDataURL('image/png');
+  $('#detailContent').innerHTML=`<div class="wrapped-preview"><img src="${dataUrl}" alt="Wrapped minggu ini"></div><div class="wrapped-actions"><button type="button" class="btn primary" id="wrappedDownload"><span class="icon"><svg><use href="#i-download"/></svg></span> Unduh PNG</button><button type="button" class="btn secondary" id="wrappedShare" hidden><span class="icon"><svg><use href="#i-share"/></svg></span> Bagikan</button></div>`;
+  openModal();
+  canvas.toBlob(function(blob){
+    if(!blob)return;
+    $('#wrappedDownload').onclick=()=>{let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='active-coach-wrapped.png';a.click()};
+    try{let file=new File([blob],'active-coach-wrapped.png',{type:'image/png'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){let btn=$('#wrappedShare');btn.hidden=false;btn.onclick=async()=>{try{await navigator.share({files:[file],title:'Wrapped Minggu Ini',text:'Ringkasan latihanku minggu ini dari Active Coach'})}catch(e){}}}
+    }catch(e){}
+  },'image/png')}
+
+async function downloadReportPdf(){
+  let r=monthRange(),from=$('#shareFrom').value||r.from,to=$('#shareTo').value||r.to,sport=$('#shareSport').value||'All';
+  let btn=$('#downloadReport'),subEl=btn?btn.querySelector('.js-row-sub'):null,label=subEl?subEl.textContent:'';if(btn){btn.disabled=true;btn.classList.add('is-busy')}if(subEl)subEl.textContent='Menyiapkan laporan…';
+  try{
+    let res=await gs('generateReportPdf',{from:from,to:to,sport:sport},currentAthleteId());
+    if(!res||!res.base64)throw new Error('Laporan kosong');
+    let bin=atob(res.base64),arr=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);
+    let blob=new Blob([arr],{type:res.mimeType||'application/pdf'}),url=URL.createObjectURL(blob);
+    let a=document.createElement('a');a.href=url;a.download=res.filename||'active-coach-laporan.pdf';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),4000);
+    toast('Laporan PDF berhasil diunduh')
+  }catch(e){toast('Gagal membuat laporan: '+(e.message||e))}
+  if(btn){btn.disabled=false;btn.classList.remove('is-busy')}if(subEl)subEl.textContent=label
+}
+</script>

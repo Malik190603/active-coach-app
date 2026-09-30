@@ -1,0 +1,231 @@
+<script>
+'use strict';
+
+function bestPowerWindow(watts,times,seconds){if(!watts||!times||!watts.length||watts.length!==times.length)return null;let n=watts.length,best=0,sum=0,start=0;for(let end=0;end<n;end++){sum+=watts[end];while(times[end]-times[start]>seconds)sum-=watts[start++];let span=times[end]-times[start];if(span>=seconds-1){let avg=sum/(end-start+1);if(avg>best)best=avg}}return best>0?Math.round(best):null}
+function buildPowerCurve(watts,times){if(!watts||!watts.length)return [];let totalSpan=times.length?times[times.length-1]-times[0]:0,durations=[[5,'5 detik'],[60,'1 menit'],[300,'5 menit'],[1200,'20 menit'],[3600,'60 menit']];return durations.filter(d=>d[0]<=totalSpan).map(d=>({seconds:d[0],label:d[1],watts:bestPowerWindow(watts,times,d[0])})).filter(x=>x.watts)}
+function renderPowerCurveSection(curve){if(!curve||!curve.length)return '';return `<div class="detail-section"><span class="eyebrow">POWER CURVE</span><div class="detail-metrics">${curve.map(c=>`<div class="detail-metric"><small>${esc(c.label)}</small><b>${c.watts} W</b></div>`).join('')}</div></div>`}
+
+function avgArr(arr){return arr&&arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:0}
+function computeDecoupling(times,hr,pace){if(!times||!hr||!pace||times.length<10||times.length!==hr.length||times.length!==pace.length)return null;let totalSpan=times[times.length-1]-times[0];if(totalSpan<1200)return null;let mid=times[0]+totalSpan/2,idxMid=times.findIndex(t=>t>=mid);if(idxMid<5||idxMid>times.length-5)return null;let firstHr=avgArr(hr.slice(0,idxMid)),secondHr=avgArr(hr.slice(idxMid)),firstV=avgArr(pace.slice(0,idxMid)),secondV=avgArr(pace.slice(idxMid));if(!firstHr||!secondHr||!firstV||!secondV)return null;let ef1=firstV/firstHr,ef2=secondV/secondHr,drift=Math.round((ef1-ef2)/ef1*100);return {driftPercent:drift,firstHr:Math.round(firstHr),secondHr:Math.round(secondHr)}}
+
+function hrZoneNo_(z,i){let m=String(z&&z.zone||'').match(/\d+/);return m?Number(m[0]):i+1}
+function computeHrZoneTime(hr,time,zones){
+  if(!hr||!hr.length||!zones||!zones.length)return null;
+  let zs=zones.map((z,i)=>({zone:z.zone||('Z'+(i+1)),no:hrZoneNo_(z,i),label:z.label||'',low:Number(z.low)||0,high:Number(z.high)||0,sec:0})).sort((a,b)=>a.low-b.low);
+  let total=0,hasTime=time&&time.length===hr.length;
+  for(let i=0;i<hr.length;i++){
+    let v=Number(hr[i])||0;if(v<30)continue;
+    let dt=hasTime?(i?Number(time[i])-Number(time[i-1]):1):1;
+    if(!(dt>0))continue;if(dt>15)dt=15;
+    let k=0;for(let j=0;j<zs.length;j++)if(v>=zs[j].low)k=j;
+    zs[k].sec+=dt;total+=dt;
+  }
+  if(total<60)return null;
+  zs.forEach(z=>{z.pct=z.sec/total*100});
+  return {zones:zs,total:total};
+}
+function hrZoneDur_(sec){sec=Math.round(sec);let h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return h?h+'j '+String(m).padStart(2,'0')+'m':m?m+'m '+String(s).padStart(2,'0')+'d':s+'d'}
+function renderHrZoneSection(hr,time,zones,x){
+  let r=computeHrZoneTime(hr,time,zones);
+  if(!r){
+    if(x&&x.avgHr&&zones&&zones.length){let zn=zones.filter(z=>x.avgHr>=Number(z.low)).pop()||zones[0];return `<div class="detail-section"><span class="eyebrow">ZONA HEART RATE</span><div class="insight"><b>Rata-rata ${Math.round(x.avgHr)} bpm · ${esc(zn.zone)} ${esc(zn.label||'')}</b><p>Stream HR detik-per-detik tidak tersedia, jadi persentase per zona tidak bisa dihitung.</p></div></div>`}
+    return '';
+  }
+  let zs=r.zones,dom=zs.slice().sort((a,b)=>b.sec-a.sec)[0];
+  let pctOf=n=>zs.filter(z=>n.indexOf(z.no)>=0).reduce((s,z)=>s+z.pct,0);
+  let easy=pctOf([1,2]),hard=pctOf([4,5]);
+  let verdict=easy>=75?'Sesi aerobik/endurance — mayoritas waktu di zona ringan, bagus untuk membangun base.':hard>=30?'Sesi intensitas tinggi — '+Math.round(hard)+'% waktu di Z4–Z5. Beri waktu pemulihan yang cukup.':pctOf([3])>=35?'Banyak waktu di Z3 (tempo). Efektif, tapi jangan jadikan kebiasaan di semua sesi.':'Intensitas campuran di beberapa zona.';
+  let bar=zs.filter(z=>z.pct>=0.5).map(z=>`<i class="zone-${Math.min(5,Math.max(1,z.no))}" style="width:${z.pct.toFixed(2)}%" title="${esc(z.zone)} ${Math.round(z.pct)}%"></i>`).join('');
+  let rows=zs.slice().reverse().map((z,i)=>{let last=z===zs[zs.length-1],first=z===zs[0],range=first?'< '+z.high:last?'> '+z.low:z.low+'–'+z.high;
+    return `<div class="hrz-row${z===dom?' dom':''}"><span class="hrz-chip zone-${Math.min(5,Math.max(1,z.no))}">${esc(z.zone)}</span><span class="hrz-name"><b>${esc(z.label||z.zone)}</b><small>${esc(range)} bpm</small></span><span class="hrz-track"><i class="zone-${Math.min(5,Math.max(1,z.no))}" style="width:${Math.min(100,z.pct).toFixed(1)}%"></i></span><span class="hrz-val"><b>${z.pct<0.5&&z.sec>0?'<1':Math.round(z.pct)}%</b><small>${hrZoneDur_(z.sec)}</small></span></div>`}).join('');
+  return `<div class="detail-section hrz"><span class="eyebrow">ZONA HEART RATE</span><div class="hrz-head"><b>Dominan ${esc(dom.zone)}${dom.label?' · '+esc(dom.label):''}</b><span>${Math.round(dom.pct)}% dari ${hrZoneDur_(r.total)}</span></div><div class="hrz-bar">${bar}</div><div class="hrz-rows">${rows}</div><p class="hrz-note">${esc(verdict)} Zona mengikuti pengaturan HR di Profil.</p></div>`;
+}
+function renderDecouplingSection(d,minutes){if(!d)return '';let mins=Math.round(Number(minutes)||0),drift=d.driftPercent;
+  let level=drift<=5?(mins>=90?'Sangat baik — stabil di sesi panjang, tanda basis aerobik kuat.':'Bagus — efisiensi aerobik stabil sepanjang sesi.')
+    :drift<=10?(mins>=90?'Wajar untuk sesi sepanjang ini — drift ringan normal di durasi panjang.':'Wajar — pada sesi di bawah 90 menit, drift kecil seperti ini belum berarti apa-apa soal kebugaran.')
+    :(mins<40?'Drift tinggi di sesi pendek — kemungkinan besar pacing di awal terlalu kencang atau kurang pemanasan, bukan vonis kebugaran.':'HR drift tinggi — cek hidrasi, suhu, atau pacing di paruh kedua.');
+  return `<div class="detail-section"><span class="eyebrow">HR DRIFT (DECOUPLING)</span><div class="insight"><b>${drift}% decoupling${mins?' · '+duration(mins):''}</b><p>HR rata-rata paruh pertama ${d.firstHr} bpm, paruh kedua ${d.secondHr} bpm. ${esc(level)}</p></div></div>`}
+
+function movingAvg_(arr,win){if(!arr||!arr.length)return arr;win=Math.max(1,win|0);let out=new Array(arr.length),sum=0;for(let i=0;i<arr.length;i++){sum+=arr[i];if(i>=win)sum-=arr[i-win];out[i]=sum/Math.min(i+1,win)}return out}
+function percentileOf_(sorted,p){if(!sorted.length)return 0;let idx=Math.min(sorted.length-1,Math.max(0,Math.round((sorted.length-1)*p)));return sorted[idx]}
+function zoneForHr_(hr,zones){if(!hr||!zones||!zones.length)return '';let m=zones.filter((z,i)=>hr>=z.low&&(z.high===''||hr<=z.high||i===zones.length-1))[0];return m?m.zone:''}
+function zoneForPowerPct_(pct){if(!pct)return '';return pct<55?'Z1':pct<76?'Z2':pct<91?'Z3':pct<106?'Z4':pct<121?'Z5':pct<151?'Z6':'Z7'}
+
+function detectIntervals(streams,ftp){
+  streams=streams||{};
+  let time=(streams.time&&streams.time.data)||[],watts=(streams.watts&&streams.watts.data)||[],speedRaw=(streams.velocity_smooth&&streams.velocity_smooth.data)||[],hr=(streams.heartrate&&streams.heartrate.data)||[];
+  if(time.length<20)return null;
+  let span=time[time.length-1]-time[0],dt=span/(time.length-1)||1;
+  let usesPower=watts.length===time.length&&watts.filter(w=>w>0).length>watts.length*.5;
+  let raw=usesPower?watts:speedRaw.map(v=>v*3.6);
+  if(raw.length!==time.length||raw.length<20)return null;
+  let win=Math.max(2,Math.round(15/dt)),sm=movingAvg_(raw,win);
+  let sorted=sm.slice().sort((a,b)=>a-b),p20=percentileOf_(sorted,.2),p80=percentileOf_(sorted,.8);
+  if(p80-p20<(usesPower?15:1.5))return null;
+  let hiThresh=p20+(p80-p20)*.55,loThresh=p20+(p80-p20)*.35;
+  let segs=[],state='low',start=0;
+  for(let i=0;i<sm.length;i++){
+    if(state==='low'&&sm[i]>=hiThresh){segs.push({type:'low',start:start,end:i});state='high';start=i}
+    else if(state==='high'&&sm[i]<=loThresh){segs.push({type:'high',start:start,end:i});state='low';start=i}
+  }
+  segs.push({type:state,start:start,end:sm.length-1});
+  let minSampl=Math.max(2,Math.round(10/dt));
+  segs=segs.filter(s=>s.type==='low'||(s.end-s.start)>=minSampl).map((s,i)=>({type:s.type,start:s.start,end:s.end,idx:i}));
+  let works=segs.filter(s=>s.type==='high');
+  if(works.length<3)return null;
+  let durs=works.map(w=>Math.round((w.end-w.start)*dt)).sort((a,b)=>a-b),groups=[],cur=[durs[0]];
+  for(let i=1;i<durs.length;i++){let ref=cur.reduce((a,b)=>a+b,0)/cur.length;if(Math.abs(durs[i]-ref)/ref<=.35)cur.push(durs[i]);else{groups.push(cur);cur=[durs[i]]}}
+  groups.push(cur);
+  let best=groups.reduce((a,b)=>b.length>a.length?b:a);
+  if(best.length<3)return null;
+  let targetDur=best.reduce((a,b)=>a+b,0)/best.length;
+  let picked=works.filter(w=>Math.abs(Math.round((w.end-w.start)*dt)-targetDur)/targetDur<=.35);
+  let recoveries=[];
+  for(let i=0;i<picked.length-1;i++){let after=segs[picked[i].idx+1];if(after&&after.type==='low')recoveries.push(Math.round((after.end-after.start)*dt))}
+  let avgRecovery=recoveries.length?Math.round(recoveries.reduce((a,b)=>a+b,0)/recoveries.length):0;
+  let repAvg=w=>raw.slice(w.start,w.end+1).reduce((a,b)=>a+b,0)/(w.end-w.start+1);
+  let avgWork=picked.reduce((a,w)=>a+repAvg(w),0)/picked.length;
+  let repHr=[];picked.forEach(w=>{if(hr.length===time.length){let seg=hr.slice(w.start,w.end+1).filter(v=>v>0);if(seg.length)repHr.push(seg.reduce((a,b)=>a+b,0)/seg.length)}});
+  let avgHr=repHr.length?Math.round(repHr.reduce((a,b)=>a+b,0)/repHr.length):0;
+  let zoneLabel=avgHr&&DATA.hrZones&&DATA.hrZones.length?zoneForHr_(avgHr,DATA.hrZones):(usesPower&&ftp?zoneForPowerPct_(avgWork/ftp*100):'');
+  let roundDur=Math.round(targetDur/15)*15||Math.round(targetDur);
+  return {count:picked.length,durSec:roundDur,recoverySec:avgRecovery,zoneLabel:zoneLabel,usesPower:usesPower,avgIntensity:Math.round(avgWork),avgHr:avgHr,reps:picked.map(w=>({durSec:Math.round((w.end-w.start)*dt),avg:Math.round(repAvg(w))}))}
+}
+function fmtMinSec_(sec){return sec>=60?Math.floor(sec/60)+':'+String(Math.round(sec%60)).padStart(2,'0')+' menit':Math.round(sec)+' detik'}
+function renderIntervalSection(iv,sport){
+  if(!iv)return '';
+  let unit=iv.usesPower?'W':'km/j',title=iv.count+'x'+fmtMinSec_(iv.durSec)+(iv.zoneLabel?' '+iv.zoneLabel:'');
+  let repsRows=iv.reps.map((r,i)=>`<div class="interval-row"><span class="lap-idx">${i+1}</span><span>${fmtMinSec_(r.durSec)}</span><span>${r.avg} ${unit}</span></div>`).join('');
+  let noteParts=['Terdeteksi otomatis dari stream '+(iv.usesPower?'power':'kecepatan')+'.'];
+  if(iv.avgHr)noteParts.push('Rata-rata HR saat repetisi '+iv.avgHr+' bpm.');
+  if(iv.recoverySec)noteParts.push('Recovery antar repetisi ± '+fmtMinSec_(iv.recoverySec)+'.');
+  return `<div class="detail-section"><span class="eyebrow">INTERVAL DETECTOR</span><div class="insight"><b>${esc(title)}</b><p>${esc(noteParts.join(' '))}</p></div><div class="interval-list"><div class="interval-row interval-head"><span>#</span><span>Durasi</span><span>Rata-rata</span></div>${repsRows}</div></div>`
+}
+
+function gradientBucketsCatalog_(){
+  return [
+    {id:'down',label:'Turunan (< -1%)',min:-Infinity,max:-1},
+    {id:'flat',label:'Datar (-1% – 2%)',min:-1,max:2},
+    {id:'rolling',label:'Bergelombang (2% – 4%)',min:2,max:4},
+    {id:'mid',label:'Tanjakan sedang (4% – 7%)',min:4,max:7},
+    {id:'steep',label:'Tanjakan curam (7% – 10%)',min:7,max:10},
+    {id:'extreme',label:'Tanjakan ekstrem (> 10%)',min:10,max:Infinity}
+  ];
+}
+function bucketForGradient_(g,catalog){for(let i=0;i<catalog.length;i++)if(g>=catalog[i].min&&g<catalog[i].max)return catalog[i].id;return catalog[catalog.length-1].id}
+function climbScoreLabel_(wpk){if(!wpk)return '';return wpk<2?'Pemula':wpk<2.8?'Menengah':wpk<3.6?'Kuat':wpk<4.4?'Sangat kuat':'Elite'}
+
+function analyzeClimbing(streams,weightKg){
+  streams=streams||{};
+  let dist=(streams.distance&&streams.distance.data)||[],alt=(streams.altitude&&streams.altitude.data)||[],time=(streams.time&&streams.time.data)||[],watts=(streams.watts&&streams.watts.data)||[];
+  if(dist.length<20||alt.length!==dist.length||time.length!==dist.length)return null;
+  let totalDist=dist[dist.length-1]||0,stride=Math.max(3,Math.min(20,Math.round(dist.length/Math.max(1,totalDist/30))));
+  let catalog=gradientBucketsCatalog_(),buckets={};catalog.forEach(c=>buckets[c.id]={distanceM:0,seconds:0,speedSum:0,speedN:0,wattsSum:0,wattsN:0});
+  let climbSeconds=0,climbGain=0,gradN=0,speedGradPairs=[],powerGradPairs=[],climbWatts=[];
+  for(let i=stride;i<dist.length;i+=stride){
+    let dd=dist[i]-dist[i-stride],da=alt[i]-alt[i-stride],dtm=time[i]-time[i-stride];
+    if(dd<3||dtm<=0)continue;
+    let grad=(da/dd)*100;
+    if(grad<-30||grad>30)continue;
+    let bId=bucketForGradient_(grad,catalog),b=buckets[bId],segSpeedKmh=(dd/dtm)*3.6;
+    b.distanceM+=dd;b.seconds+=dtm;b.speedSum+=segSpeedKmh;b.speedN++;
+    speedGradPairs.push([grad,segSpeedKmh]);
+    let segWatts=0;
+    if(watts.length===dist.length){let w=watts.slice(i-stride,i+1).filter(v=>v>0);if(w.length){segWatts=w.reduce((a,c)=>a+c,0)/w.length;b.wattsSum+=segWatts;b.wattsN++;powerGradPairs.push([grad,segWatts])}}
+    if(grad>=4&&da>0){climbSeconds+=dtm;climbGain+=da;if(segWatts)climbWatts.push(segWatts)}
+    gradN++;
+  }
+  if(gradN<5)return null;
+  let rows=catalog.map(c=>{let b=buckets[c.id];return {label:c.label,distanceKm:b.distanceM/1000,minutes:b.seconds/60,avgSpeed:b.speedN?b.speedSum/b.speedN:0,avgWatts:b.wattsN?b.wattsSum/b.wattsN:0}}).filter(r=>r.distanceKm>0.05);
+  let vam=climbSeconds>60?Math.round(climbGain/(climbSeconds/3600)):0;
+  let wattsPerKg=climbWatts.length&&weightKg>0?Math.round((climbWatts.reduce((a,b)=>a+b,0)/climbWatts.length/weightKg)*10)/10:0;
+  function corr(pairs){if(pairs.length<5)return 0;let n=pairs.length,sx=0,sy=0,sxy=0,sx2=0,sy2=0;pairs.forEach(p=>{sx+=p[0];sy+=p[1];sxy+=p[0]*p[1];sx2+=p[0]*p[0];sy2+=p[1]*p[1]});let numr=n*sxy-sx*sy,den=Math.sqrt((n*sx2-sx*sx)*(n*sy2-sy*sy));return den?Math.round((numr/den)*100)/100:0}
+  return {rows:rows,vam:vam,wattsPerKg:wattsPerKg,speedCorr:corr(speedGradPairs),powerCorr:corr(powerGradPairs),hasPower:powerGradPairs.length>5}
+}
+function renderClimbingSection(cl){
+  if(!cl||!cl.rows.length)return '';
+  let rows=cl.rows.map(r=>`<div class="climb-row"><span>${esc(r.label)}</span><span>${r.distanceKm.toFixed(1)} km</span><span>${duration(Math.round(r.minutes))}</span><span>${r.avgSpeed?r.avgSpeed.toFixed(1)+' km/j':'-'}</span><span>${r.avgWatts?Math.round(r.avgWatts)+' W':'-'}</span></div>`).join('');
+  let metrics=[];
+  if(cl.vam)metrics.push(`<div class="detail-metric"><small>VAM (tanjakan ≥4%)</small><b>${cl.vam} m/jam</b></div>`);
+  if(cl.wattsPerKg){metrics.push(`<div class="detail-metric"><small>CLIMBING POWER</small><b>${cl.wattsPerKg} W/kg</b></div>`);metrics.push(`<div class="detail-metric"><small>KATEGORI (kasar)</small><b>${climbScoreLabel_(cl.wattsPerKg)}</b></div>`)}
+  let corrParts=[];if(cl.speedCorr)corrParts.push('gradient vs speed r = '+cl.speedCorr);if(cl.hasPower&&cl.powerCorr)corrParts.push('gradient vs power r = '+cl.powerCorr);
+  let corrText=corrParts.length?corrParts.join(' · ')+'. Estimasi kasar dari data GPS, bukan pengukuran laboratorium.':'';
+  return `<div class="detail-section"><span class="eyebrow">PERFORMA DI TANJAKAN</span>${metrics.length?`<div class="detail-metrics">${metrics.join('')}</div>`:''}<div class="climb-list"><div class="climb-row climb-head"><span>Gradient</span><span>Jarak</span><span>Waktu</span><span>Speed</span><span>Power</span></div>${rows}</div>${corrText?`<p class="muted" style="font-size:11px;margin-top:8px">${esc(corrText)}</p>`:''}</div>`
+}
+
+function renderLapsSection(laps,sport){if(!laps||laps.length<2)return '';let rows=laps.map(l=>{let paceOrSpeed=sport==='Running'?pace(l.avgPace):(l.avgSpeed?l.avgSpeed.toFixed(1)+' km/j':'-');return `<div class="lap-row"><span class="lap-idx">${l.index}</span><span>${l.distanceKm.toFixed(2)} km</span><span>${duration(Math.round(l.minutes))}</span><span>${paceOrSpeed}</span><span>${l.avgHr?Math.round(l.avgHr)+' bpm':'-'}</span><span>${l.avgWatts?Math.round(l.avgWatts)+' W':'-'}</span></div>`}).join('');return `<div class="detail-section"><span class="eyebrow">LAPS / INTERVAL</span><div class="lap-list"><div class="lap-row lap-head"><span>#</span><span>Jarak</span><span>Waktu</span><span>Pace/Speed</span><span>HR</span><span>Power</span></div>${rows}</div></div>`}
+
+function renderSocialSection(kudos,comments){kudos=kudos||[];comments=comments||[];if(!kudos.length&&!comments.length)return '';let kudosHtml=kudos.length?`<div class="kudos-list">${kudos.map(k=>`<span class="kudos-chip">👍 ${esc(k.name)}</span>`).join('')}</div>`:'<p class="muted">Belum ada kudos.</p>';let commentsHtml=comments.length?`<div class="comment-list">${comments.map(c=>`<div class="comment-row"><b>${esc(c.name)}</b><p>${esc(c.text)}</p></div>`).join('')}</div>`:'';return `<div class="detail-section"><span class="eyebrow">KUDOS &amp; KOMENTAR</span>${kudosHtml}${commentsHtml}</div>`}
+
+function sourceBadge(source){return `<span class="source-badge">${esc(source)}</span>`}
+function activityCardCompact(x){return `<button type="button" class="compact-activity" data-id="${esc(x.id)}"><span class="compact-activity-icon${x.sport==='Running'?' run':''}"><span class="icon"><svg><use href="#${x.sport==='Running'?'i-shoe':'i-bike'}"/></svg></span></span><div class="compact-activity-main"><b>${esc(x.title)}</b><small>${fmtDate(x.date)} · ${duration(x.minutes)}</small></div><div class="compact-activity-stats"><b>${x.distance?x.distance.toFixed(1)+' km':(x.avgHr?Math.round(x.avgHr)+' bpm':'-')}</b><small>${x.sport==='Running'?pace(x.avgPace):(x.avgSpeed?x.avgSpeed.toFixed(1)+' km/h':'Jarak')}</small></div></button>`}
+function activityCard(x){return `<article class="activity-card" data-id="${esc(x.id)}"><label class="compare-checkbox" onclick="event.stopPropagation()"><input type="checkbox" data-compare-id="${esc(x.id)}" ${compareSelection.includes(String(x.id))?'checked':''}></label>${miniMap(x)}<div class="activity-card-body"><div class="activity-card-top"><span class="sport-chip ${x.sport==='Running'?'run':x.sport==='Cycling'?'':'other'}">${esc(x.sportType||x.sport)}</span>${x.sessionType&&x.sessionType!=='-'?`<span class="sport-chip other">${esc(x.sessionType)}</span>`:''}<small class="muted">${fmtDate(x.date)}</small></div><h3>${esc(x.title)}</h3><small>${sourceBadge(x.source)}${x.kudosCount?' · 👍 '+x.kudosCount+(x.commentCount?' · 💬 '+x.commentCount:''):''} · Tap untuk detail</small><div class="activity-stats"><div class="activity-stat"><b>${x.distance?x.distance.toFixed(1)+' km':'-'}</b><small>Jarak</small></div><div class="activity-stat"><b>${x.sport==='Running'?pace(x.avgPace):(x.avgSpeed?x.avgSpeed.toFixed(1)+' km/h':'-')}</b><small>${x.sport==='Running'?'Pace':'Speed'}</small></div><div class="activity-stat"><b>${x.avgHr?Math.round(x.avgHr)+' bpm':'-'}</b><small>HR avg</small></div><div class="activity-stat"><b>${duration(x.minutes)}</b><small>Durasi</small></div></div></div></article>`}
+
+function renderActivities(){let items=activityItems({from:$('#activityFrom').value,to:$('#activityTo').value,sport:$('#activitySport').value,search:$('#activitySearch').value}).slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0),all=DATA.logs||[],empty=!all.length?`<div class="feed-empty contextual-empty"><b>Belum ada aktivitas</b><p>Hubungkan Strava lalu sinkronkan aktivitas pertamamu untuk melihat analisis dan rekomendasi coach.</p><button class="btn primary" type="button" data-empty-sync>Sinkronkan sekarang</button></div>`:`<div class="feed-empty contextual-empty"><b>Tidak ada hasil sesuai filter</b><p>Ubah kata kunci, olahraga, atau rentang tanggal untuk melihat aktivitas lain.</p><button class="btn secondary" type="button" data-empty-reset>Reset filter</button></div>`;$('#activityRows').innerHTML=items.length?(ACTIVITY_VIEW==='compact'?`<div class="compact-feed">${items.map(activityCardCompact).join('')}</div>`:items.map(activityCard).join('')):empty;$$('#activityRows [data-id]').forEach(x=>x.onclick=()=>showDetail(x.dataset.id));$$('#activityRows [data-compare-id]').forEach(chk=>chk.onchange=()=>toggleCompare(chk.dataset.compareId,chk.checked));let sync=$('[data-empty-sync]');if(sync)sync.onclick=syncStrava;let reset=$('[data-empty-reset]');if(reset)reset.onclick=()=>{$('#activitySearch').value='';$('#activitySport').value='All';$('#activityFrom').value='';$('#activityTo').value='';renderActivities()};}
+
+function sampleStream(data,distance,maxPoints){if(!data.length)return [];let points=maxPoints||18;if(data.length<=points)return data;let out=[],step=Math.max(1,Math.ceil(data.length/points));if(distance&&distance.length===data.length){let total=distance[distance.length-1]||0,per=Math.max(1000,total/(points-1)),next=0;for(let i=0;i<data.length;i++)if(distance[i]>=next||i===data.length-1){out.push(data[i]);next+=per}return out}for(let i=0;i<data.length;i+=step)out.push(data[i]);if(out[out.length-1]!==data[data.length-1])out.push(data[data.length-1]);return out}
+function renderDetailChart(id,label,data,summary){return data.length?`<div class="detail-section"><span class="eyebrow">${label}</span><div class="detail-chart" id="${id}Wrap"><canvas id="${id}"></canvas></div><div class="chart-summary">${summary||''}</div></div>`:''}
+function drawDetailChart(id,label,data,color,annotation,labels){if(!data.length)return;let original=data,step=Math.max(1,Math.ceil(data.length/18)),sampled=data.filter((_,i)=>i%step===0||i===data.length-1),chartLabels=(labels||data.map((_,i)=>i+1)).filter((_,i)=>i%step===0||i===data.length-1),avg=Math.round(original.reduce((a,v)=>a+v,0)/original.length),max=Math.round(Math.max(...original)),summary=label.indexOf('Kecepatan')===0?`<span>Avg <b>${avg} km/j</b></span><span>Max <b>${max} km/j</b></span>`:label.indexOf('Elevasi')===0?`<span>Kenaikan <b>${Math.round(Math.max(...original)-Math.min(...original))} m</b></span><span>Maks <b>${max} m</b></span>`:`<span>Avg <b>${avg} bpm</b></span><span>Max <b>${max} bpm</b></span>`;let section=$('#'+id+'Wrap').parentElement.querySelector('.chart-summary');if(section)section.innerHTML=summary;let datasets=[{label:label,data:sampled,borderColor:color,backgroundColor:healthAreaGradient(color),fill:true,tension:.3,pointRadius:0,pointHoverRadius:4,borderWidth:2.5}];if(annotation)datasets.push({label:'Batas Z2 manual',data:sampled.map(()=>annotation),borderColor:COLOR.orange,borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false});renderChart(id+'Wrap',id,'line',{labels:chartLabels,datasets:datasets},{plugins:{legend:{display:!!annotation}},scales:{x:{ticks:{maxTicksLimit:6}},y:{grid:{color:COLOR.grid},suggestedMin:annotation||undefined}}})}
+async function showDetail(id){let x=(DATA.logs||[]).find(a=>String(a.id)===String(id));if(!x)return;
+  let sportMetric=x.sport==='Running'?['Pace',pace(x.avgPace)]:['Speed',x.avgSpeed?x.avgSpeed.toFixed(1)+' km/h':'-'];
+  $('#detailContent').innerHTML=`<div class="route-map-leaflet" id="mapContainer"></div><div class="detail-box-inner"><span class="eyebrow">ACTIVITY DETAIL</span><h2>${esc(x.title)}</h2><p class="muted">${fmtDate(x.date)} · ${esc(x.source)} · ${esc(x.sportType||x.sport)}</p><div class="detail-metrics">${[['Jarak',x.distance?x.distance.toFixed(2)+' km':'-'],sportMetric,['Avg HR',x.avgHr?Math.round(x.avgHr)+' bpm':'-'],['Max HR',x.maxHr?Math.round(x.maxHr)+' bpm':'-'],['Cadence',x.avgCadence?Math.round(x.avgCadence):'-'],['Elevasi',x.elevation?Math.round(x.elevation)+' m':'-'],['Kalori',x.calories||'-'],['Avg Power',x.avgPower?Math.round(x.avgPower)+' W':'-']].map(a=>`<div class="detail-metric"><small>${a[0]}</small><b>${a[1]}</b></div>`).join('')}</div><p class="muted" style="margin-top:14px">${esc(x.note||'Tidak ada catatan.')}</p>${x.stravaUrl?`<a class="btn primary" style="display:inline-block;margin-top:8px;text-decoration:none" href="${esc(x.stravaUrl)}" target="_blank">Buka di ${stravaTag()} ↗</a>`:''}</div>`;
+  openModal();setTimeout(()=>initDetailMap(x.polyline),30);if(!x.stravaId)return;let dc=$('#detailContent .detail-box-inner');if(dc)dc.insertAdjacentHTML('beforeend','<div id="detailStreamLoader">'+inlineSpinner('Memuat grafik & analisis…')+'</div>');let d=null;try{d=await gs('getStravaActivityDetail',x.stravaId,currentAthleteId())}catch(fe){console.log(fe);let __sl=document.getElementById('detailStreamLoader');if(__sl)__sl.outerHTML='<div class="insight"><b>Gagal memuat grafik</b><p>Data stream Strava tidak bisa diambil. Cek koneksi lalu coba lagi.</p><button type="button" class="btn secondary" id="detailRetryBtn">Coba lagi</button></div>';let __rb=document.getElementById('detailRetryBtn');if(__rb)__rb.onclick=()=>showDetail(id);return}try{let s=d.streams||{},speed=(s.velocity_smooth&&s.velocity_smooth.data||[]).map(v=>v*3.6),altitude=s.altitude&&s.altitude.data||[],hr=s.heartrate&&s.heartrate.data||[],distance=s.distance&&s.distance.data||[],watts=s.watts&&s.watts.data||[],time=s.time&&s.time.data||[],labels=distance.map(v=>(v/1000).toFixed(1)+' km'),zones=DATA.hrZones||[],hrLine=zones[1]&&zones[1].low||0,segments=d.segments||[],best=segments.slice(0,3),extra=segments.slice(3),powerCurve=buildPowerCurve(watts,time),decoupling=computeDecoupling(time,hr,speed),intervals=detectIntervals(s,(DATA.metrics&&DATA.metrics.ftp)||0),climbing=analyzeClimbing(s,(DATA.metrics&&DATA.metrics.weightKg)||0);let segmentRow=z=>`<div class="segment-row"><div class="segment-row-head"><b>${esc(z.name)}</b><span>${z.distance.toFixed(2)} km</span></div><small>${duration(Math.round(z.seconds/60))}${z.prRank?' · PR #'+z.prRank:''}${z.komRank?' · KOM #'+z.komRank:''}</small></div>`;let more=extra.length?`<div id="detailSegmentsExtra" class="segment-extra" hidden>${extra.map(segmentRow).join('')}</div><button type="button" class="segment-toggle" id="segmentToggle">Lihat semua ${segments.length} segmen</button>`:'';let charts='<div id="detailCharts">'+renderDetailChart('detailSpeedChart','Kecepatan (km/j)',speed)+renderDetailChart('detailAltitudeChart','Elevasi (m)',altitude)+renderDetailChart('detailHrChart','Heart rate (bpm)',hr)+'</div>'+renderHrZoneSection(hr,time,zones,x)+renderPowerCurveSection(powerCurve)+renderDecouplingSection(decoupling,x.minutes)+renderIntervalSection(intervals,x.sport)+renderClimbingSection(climbing);let sl=document.getElementById('detailStreamLoader');if(sl)sl.remove();let metrics=$('#detailContent .detail-metrics');if(metrics)metrics.insertAdjacentHTML('afterbegin',[['Waktu bergerak',duration(Math.round(d.movingTime/60))],['Waktu total',duration(Math.round(d.elapsedTime/60))]].map(a=>`<div class="detail-metric"><small>${a[0]}</small><b>${a[1]}</b></div>`).join(''));$('#detailContent .detail-box-inner').insertAdjacentHTML('beforeend',renderLapsSection(d.laps,x.sport)+charts+`<div class="detail-section"><span class="eyebrow">STRAVA SEGMENTS</span><div class="segment-list">${best.map(segmentRow).join('')||'<div class="insight"><p>Tidak ada segmen pada aktivitas ini.</p></div>'}${more}</div></div>`+renderSocialSection(d.kudos,d.comments));drawDetailChart('detailSpeedChart','Kecepatan (km/j)',speed,COLOR.orange,0,labels);drawDetailChart('detailAltitudeChart','Elevasi (m)',altitude,COLOR.green,0,labels);drawDetailChart('detailHrChart','Heart rate (bpm)',hr,COLOR.red,hrLine,labels);let toggle=$('#segmentToggle');if(toggle)toggle.onclick=()=>{let el=$('#detailSegmentsExtra'),open=el.hidden;el.hidden=!open;toggle.textContent=open?'Ciutkan segmen':'Lihat semua '+segments.length+' segmen'};if(typeof proActivityHook==='function'){try{proActivityHook(x,d)}catch(pe){console.log(pe)}}}catch(re){console.log(re);let __box=$('#detailContent .detail-box-inner');if(__box)__box.insertAdjacentHTML('beforeend','<div class="insight"><b>Sebagian analisis gagal ditampilkan</b><p>Data dasar di atas tetap valid. Buka ulang detail untuk mencoba lagi.</p></div>')}}
+
+function renderPaceTrendChart(){let runs=(DATA.logs||[]).filter(x=>x.sport==='Running'&&x.avgPace>0).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0).slice(-20);if(!runs.length)return emptyChart('paceTrendWrap','paceTrendChart','Belum ada data lari dengan pace.',emptySyncAction());
+  renderChart('paceTrendWrap','paceTrendChart','line',{labels:runs.map(x=>fmtDateShort(x.date)),datasets:[{label:'Pace (min/km)',data:runs.map(x=>+x.avgPace.toFixed(2)),borderColor:COLOR.blue,backgroundColor:healthAreaGradient(COLOR.blue),fill:true,tension:.35,pointRadius:0,pointHoverRadius:4,borderWidth:2.5}]},{plugins:{legend:{display:false}},scales:{y:{reverse:true,grid:{color:COLOR.grid},ticks:{callback:v=>pace(v)}}}})}
+function renderSpeedTrendChart(){let rides=(DATA.logs||[]).filter(x=>x.sport==='Cycling'&&x.avgSpeed>0).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0).slice(-20);if(!rides.length)return emptyChart('speedTrendWrap','speedTrendChart','Belum ada data cycling dengan speed.',emptySyncAction());
+  renderChart('speedTrendWrap','speedTrendChart','line',{labels:rides.map(x=>fmtDateShort(x.date)),datasets:[{label:'Speed (km/h)',data:rides.map(x=>+x.avgSpeed.toFixed(1)),borderColor:COLOR.orange,backgroundColor:healthAreaGradient(COLOR.orange),fill:true,tension:.35,pointRadius:0,pointHoverRadius:4,borderWidth:2.5}]},{plugins:{legend:{display:false}},scales:{y:{grid:{color:COLOR.grid}}}})}
+function renderElevationChart(){let wk=weeklyBuckets(DATA.logs||[],10);if(!(DATA.logs||[]).length)return emptyChart('elevationWrap','elevationChart','Belum ada data elevasi.');
+  renderChart('elevationWrap','elevationChart','bar',{labels:wk.map(x=>x.label),datasets:[{label:'Elevasi (m)',data:wk.map(x=>Math.round(x.elevation)),backgroundColor:COLOR.green,barPercentage:.5,categoryPercentage:.65}]},{plugins:{legend:{display:false}},scales:{y:{grid:{color:COLOR.grid}}}})}
+
+function renderProgress(){renderFitnessChart();let items=DATA.logs||[],run=items.filter(x=>x.sport==='Running'),ride=items.filter(x=>x.sport==='Cycling'),total=items.reduce((a,x)=>a+x.minutes,0),hrItems=items.filter(x=>x.avgHr),avgHr=hrItems.reduce((a,x)=>a+x.avgHr,0)/(hrItems.length||1),q=DATA.dataQuality||{};
+  renderPaceTrendChart();renderSpeedTrendChart();renderElevationChart();renderVolumeChart(DATA.logs||[]);renderWeeklyDistanceChart();
+  let insights=[];if(run.length)insights.push(['Lari konsisten','Kamu memiliki '+run.length+' aktivitas running yang bisa dikembangkan menjadi base pace.']);if(ride.length)insights.push(['Basis endurance','Volume cycling tercatat '+duration(ride.reduce((a,x)=>a+x.minutes,0))+'.']);if(hrItems.length)insights.push(['Kontrol intensitas','Rata-rata HR aktivitas: '+Math.round(avgHr)+' bpm.']);insights.push(['Potensi berikutnya','Ikuti rencana 7 hari yang disusun coach, lalu evaluasi ulang setelah 3-4 minggu sinkronisasi '+stravaTag()+'.']);
+  $('#potentialList').innerHTML=insights.map(x=>`<div class="insight"><b>${x[0]}</b><p>${x[1]}</p></div>`).join('');
+  $('#qualityList').innerHTML=[['HR kosong',q.avgHr||0],['Cadence kosong',q.avgCadence||0],['Elevasi kosong',q.elevation||0],['Route kosong',q.polyline||0],['Power kosong',q.avgPower||0]].map(x=>`<div class="insight"><b>${x[0]}</b><p>${x[1]} dari ${q.total||items.length} aktivitas</p></div>`).join('');
+  $('#progressZones').innerHTML=(DATA.hrZones||[]).map(z=>`<div class="zone"><b>${z.zone}</b><span>${z.low}-${z.high}</span><small>${z.label}</small></div>`).join('');
+  let segments=DATA.segments||[];$('#segmentList').innerHTML=segments.length?segments.map(s=>`<div class="segment-row"><div class="segment-row-head"><b>${esc(s.name)}</b><span>${s.distance.toFixed(2)} km</span></div><small>${esc(s.activityTitle)} · ${fmtDate(s.date)} · ${duration(s.minutes)}${s.prRank?' · PR #'+s.prRank:''}</small></div>`).join(''):'<div class="feed-empty">Belum ada segmen Strava. Sinkronkan ulang aktivitas untuk memuat segmen terbaru.</div>'}
+
+function renderSettings(){let p=DATA.profile||{},m=DATA.metrics||{};let f=$('#metricsForm');f.ftpOverride.value=p.ftpOverride||'';f.hrMaxOverride.value=p.hrMaxOverride||'';f.hrRestOverride.value=p.hrRestOverride||'';f.hrMethod.value=m.hrMethod||'Karvonen';f.hrZoneMode.value=p.hrZoneMode||'Manual';f.hrZ2Min.value=p.hrZ2Min||118;f.hrZ3Min.value=p.hrZ3Min||144;f.hrZ4Min.value=p.hrZ4Min||165;f.hrZ5Min.value=p.hrZ5Min||184;let gf=$('#goalsForm');['goalCyclingKm','goalRunningKm','goalMinutes','goalElevation','goalSessions','weightKg','personalNote'].forEach(k=>gf[k].value=p[k]||'');let photo=$('#settingsPhotoPreview');photo.textContent=initials(p.nama);photo.className='profile-avatar'+(p.profilePhoto?' has-photo':'');photo.style.backgroundImage=p.profilePhoto?`url('${p.profilePhoto}')`:'';$('#metricsAutoNote').innerHTML=`FTP saat ini: ${m.ftp||'-'} W (${m.ftpAuto?'auto dari '+stravaTag():'manual'}) · HR Max: ${m.hrMax||'-'} bpm (${m.hrMaxAuto?'auto dari '+stravaTag():'manual'}). Kosongkan field untuk kembali ke mode otomatis.`;let sf=$('#scheduleForm');sf.hariHard1.value=p.hariHard1||'Jumat';sf.hariHard2.value=p.hariHard2||'Minggu';$('#hideRoutes').checked=!!DATA.privacy?.hideRoutes}
+async function renderProfile(){let sel=$('#profileSport'),sport=sel?sel.value:'All',items=(DATA.logs||[]).filter(x=>sport==='All'||x.sport===sport),total=items.reduce((s,x)=>s+x.minutes,0),box=$('#profileMetrics');if(!box)return;box.innerHTML=metric('TOTAL SESI',items.length,sport==='All'?'semua olahraga':sport)+metric('TOTAL DURASI',duration(total),'waktu bergerak')+metric('JARAK',items.reduce((s,x)=>s+x.distance,0).toFixed(1)+' km','akumulasi')+metric('ELEVASI',Math.round(items.reduce((s,x)=>s+x.elevation,0))+' m','total kenaikan');animateMetricsIn(box)}
+function resizePhoto(file){return new Promise((ok,no)=>{let reader=new FileReader();reader.onerror=no;reader.onload=()=>{let img=new Image();img.onload=()=>{let size=160,canvas=document.createElement('canvas'),scale=Math.min(size/img.width,size/img.height);canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);ok(canvas.toDataURL('image/jpeg',.78))};img.onerror=no;img.src=reader.result};reader.readAsDataURL(file)})}
+function heatClass(intensity){if(!intensity)return 'heat-0';if(intensity<0.60)return 'heat-1';if(intensity<0.75)return 'heat-2';if(intensity<0.90)return 'heat-3';return 'heat-4'}
+function heatLabel(intensity){if(!intensity)return 'Rest day';if(intensity<0.60)return 'Ringan';if(intensity<0.75)return 'Sedang';if(intensity<0.90)return 'Berat';return 'Sangat berat'}
+function showCalendarDay(key){let x=(DATA.calendar||[]).find(c=>c.date===key),label=heatLabel(x?x.intensity:0),items=(DATA.logs||[]).filter(a=>a.date===key);let activityListHtml=items.length?`<div class="detail-section"><span class="eyebrow">AKTIVITAS HARI INI</span><div class="day-activity-list">${items.map(a=>`<button type="button" class="day-activity-row" data-day-activity-id="${a.id}"><span class="day-activity-sport">${esc(a.sport)}</span><div class="day-activity-main"><b>${esc(a.title)}</b><small>${duration(a.minutes)}${a.distance?' · '+a.distance.toFixed(1)+' km':''}</small></div><span class="day-activity-chevron">›</span></button>`).join('')}</div></div>`:'';let content=x?`<div class="detail-box-inner"><span class="eyebrow">TRAINING CALENDAR</span><h2>${fmtDate(key)}</h2><p class="muted">Level: <b>${label}</b></p><div class="detail-metrics"><div class="detail-metric"><small>Durasi</small><b>${duration(x.minutes)}</b></div><div class="detail-metric"><small>Aktivitas</small><b>${x.count}</b></div><div class="detail-metric"><small>Jarak</small><b>${(x.distance||0).toFixed(1)} km</b></div><div class="detail-metric"><small>Beban latihan</small><b>${x.load}</b></div></div>${activityListHtml}</div>`:`<div class="detail-box-inner"><span class="eyebrow">TRAINING CALENDAR</span><h2>${fmtDate(key)}</h2><p class="muted">Rest day — tidak ada aktivitas tercatat.</p></div>`;$('#detailContent').innerHTML=content;openModal();$$('#detailContent [data-day-activity-id]').forEach(el=>el.onclick=()=>showDetail(el.dataset.dayActivityId))}
+let calMonthOffset=0;
+const CAL_MONTH_NAMES=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function calDur(m){m=Math.round(Number(m)||0);if(m<60)return m+'m';let h=Math.floor(m/60),r=m%60;return h+'j'+(r?r+'m':'')}
+function renderProgressCalendar(){let by={};(DATA.calendar||[]).forEach(x=>by[x.date]=x);let planDates={};(DATA.plan||[]).forEach(x=>{if(x.date)planDates[x.date]=x.title||x.type||'Plan'});let base=new Date(),ref=new Date(base.getFullYear(),base.getMonth()+calMonthOffset,1),year=ref.getFullYear(),month=ref.getMonth(),days=new Date(year,month+1,0).getDate(),start=(new Date(year,month,1).getDay()+6)%7;let lbl=$('#calMonthLabel');if(lbl)lbl.textContent=CAL_MONTH_NAMES[month]+' '+year;let nextBtn=$('#calNextMonth');if(nextBtn)nextBtn.disabled=calMonthOffset>=0;$('#calendarGrid').innerHTML=Array.from({length:start},()=>'<div class="cal-empty"></div>').join('')+Array.from({length:days},(_,i)=>{let key=dateKey(new Date(year,month,i+1)),x=by[key],planned=!!planDates[key];return `<div class="calendar-day ${x?'active':''} ${heatClass(x?x.intensity:0)}${planned?' planned':''}" data-cal-date="${key}" title="${x?duration(x.minutes)+' · '+x.count+' aktivitas · '+heatLabel(x.intensity)+' · beban '+x.load:'Rest day'}${planned?' · ada plan: '+esc(planDates[key]):''}"><b>${i+1}</b>${x?`<small>${calDur(x.minutes)}</small>`:''}${planned?'<i class="plan-dot"></i>':''}</div>`}).join('');$$('#calendarGrid .calendar-day').forEach(el=>el.onclick=()=>showCalendarDay(el.dataset.calDate))}
+function calGoPrevMonth(){calMonthOffset--;renderProgressCalendar()}
+function calGoNextMonth(){if(calMonthOffset<0){calMonthOffset++;renderProgressCalendar()}}
+function renderRecords(){let r=DATA.records||{},nowD=new Date(),agoD=d=>Math.round((nowD-new Date(d+'T00:00:00'))/86400000);
+
+  let recent=(DATA.logs||[]);
+  let threat=(rec,key,higher)=>{if(!rec||!(rec.value>0))return '';let days=agoD(rec.date);let tag=days<=0?'hari ini':days+' hari lalu';
+    let pool=recent.filter(x=>x.id!==rec.id&&x[key]>0&&(nowD-new Date(x.date))/86400000<=28);if(!pool.length)return ' · '+tag;
+    let best=higher?Math.max.apply(null,pool.map(x=>x[key])):Math.min.apply(null,pool.map(x=>x[key]));
+    let close=higher?best>=rec.value*0.95:best<=rec.value*1.05;
+    return ' · '+tag+(close?' · terancam!':'')};
+  let fmtV=(v,f)=>f(v);
+  let defs=[
+    {label:'PB RUN PACE',rec:r.runPace,key:'avgPace',higher:false,val:x=>pace(x.value)},
+    {label:'BEST CYCLING SPEED',rec:r.cyclingSpeed,key:'avgSpeed',higher:true,val:x=>x.value.toFixed(1)+' km/h'},
+    {label:'BEST MAX SPEED',rec:r.maxSpeed,key:'maxSpeed',higher:true,val:x=>x.value.toFixed(1)+' km/h'},
+    {label:'ELEVASI TERTINGGI',rec:r.elevation,key:'elevation',higher:true,val:x=>Math.round(x.value)+' m'},
+    {label:'SPRINT TERCEPAT',rec:r.sprint,key:'maxSpeed',higher:true,val:x=>x.value.toFixed(1)+' km/h'},
+    {label:'AVG POWER TERTINGGI',rec:r.power,key:'avgPower',higher:true,val:x=>Math.round(x.value)+' W'},
+    {label:'KALORI TERBANYAK',rec:r.calories,key:'calories',higher:true,val:x=>Math.round(x.value)},
+    {label:'LONGEST ACTIVITY',rec:r.longest,key:'distance',higher:true,val:x=>x.distance.toFixed(1)+' km'}
+  ];
+  $('#recordMetrics').innerHTML=defs.map(d=>{let x=d.rec;return `<button class="metric" type="button" data-record-id="${x?esc(x.id||''):''}"><span class="eyebrow"><span class="metric-icon">${metricIcon(d.label)}</span>${d.label}</span><b>${x?fmtV(x,d.val):'-'}</b><small>${x?esc(x.title)+threat(x,d.key,d.higher):'Belum ada data'}</small></button>`}).join('');
+  animateMetricsIn($('#recordMetrics'));$$('[data-record-id]').forEach(x=>x.onclick=()=>x.dataset.recordId&&showDetail(x.dataset.recordId))}
+function renderTop10(){let sport=$('#topSport').value,metricName=$('#topMetric').value,items=(DATA.logs||[]).filter(x=>sport==='All'||x.sport===sport).filter(x=>metricName!=='speed'||x.sport==='Cycling').filter(x=>metricName!=='pace'||x.sport==='Running');let value=x=>metricName==='distance'?x.distance:metricName==='elevation'?x.elevation:metricName==='speed'?x.avgSpeed:metricName==='pace'?-x.avgPace:metricName==='duration'?x.minutes:x.avgPower;items.sort((a,b)=>value(b)-value(a));$('#top10Rows').innerHTML=items.slice(0,10).map(activityCard).join('')||'<div class="feed-empty">Tidak ada aktivitas untuk filter ini.</div>';$$('#top10Rows [data-id]').forEach(x=>x.onclick=()=>showDetail(x.dataset.id));$$('#top10Rows [data-compare-id]').forEach(chk=>chk.onchange=()=>toggleCompare(chk.dataset.compareId,chk.checked))}
+function renderCompliance(){let plan=DATA.plan||[],actual=DATA.planActual||[],past=plan.filter(x=>x.date<=DATA.today),done=past.filter(x=>(actual.find(a=>a.date===x.date)||{}).count>0),onTarget=done.filter(x=>{let a=actual.find(v=>v.date===x.date)||{};return a.minutes>=x.minutes*.8}).length,pct=past.length?Math.round(done.length/past.length*100):0,byType={};past.forEach(x=>{if(x.type==='Rest')return;let a=actual.find(v=>v.date===x.date)||{},v=byType[x.type]||(byType[x.type]={planned:0,actual:0,days:0,done:0});v.planned+=x.minutes||0;v.actual+=a.minutes||0;v.days++;if(a.count)v.done++});let typeRows=Object.keys(byType).map(type=>{let v=byType[type],ratio=v.planned?Math.min(100,Math.round(v.actual/v.planned*100)):0;return `<div class="compliance-type"><div class="compliance-type-head"><b>${esc(type)}</b><span>${ratio}%</span></div><div class="compliance-bar"><i style="width:${ratio}%"></i></div><small>${duration(v.actual)} aktual dari ${duration(v.planned)} target · ${v.done}/${v.days} hari</small></div>`}).join('');
+
+  let intensityChecked=done.filter(x=>x.type!=='Rest').map(x=>planIntensityVerdict_(x,actual.find(a=>a.date===x.date))).filter(Boolean),intensityMatch=intensityChecked.filter(v=>v.status==='match').length;
+  $('#complianceMetrics').innerHTML=metric('KEPATUHAN',pct+'%',done.length+'/'+past.length+' hari')+metric('DURASI SESUAI',onTarget+'/'+past.length,'minimal 80% target')+metric('INTENSITAS SESUAI',intensityChecked.length?intensityMatch+'/'+intensityChecked.length:'-','zona HR vs target')+metric('SESI TERCATAT',done.length,'hari latihan')+metric('TARGET MINGGU',plan.length,'Senin-Minggu');animateMetricsIn($('#complianceMetrics'));$('#complianceList').innerHTML=(typeRows?'<div class="insight"><b>Kepatuhan per tipe latihan</b><p>Volume aktual dibandingkan dengan target setiap tipe sesi.</p></div>'+typeRows:'')+past.map(x=>{let a=actual.find(v=>v.date===x.date)||{},intensity=x.type!=='Rest'?planIntensityVerdict_(x,a):null,cls=intensity?(intensity.status==='match'?' rest-ok':' rest-warn'):'',body=a.count?duration(a.minutes)+' aktual dari target '+duration(x.minutes)+(intensity&&intensity.status!=='match'?' · '+intensity.text:''):'Belum ada aktivitas aktual';return `<div class="insight${cls}"><b>${esc(x.day)} · ${esc(x.title)}</b><p>${body}</p></div>`}).join('')||'<div class="insight"><b>Belum ada plan</b><p>Susun plan mingguan agar coach dapat mengukur kepatuhan latihan.</p></div>';renderPlanWeekReview()}
+function renderLeaderboard(){let groups={};(DATA.segments||[]).forEach(s=>{if(!groups[s.name])groups[s.name]=[];groups[s.name].push(s)});let rows=Object.keys(groups).map(name=>{let items=groups[name].sort((a,b)=>a.minutes-b.minutes);return {name:name,best:items[0],count:items.length}}).sort((a,b)=>a.best.minutes-b.best.minutes);$('#leaderboardList').innerHTML=rows.map(x=>`<div class="segment-row"><div class="segment-row-head"><b>${esc(x.name)}</b><span>${duration(x.best.minutes)}</span></div><small>Best dari ${x.count} effort · ${esc(x.best.activityTitle)} · ${fmtDate(x.best.date)}</small></div>`).join('')||'<div class="feed-empty">Belum ada data segmen. Sinkronkan Strava untuk membangun leaderboard.</div>'}
+function renderPlanWeek(){renderPlanCustom();renderPlanResult();let pb=DATA.planBuilder||{};setPlanTab(pb.selection?'myplan':'custom')}
+function setDashTab(){}
+function setPlanTab(tab){$$('.sub-tab[data-plan-tab]').forEach(x=>x.classList.toggle('active',x.dataset.planTab===tab));$('#planCustomTabWrap').hidden=tab!=='custom';$('#planMyPlanTabWrap').hidden=tab!=='myplan';refreshPills()}
+</script>

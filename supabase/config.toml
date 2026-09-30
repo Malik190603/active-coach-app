@@ -1,0 +1,8 @@
+# Konfigurasi Supabase CLI untuk Active Coach.
+project_id = "active-coach"
+
+[functions.proxy]
+verify_jwt = false   # token diperiksa sendiri di dalam fungsi (kompatibel dengan kunci API lama & baru)
+
+[functions.strava-callback]
+verify_jwt = false   # dipanggil oleh browser setelah login Strava, tanpa token

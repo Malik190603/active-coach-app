@@ -1,0 +1,309 @@
+<script>
+'use strict';
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];let DATA={};let ACTIVITY_VIEW='cards';let THEME_MODE='auto';
+
+function syncAppViewportHeight(){
+  let h=((window.visualViewport&&window.visualViewport.height)||window.innerHeight)/((window.ViewMode&&window.ViewMode.zoom)||1);
+  document.documentElement.style.setProperty('--app-vh',h+'px');
+}
+syncAppViewportHeight();
+window.addEventListener('resize',syncAppViewportHeight);
+window.addEventListener('orientationchange',()=>setTimeout(syncAppViewportHeight,150));
+if(window.visualViewport)window.visualViewport.addEventListener('resize',syncAppViewportHeight);
+window.addEventListener('load',()=>setTimeout(syncAppViewportHeight,50));
+let SESSION={athleteId:'',nama:''};
+let STRAVA_CONNECTED=null,LOAD_BUSY=false,LAST_PTR_LOAD=0,LOADING_SKELETON_HTML='';
+function currentAthleteId(){return SESSION.athleteId||'A1'}
+function showGlobalLoader(text){let g=$('#globalLoader');if(!g)return;if(text)$('#globalLoaderText').textContent=text;g.hidden=false}
+function hideGlobalLoader(){let g=$('#globalLoader');if(g)g.hidden=true}
+function inlineSpinner(text){return '<div class="inline-loader"><span class="global-spinner"></span><span>'+esc(text||'Memuat…')+'</span></div>'}
+function stravaTag(){let img=document.getElementById('stravaLogoImg');return img?'<img class="strava-logo" src="'+img.src+'" alt="Strava">':'Strava'}
+const COLOR={orange:'#ff9500',orangeDark:'#c96f00',blue:'#0a84ff',green:'#2ea84a',red:'#ff3b30',yellow:'#ffcc00',ink:'#1c1c1e',ink2:'#48484a',muted:'#8a8a8e',grid:'#e5e5ea'};
+function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function gs(fn,...args){return new Promise((ok,no)=>{let call=google.script.run.withSuccessHandler(ok).withFailureHandler(no);call[fn](...args)})}
+function toast(t){$('#toast').innerHTML=t;$('#toast').classList.add('show');setTimeout(()=>$('#toast').classList.remove('show'),2400)}
+function fmtDate(s){return new Date(s+'T00:00:00').toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}
+function fmtDateShort(s){return new Date(s+'T00:00:00').toLocaleDateString('id-ID',{day:'numeric',month:'short'})}
+function pace(p){if(!p)return '-';let m=Math.floor(p),s=Math.round((p-m)*60);return m+':'+String(s).padStart(2,'0')+' /km'}
+function duration(minutes){minutes=Math.round(Number(minutes)||0);return minutes<60?minutes+' menit':Math.floor(minutes/60)+' jam'+(minutes%60?' '+minutes%60+' menit':'')}
+function durationShort(minutes){minutes=Math.round(Number(minutes)||0);if(minutes<60)return minutes+' mnt';let h=Math.floor(minutes/60),m=minutes%60;return h+'j'+(m?' '+m+'m':'')}
+function initials(name){let n=(name||'A').trim().split(/\s+/);return ((n[0]?.[0]||'A')+(n[1]?.[0]||'')).toUpperCase()}
+
+function decodePolyline(str){let pts=[],i=0,lat=0,lng=0;while(i<str.length){let b,shift=0,res=0;do{b=str.charCodeAt(i++)-63;res|=(b&31)<<shift;shift+=5}while(b>=32);lat+=(res&1)?~(res>>1):res>>1;shift=0;res=0;do{b=str.charCodeAt(i++)-63;res|=(b&31)<<shift;shift+=5}while(b>=32);lng+=(res&1)?~(res>>1):res>>1;pts.push([lat/1e5,lng/1e5])}return pts}
+function svgRouteThumb(polyline,w,h){let pts=decodePolyline(polyline||'');if(pts.length<2)return '';let lats=pts.map(p=>p[0]),lngs=pts.map(p=>p[1]),minLat=Math.min(...lats),maxLat=Math.max(...lats),minLng=Math.min(...lngs),maxLng=Math.max(...lngs),pad=10,scale=Math.min((w-pad*2)/(maxLng-minLng||1e-4),(h-pad*2)/(maxLat-minLat||1e-4));let pointsStr=pts.map(p=>(pad+(p[1]-minLng)*scale).toFixed(1)+','+(h-pad-(p[0]-minLat)*scale).toFixed(1)).join(' ');return `<svg viewBox="0 0 ${w} ${h}" xmlns="http:\/\/www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"><rect width="${w}" height="${h}" fill="#e9edf1"/><polyline points="${pointsStr}" fill="none" stroke="${COLOR.orange}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>`}
+function sportIconId(sport){return sport==='Running'?'i-shoe':sport==='Cycling'?'i-bike':'i-pulse'}
+function miniMap(x){let ic='<span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>';if(!x.polyline)return `<div class="mini-map empty">${ic}</div>`;let svg=svgRouteThumb(x.polyline,320,180);return svg?`<div class="mini-map">${svg}</div>`:`<div class="mini-map empty">${ic}</div>`}
+let detailMap=null;
+function initDetailMap(polyline){let el=document.getElementById('mapContainer');if(!el)return;if(detailMap){detailMap.remove();detailMap=null}let pts=decodePolyline(polyline||'');if(pts.length<2){el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9aa4ab;font-size:12px">Tidak ada data rute GPS</div>';return}
+  try{
+    detailMap=L.map('mapContainer',{zoomControl:false,attributionControl:true,scrollWheelZoom:false});
+    L.tileLayer('https:\/\/{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,subdomains:'abcd'}).addTo(detailMap);
+    let latlngs=pts.map(p=>[p[0],p[1]]),line=L.polyline(latlngs,{color:COLOR.orange,weight:4,lineJoin:'round'}).addTo(detailMap);
+    detailMap.fitBounds(line.getBounds(),{padding:[20,20]});
+    L.circleMarker(latlngs[0],{radius:6,color:'#fff',weight:2,fillColor:COLOR.green,fillOpacity:1}).addTo(detailMap).bindTooltip('Start');
+    L.circleMarker(latlngs[latlngs.length-1],{radius:6,color:'#fff',weight:2,fillColor:COLOR.red,fillOpacity:1}).addTo(detailMap).bindTooltip('Finish');
+    setTimeout(()=>detailMap&&detailMap.invalidateSize(),60);
+  }catch(e){el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#9aa4ab;font-size:12px">Peta gagal dimuat</div>'}
+}
+
+let compareSelection=[];
+function toggleCompare(id,checked){id=String(id);if(checked){if(!compareSelection.includes(id)){if(compareSelection.length>=2)compareSelection.shift();compareSelection.push(id)}}else{compareSelection=compareSelection.filter(x=>x!==id)}renderCompareBar()}
+function renderCompareBar(){let bar=$('#compareBar');if(!bar)return;bar.hidden=!compareSelection.length;$('#compareBarText').textContent=compareSelection.length+'/2 aktivitas dipilih';$('#compareGo').disabled=compareSelection.length!==2;$$('#activityRows [data-compare-id],#top10Rows [data-compare-id],#detailPageBody [data-compare-id]').forEach(chk=>chk.checked=compareSelection.includes(String(chk.dataset.compareId)))}
+
+function autoCompareSimilar(){let pool=(DATA.logs||[]).filter(x=>x.stravaId).slice().sort((a,b)=>a.date<b.date?1:-1);if(pool.length<2){toast('Belum ada 2 sesi tersinkron untuk dibandingkan');return}let a=pool[0],best=null,bestScore=Infinity;pool.slice(1).forEach(x=>{if(x.sport!==a.sport)return;let s=Math.abs((x.minutes||0)-(a.minutes||0))+Math.abs((x.distance||0)-(a.distance||0))/10;if(s<bestScore){bestScore=s;best=x}});if(!best){toast('Belum ada sesi sejenis yang tersinkron');return}compareSelection=[String(a.id),String(best.id)];renderCompareBar();showCompare()}
+function resampleByPct(pctArr,valArr,steps){if(!pctArr||!pctArr.length||!valArr||!valArr.length)return Array(steps+1).fill(null);let out=[];for(let i=0;i<=steps;i++){let target=i*100/steps,idx=0,best=Infinity;for(let j=0;j<pctArr.length;j++){let diff=Math.abs(pctArr[j]-target);if(diff<best){best=diff;idx=j}}out.push(valArr[idx]!=null?valArr[idx]:null)}return out}
+function buildComparisonSeries(streams){streams=streams||{};let distance=streams.distance&&streams.distance.data||[],total=distance.length?distance[distance.length-1]:0,pct=distance.map(d=>total?(d/total*100):0);return {pct:pct,speed:(streams.velocity_smooth&&streams.velocity_smooth.data||[]).map(v=>v*3.6),hr:streams.heartrate&&streams.heartrate.data||[],alt:streams.altitude&&streams.altitude.data||[]}}
+function drawCompareChart(canvasId,label,labels,dataA,dataB){if(!window.Chart)return;let el=document.getElementById(canvasId);if(!el)return;if(CHARTS[canvasId]){CHARTS[canvasId].destroy();delete CHARTS[canvasId]}CHARTS[canvasId]=new Chart(el.getContext('2d'),{type:'line',data:{labels:labels,datasets:[{label:'A',data:dataA,borderColor:COLOR.orange,backgroundColor:'transparent',borderWidth:2.5,pointRadius:0,pointHoverRadius:4,tension:.3,spanGaps:true},{label:'B',data:dataB,borderColor:COLOR.blue,backgroundColor:'transparent',borderWidth:2.5,pointRadius:0,pointHoverRadius:4,tension:.3,spanGaps:true}]},options:deepMerge(healthChartDefaults(),{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:6}}}})})}
+async function showCompare(){if(compareSelection.length!==2)return;let idsMeta=compareSelection.map(id=>(DATA.logs||[]).find(x=>String(x.id)===id)||{}),sportA=idsMeta[0].sport,stravaA=idsMeta[0].stravaId,stravaB=idsMeta[1].stravaId;if(!stravaA||!stravaB){toast('Kedua aktivitas harus tersinkron dari Strava untuk dibandingkan');return}
+  $('#detailBox').classList.add('wide');$('#detailContent').innerHTML='<div class="detail-box-inner"><span class="eyebrow">COMPARE ACTIVITIES</span><h2>Memuat perbandingan...</h2></div>';openModal();
+  try{
+    let d=await gs('getActivityComparison',{a:stravaA,b:stravaB,athleteId:currentAthleteId()}),A=d.a,B=d.b,sport=A.sport==='Run'||A.sport==='VirtualRun'?'Running':A.sport==='Ride'||A.sport==='VirtualRide'?'Cycling':sportA;
+    let metricRow=(label,va,vb)=>`<div class="compare-row"><span>${label}</span><b class="a">${va}</b><b class="b">${vb}</b></div>`;
+    let table=`<div class="compare-table"><div class="compare-row compare-head"><span></span><b class="a">A</b><b class="b">B</b></div>`+
+      metricRow('Jarak',A.distance.toFixed(2)+' km',B.distance.toFixed(2)+' km')+
+      metricRow('Durasi',duration(A.minutes),duration(B.minutes))+
+      metricRow(sport==='Running'?'Avg Pace':'Avg Speed',sport==='Running'?pace(A.avgPace):(A.avgSpeed?A.avgSpeed.toFixed(1)+' km/j':'-'),sport==='Running'?pace(B.avgPace):(B.avgSpeed?B.avgSpeed.toFixed(1)+' km/j':'-'))+
+      metricRow('Avg HR',A.avgHr?Math.round(A.avgHr)+' bpm':'-',B.avgHr?Math.round(B.avgHr)+' bpm':'-')+
+      metricRow('Elevasi',Math.round(A.elevation)+' m',Math.round(B.elevation)+' m')+
+      metricRow('Avg Power',A.avgWatts?Math.round(A.avgWatts)+' W':'-',B.avgWatts?Math.round(B.avgWatts)+' W':'-')+
+      '</div>';
+    $('#detailContent').innerHTML=`<div class="detail-box-inner"><span class="eyebrow">COMPARE ACTIVITIES</span><h2>${esc(A.title)} <span class="muted">vs</span> ${esc(B.title)}</h2><p class="muted">${fmtDate(A.date)} vs ${fmtDate(B.date)} · perbandingan berbasis % jarak tempuh</p><div class="compare-legend"><span class="dot a"></span>${esc(A.title)}<span class="dot b"></span>${esc(B.title)}</div>${table}<div id="compareCharts"></div></div>`;
+    let steps=40,labels=Array.from({length:steps+1},(_,i)=>Math.round(i*100/steps)+'%'),sA=buildComparisonSeries(A.streams),sB=buildComparisonSeries(B.streams);
+    $('#compareCharts').innerHTML=[['compareSpeedChart',sport==='Running'?'Kecepatan (km/j)':'Kecepatan (km/j)'],['compareHrChart','Heart rate (bpm)'],['compareAltChart','Elevasi (m)']].map(c=>`<div class="detail-section"><span class="eyebrow">${c[1]}</span><div class="detail-chart"><canvas id="${c[0]}"></canvas></div></div>`).join('');
+    drawCompareChart('compareSpeedChart','Speed',labels,resampleByPct(sA.pct,sA.speed,steps),resampleByPct(sB.pct,sB.speed,steps));
+    drawCompareChart('compareHrChart','HR',labels,resampleByPct(sA.pct,sA.hr,steps),resampleByPct(sB.pct,sB.hr,steps));
+    drawCompareChart('compareAltChart','Elevation',labels,resampleByPct(sA.pct,sA.alt,steps),resampleByPct(sB.pct,sB.alt,steps));
+  }catch(e){console.log(e);$('#detailContent').innerHTML='<div class="detail-box-inner"><p class="muted">Gagal memuat perbandingan aktivitas.</p></div>'}
+}
+
+let heatMap=null,heatLayer=null,heatSport='All';
+function heatmapItems(sport){return (DATA.logs||[]).filter(x=>x.polyline&&(!sport||sport==='All'||x.sport===sport))}
+function initHeatmap(sport){
+  let el=document.getElementById('heatmapMap');if(!el||!window.L)return;
+  if(typeof sport==='string')heatSport=sport;
+  let items=heatmapItems(heatSport);
+  try{
+    if(!heatMap){heatMap=L.map('heatmapMap',{zoomControl:true,attributionControl:true,scrollWheelZoom:false,preferCanvas:true});L.tileLayer('https:\/\/{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap, &copy; CARTO',maxZoom:19,subdomains:'abcd'}).addTo(heatMap)}
+    if(heatLayer){heatMap.removeLayer(heatLayer)}
+    heatLayer=L.layerGroup();
+    let bounds=[],totalKm=0;
+    items.forEach(x=>{let pts=decodePolyline(x.polyline);if(pts.length<2)return;totalKm+=x.distance||0;let color=x.sport==='Running'?COLOR.blue:x.sport==='Cycling'?COLOR.orange:COLOR.green;L.polyline(pts,{color:color,weight:2,opacity:.35,lineJoin:'round'}).addTo(heatLayer);bounds=bounds.concat(pts)});
+    heatLayer.addTo(heatMap);
+    let summary=$('#heatmapSummary');if(summary)summary.textContent=items.length?items.length+' rute · '+Math.round(totalKm)+' km total':'Belum ada rute GPS';
+    if(bounds.length)heatMap.fitBounds(L.latLngBounds(bounds),{padding:[18,18]});
+    setTimeout(()=>{if(!heatMap)return;try{heatMap.invalidateSize();if(bounds.length)heatMap.fitBounds(L.latLngBounds(bounds),{padding:[18,18]})}catch(err){}},80);
+    setTimeout(()=>{try{heatMap&&heatMap.invalidateSize()}catch(err){}},450);
+  }catch(e){console.log(e)}
+}
+
+let ROUTE_CACHE=null,ROUTE_FILTERS={sport:'All',dist:'All',elev:'All',traffic:'Any',sort:'relevant'};
+try{let saved=localStorage.getItem('routeFilters');if(saved)ROUTE_FILTERS=Object.assign(ROUTE_FILTERS,JSON.parse(saved))}catch(e){}
+function saveRouteFilters(){try{localStorage.setItem('routeFilters',JSON.stringify(ROUTE_FILTERS))}catch(e){}}
+function toggleRouteReco(){
+  let body=$('#routeRecoBody'),btn=$('#routeRecoToggle');if(!body||!btn)return;
+  let collapsed=!body.hidden;
+  body.hidden=collapsed;
+  btn.setAttribute('aria-expanded',collapsed?'false':'true');
+  btn.setAttribute('aria-label',collapsed?'Perluas rekomendasi rute baru':'Ciutkan rekomendasi rute baru');
+}
+function trafficNoteFor(mode){
+  if(mode==='quiet')return 'Mode sepi: berangkat pagi (05.30–07.00) atau weekday, hindari jam pulang kerja. Estimasi di bawah cocok untuk start pagi.';
+  if(mode==='moderate')return 'Mode sedang: cocok siang hari atau Sabtu pagi. Tambah 10–15 menit buffer dari estimasi jarak.';
+  if(mode==='busy')return 'Mode ramai: pilih rute pendek/datar dulu, hindari jalan arteri jam 16.00–19.00 dan Minggu pagi yang padat.';
+  return 'Mode bebas: semua rekomendasi ditampilkan tanpa penyesuaian lalu lintas.';
+}
+function routePassesFilters(r){
+  let f=ROUTE_FILTERS;
+  if(f.sport!=='All'&&r.sport!==f.sport)return false;
+  if(f.dist==='short'&&!(r.targetDistanceKm<10))return false;
+  if(f.dist==='medium'&&!(r.targetDistanceKm>=10&&r.targetDistanceKm<=30))return false;
+  if(f.dist==='long'&&!(r.targetDistanceKm>30))return false;
+  if(f.elev==='flat'&&!(r.targetElevationM<100))return false;
+  if(f.elev==='rolling'&&!(r.targetElevationM>=100&&r.targetElevationM<=300))return false;
+  if(f.elev==='hilly'&&!(r.targetElevationM>300))return false;
+  return true;
+}
+function sortRoutes(recs){
+  let s=ROUTE_FILTERS.sort,out=recs.slice();
+  if(s==='distance')out.sort((a,b)=>a.targetDistanceKm-b.targetDistanceKm);
+  else if(s==='distanceDesc')out.sort((a,b)=>b.targetDistanceKm-a.targetDistanceKm);
+  else if(s==='elevation')out.sort((a,b)=>a.targetElevationM-b.targetElevationM);
+  else if(s==='frequent')out.sort((a,b)=>b.basedOnCount-a.basedOnCount);
+  return out;
+}
+function syncRouteFilterUI(){
+  let map={routeFilterSport:'sport',routeFilterDist:'dist',routeFilterElev:'elev',routeFilterTraffic:'traffic',routeFilterSort:'sort'};
+  Object.keys(map).forEach(id=>{let el=document.getElementById(id);if(el)el.value=ROUTE_FILTERS[map[id]]});
+  let note=$('#routeTrafficNote');if(note)note.textContent=trafficNoteFor(ROUTE_FILTERS.traffic);
+}
+async function renderRoutesPage(){
+  syncRouteFilterUI();
+  let body=$('#routeRecoBody');if(!body)return;
+  if(DATA.privacy&&DATA.privacy.hideRoutes){body.innerHTML='<div class="insight"><b>Privasi rute aktif</b><p>Nonaktifkan Privasi Rute di Pengaturan untuk melihat rekomendasi rute baru.</p></div>';let c=$('#routeRecoCount');if(c)c.textContent='';return}
+  if(ROUTE_CACHE&&ROUTE_CACHE.length){paintRouteRecs(ROUTE_CACHE);return}
+  body.innerHTML=inlineSpinner('Menganalisis heatmap rutemu…');
+  try{
+    let res=await gs('getRouteRecommendations',currentAthleteId());
+    if(res.privacyHidden){body.innerHTML='<div class="insight"><b>Privasi rute aktif</b><p>Nonaktifkan Privasi Rute di Pengaturan untuk melihat rekomendasi rute baru.</p></div>';return}
+    if(res.insufficientData){body.innerHTML='<div class="insight"><b>Belum cukup data</b><p>Sinkronkan lebih banyak aktivitas ber-GPS dari Strava dulu supaya coach bisa mengenali pola rutemu.</p></div>';let c=$('#routeRecoCount');if(c)c.textContent='';return}
+    ROUTE_CACHE=res.recommendations||[];
+    paintRouteRecs(ROUTE_CACHE);
+  }catch(e){body.innerHTML='<div class="insight"><b>Gagal memuat rekomendasi</b><p>Coba lagi nanti.</p></div>';console.log(e)}
+}
+function paintRouteRecs(all){
+  let body=$('#routeRecoBody');if(!body)return;
+  let filtered=sortRoutes((all||[]).filter(routePassesFilters));
+  let cnt=$('#routeRecoCount');if(cnt)cnt.textContent=filtered.length?filtered.length+' rute':'';
+  if(!filtered.length){body.innerHTML='<div class="insight"><b>Tidak ada yang cocok dengan filter</b><p>Longgarkan filter jarak/elevasi atau ganti olahraga untuk melihat saran lain.</p></div>';return}
+  body.innerHTML=filtered.map(routeRecoCard).join('');
+  $$('#routeRecoBody [data-reco-basis]').forEach(b=>b.onclick=()=>showDetail(b.dataset.recoBasis));
+}
+async function renderRouteRecommendations(){return renderRoutesPage()}
+function routeRecoCard(r){
+  let sportIcon=r.sport==='Running'?'🏃':r.sport==='Cycling'?'🚴':'⛰️';
+  let cappedNote=r.capped?`<p class="route-reco-note">Jejak GPS ke arah ini baru sejauh itu, jadi sarannya sedikit lebih pendek dari rute biasamu (~${r.usualDistanceKm} km).</p>`:'';
+  let trafficTip=ROUTE_FILTERS.traffic==='quiet'?'Cocok untuk start pagi hari.':ROUTE_FILTERS.traffic==='busy'?'Hindari jam sibuk, pilih jam sepi.':'';
+  let timeChip=ROUTE_FILTERS.traffic==='quiet'?'<span class="readiness-chip">Start ideal 05.30–07.00</span>':ROUTE_FILTERS.traffic==='busy'?'<span class="readiness-chip">Hindari 16.00–19.00</span>':'';
+  return `<div class="insight route-reco"><div class="route-reco-head"><span class="route-reco-arrow" style="transform:rotate(${r.bearingDeg}deg)"><svg><use href="#i-arrow-up"/></svg></span><div><b>${sportIcon} Arah ${esc(r.direction)} · belum pernah dicoba</b><p>Berdasarkan ${r.basedOnCount} rute ${esc(r.sport)} sejenis dari titik start ini${r.basedOnExample?' · terakhir "'+esc(r.basedOnExample)+'"':''}${trafficTip?' · '+trafficTip:''}</p></div></div><div class="route-reco-chips"><span class="readiness-chip">~${r.targetDistanceKm} km</span><span class="readiness-chip">~${r.targetElevationM} m elevasi</span><span class="readiness-chip">${esc(r.sport)}</span>${timeChip}</div>${cappedNote}<div class="route-reco-actions"><a class="btn secondary" href="${esc(r.mapsUrl)}" target="_blank" rel="noopener">Buka arah di Maps ↗</a>${r.basedOnId?`<button type="button" class="btn secondary" data-reco-basis="${esc(r.basedOnId)}">Lihat rute dasar</button>`:''}</div></div>`
+}
+
+function isDarkTheme(){return document.documentElement.getAttribute('data-theme')==='dark'}
+if(window.Chart){
+  Chart.defaults.font.family="-apple-system,'SF Pro Text',system-ui,Inter,sans-serif";
+  Chart.defaults.font.size=11;
+  Chart.defaults.font.weight=600;
+  Chart.defaults.color=COLOR.muted;
+  Chart.defaults.elements.bar.borderRadius={topLeft:6,topRight:6,bottomLeft:0,bottomRight:0};
+  Chart.defaults.elements.bar.borderSkipped=false;
+  Chart.defaults.elements.line.borderWidth=2.5;
+  Chart.defaults.elements.line.capBezierPoints=true;
+  Chart.defaults.elements.point.radius=0;
+  Chart.defaults.elements.point.hoverRadius=5;
+  Chart.defaults.elements.point.hoverBorderWidth=2;
+  Chart.defaults.datasets.bar.maxBarThickness=22;
+  Chart.defaults.datasets.bar.barPercentage=.6;
+  Chart.defaults.datasets.bar.categoryPercentage=.7;
+  Chart.defaults.interaction.mode='index';
+  Chart.defaults.interaction.intersect=false;
+}
+let CHARTS={};
+
+function healthAreaGradient(hex){return function(context){let chart=context.chart,{ctx,chartArea}=chart;if(!chartArea)return null;let g=ctx.createLinearGradient(0,chartArea.top,0,chartArea.bottom);g.addColorStop(0,hex+'4a');g.addColorStop(.65,hex+'12');g.addColorStop(1,hex+'00');return g}}
+
+function healthChartDefaults(){let dark=isDarkTheme();return{
+  responsive:true,maintainAspectRatio:false,
+  layout:{padding:{top:4}},
+  plugins:{
+    legend:{position:'bottom',labels:{boxWidth:8,boxHeight:8,usePointStyle:true,padding:14,font:{size:10.5,weight:700}}},
+    tooltip:{enabled:true,backgroundColor:dark?'#3a3a3c':'#1c1c1eee',titleColor:'#fff',bodyColor:'#fff',titleFont:{size:10.5,weight:700},bodyFont:{size:13,weight:800},padding:{top:9,bottom:9,left:12,right:12},cornerRadius:12,displayColors:false,caretSize:5,boxPadding:3}
+  },
+  scales:{
+    x:{grid:{display:false},border:{display:false},ticks:{maxTicksLimit:7,maxRotation:0,font:{size:10,weight:700}}},
+    y:{grid:{color:COLOR.grid,drawTicks:false},border:{display:false},ticks:{maxTicksLimit:5,padding:8,font:{size:10,weight:700}}}
+  }
+}}
+function deepMerge(base,extra){if(extra==null)return base;if(typeof extra!=='object'||Array.isArray(extra))return extra;let out=Object.assign({},base);for(let k in extra){out[k]=(base&&typeof base[k]==='object'&&!Array.isArray(base[k]))?deepMerge(base[k],extra[k]):extra[k]}return out}
+function ensureCanvas(wrapId,canvasId){let wrap=$('#'+wrapId);if(wrap&&!document.getElementById(canvasId))wrap.innerHTML='<canvas id="'+canvasId+'"></canvas>';return wrap}
+function emptyChart(wrapId,canvasId,msg,action){if(CHARTS[canvasId]){CHARTS[canvasId].destroy();delete CHARTS[canvasId]}let wrap=$('#'+wrapId);if(wrap)wrap.innerHTML='<div class="chart-empty">'+msg+(action||'')+'</div>'}
+function emptySyncAction(){return '<br><button type="button" class="btn secondary" data-empty-action="sync" style="margin-top:10px">Sinkronkan Strava</button>'}
+function renderChart(wrapId,canvasId,type,data,options){if(!window.Chart)return;ensureCanvas(wrapId,canvasId);let el=document.getElementById(canvasId);if(!el)return;if(CHARTS[canvasId]){CHARTS[canvasId].destroy();delete CHARTS[canvasId]}CHARTS[canvasId]=new Chart(el.getContext('2d'),{type:type,data:data,options:deepMerge(healthChartDefaults(),options||{})})}
+
+function formData(f){let o={};new FormData(f).forEach((v,k)=>o[k]=v);return o}
+function setDashboardRange(range){setRangeInputs(range);refreshPills();let v=currentPageView();if(v==='performance'&&SUB_STATE.performance==='intensity')mountRenderer('hrinsight',$('#perfIntensityHost'));else renderPageContent(v)}
+
+function setShareRange(range){let now=new Date(),from=new Date(now),to=new Date(now);if(range==='week'){from=startOfWeek(now);to=new Date(from);to.setDate(from.getDate()+6)}else if(range==='28')from.setDate(now.getDate()-27);else if(range==='month')from=new Date(now.getFullYear(),now.getMonth(),1);else if(range==='year')from=new Date(now.getFullYear(),0,1);$('#shareFrom').value=dateKey(from);$('#shareTo').value=dateKey(to);$$('[data-share-range]').forEach(b=>b.classList.toggle('active',b.dataset.shareRange===range));refreshPills();renderSharing()}
+function zoneClass(zone){let n=String(zone||'Z2').replace(/[^1-5]/g,'').slice(0,1)||'2';return 'zone-'+n}
+function workoutEffort(steps){let totals={Z1:0,Z2:0,Z3:0,Z4:0,Z5:0},all=0;(steps||[]).forEach(s=>{let m=Number(s.minutes)||0,target=String(s.target||''),zone=(target.match(/Z[1-5]/)||['Z2'])[0];totals[zone]+=m;all+=m});return Object.keys(totals).filter(z=>totals[z]).map(z=>({zone:z,minutes:totals[z],pct:all?Math.round(totals[z]/all*100):0}))}
+function dateKey(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function monthRange(){let d=new Date(),from=new Date(d.getFullYear(),d.getMonth(),1),to=new Date(d.getFullYear(),d.getMonth()+1,0);return {from:dateKey(from),to:dateKey(to)}}
+function activityItems(f){f=f||{};let q=(f.search||'').toLowerCase();return (DATA.logs||[]).filter(x=>(!f.from||x.date>=f.from)&&(!f.to||x.date<=f.to)&&(!f.sport||f.sport==='All'||x.sport===f.sport)&&(!q||JSON.stringify(x).toLowerCase().includes(q)))}
+
+function dominantHrZoneFor(items){
+  let zones=DATA.hrZones||[];if(!zones.length)return null;
+  let totals=zones.map(z=>({zone:z.zone,minutes:0}));
+  (items||[]).forEach(x=>{
+    if(!(x.avgHr>0&&x.minutes>0))return;
+    let hr=Math.round(x.avgHr),i=zones.findIndex((z,idx)=>hr>=z.low&&(z.high===''||hr<=z.high||idx===zones.length-1));
+    if(i>=0)totals[i].minutes+=x.minutes;
+  });
+  let total=totals.reduce((s,x)=>s+x.minutes,0),dom=totals.slice().sort((a,b)=>b.minutes-a.minutes)[0];
+  return total&&dom&&dom.minutes?{zone:dom.zone,minutes:Math.round(dom.minutes),percent:Math.round(dom.minutes/total*100),totalMinutes:Math.round(total)}:null;
+}
+function lastNDays(n){let days=[],now=new Date();for(let i=n-1;i>=0;i--){let d=new Date(now);d.setDate(now.getDate()-i);days.push(dateKey(d))}return days}
+function startOfWeek(d){let x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-(x.getDay()+6)%7);return x}
+function weeklyBuckets(logs,weeks){let monday=startOfWeek(new Date()),out=[];for(let w=weeks-1;w>=0;w--){let start=new Date(monday);start.setDate(monday.getDate()-w*7);let end=new Date(start);end.setDate(start.getDate()+6);let sKey=dateKey(start),eKey=dateKey(end);let items=logs.filter(x=>x.date>=sKey&&x.date<=eKey);out.push({label:fmtDateShort(sKey),from:sKey,to:eKey,minutes:items.reduce((a,x)=>a+x.minutes,0),distance:items.reduce((a,x)=>a+x.distance,0),elevation:items.reduce((a,x)=>a+x.elevation,0),count:items.length})}return out}
+function statDelta(cur,prev){if(!prev)return '<span class="stat-delta flat">baru</span>';let pct=Math.round((cur-prev)/prev*100);if(Math.abs(pct)<1)return '<span class="stat-delta flat">= mgg lalu</span>';return pct>0?`<span class="stat-delta up">▲ ${pct}%</span>`:`<span class="stat-delta down">▼ ${Math.abs(pct)}%</span>`}
+
+const TAB_PAGES=['dashboard','training','performance','garage','sharing'];
+const TAB_LABEL={dashboard:'Hari Ini',training:'Latihan',performance:'Performa',garage:'Garasi',sharing:'Berbagi',profile:'Profil','overlay-editor':'Overlay Studio'};
+const TAB_SUBS={training:['plan','calendar','activities','routes'],performance:['fitness','intensity','speed','records'],garage:['bikes','shoes','commute']};
+const PAGE_ALIAS={plan:['training','plan'],calendar:['training','calendar'],activities:['training','activities'],routes:['training','routes'],progress:['performance','fitness'],browse:['dashboard',''],fitness:['performance','fitness'],speed:['performance','speed'],bikes:['garage','bikes']};
+let SUB_STATE={training:'plan',performance:'fitness',garage:'bikes'},ACTIVE_TAB='dashboard';
+try{let saved=JSON.parse(localStorage.getItem('acxSubs')||'{}');Object.keys(SUB_STATE).forEach(k=>{if(saved[k]&&TAB_SUBS[k].indexOf(saved[k])>=0)SUB_STATE[k]=saved[k]})}catch(e){}
+function saveSubs(){try{localStorage.setItem('acxSubs',JSON.stringify(SUB_STATE))}catch(e){}}
+function resolvePage(page,sub){let a=PAGE_ALIAS[page];if(a)return {page:a[0],sub:sub||a[1]||''};return {page:page,sub:sub||''}}
+function renderPageContent(page){
+  try{
+    if(page==='dashboard')renderDashboard();
+    else if(page==='training')renderTrainingSub(SUB_STATE.training);
+    else if(page==='performance')renderPerformanceSub(SUB_STATE.performance);
+    else if(page==='garage')renderGarageSub(SUB_STATE.garage);
+    else if(page==='sharing')renderSharing();
+    else if(page==='overlay-editor')renderOverlayEditor();
+    else if(page==='profile'){renderProfile();renderSettings();if(typeof renderProfileExtras==='function')renderProfileExtras()}
+  }catch(e){console.error('Render '+page+': '+(e&&e.message||e))}
+}
+function currentPageView(){let el=$$('.page').find(x=>!x.hidden);return el?el.dataset.pageView:'dashboard'}
+async function softRefresh(){try{DATA=await gs('getAppData',currentAthleteId());renderPageContent(currentPageView())}catch(e){toast('Gagal menyegarkan data: '+(e.message||e))}}
+function renderHost(){let p=document.querySelector('.page:not([hidden])');if(p){let hs=p.querySelectorAll('[data-render-host]');for(let i=0;i<hs.length;i++){if(!hs[i].closest('[hidden]'))return hs[i]}}return document.getElementById('detailPageBody')}
+function hostAll(sel){let h=renderHost();return h?[...h.querySelectorAll(sel)]:[]}
+function mountRenderer(key,host){let cfg=DETAIL_RENDERERS[key];host=host||renderHost();if(!cfg||!host)return;host.dataset.mounted=key;host.onclick=null;try{host.innerHTML=cfg.render();if(cfg.after)cfg.after()}catch(e){console.error('Mount '+key+': '+(e&&e.message||e));host.innerHTML='<article class="panel"><div class="insight"><b>Bagian ini gagal dimuat</b><p>'+esc(e&&e.message||e)+'</p></div></article>'}}
+let NAV_ORIGIN={};
+let PAGE_SCROLL={};
+function tabOf(page){if(TAB_PAGES.indexOf(page)>=0)return page;if(page==='overlay-editor')return 'sharing';return ACTIVE_TAB}
+function resolveBackTarget(fallback){let cur=currentPageView(),origin=NAV_ORIGIN[cur];if(origin&&origin!==cur&&document.querySelector('.page[data-page-view="'+origin+'"]'))return origin;return fallback}
+function applySubUI(tab){let sub=SUB_STATE[tab],page=document.querySelector('.page[data-page-view="'+tab+'"]');if(!page)return;page.querySelectorAll('.acx-subtab[data-sub]').forEach(b=>{let on=b.dataset.sub===sub;b.classList.toggle('active',on);b.setAttribute('aria-selected',on?'true':'false')});page.querySelectorAll('.acx-sub[data-sub-view]').forEach(v=>v.hidden=v.dataset.subView!==sub);page.dataset.sub=sub;positionSubPill(page)}
+function positionSubPill(page){let nav=page&&page.querySelector('.acx-subnav');if(!nav)return;let act=nav.querySelector('.acx-subtab.active');if(!act)return;let pill=nav.querySelector('.acx-subpill');if(!pill){pill=document.createElement('span');pill.className='acx-subpill';nav.insertBefore(pill,nav.firstChild)}requestAnimationFrame(()=>{if(!act.offsetParent)return;pill.style.width=act.offsetWidth+'px';pill.style.transform='translateX('+act.offsetLeft+'px)';try{if(nav.scrollWidth>nav.clientWidth)act.scrollIntoView({block:'nearest',inline:'center'})}catch(e){}})}
+function setSub(tab,sub,opts){opts=opts||{};if(!TAB_SUBS[tab]||TAB_SUBS[tab].indexOf(sub)<0)return;let changed=SUB_STATE[tab]!==sub;SUB_STATE[tab]=sub;saveSubs();if(currentPageView()!==tab){switchPage(tab,{sub:sub});return}applySubUI(tab);if(changed||opts.force){renderPageContent(tab);refreshPills();let nav=document.querySelector('.page[data-page-view="'+tab+'"] .acx-subnav');if(nav&&!opts.keepScroll){let top=nav.getBoundingClientRect().top+window.scrollY-8;if(window.scrollY>top)window.scrollTo(0,top)}}}
+function switchPage(page,opts){opts=opts||{};let r=resolvePage(page,opts.sub);page=r.page;if(!document.querySelector('.page[data-page-view="'+page+'"]'))page='dashboard';if(r.sub&&TAB_SUBS[page]&&TAB_SUBS[page].indexOf(r.sub)>=0){SUB_STATE[page]=r.sub;saveSubs()}let prevPage=currentPageView();if(prevPage&&prevPage!==page){PAGE_SCROLL[prevPage]=window.scrollY;if(['overlay-editor','detail','profile'].indexOf(page)>=0&&!opts.noOrigin)NAV_ORIGIN[page]=prevPage}$$('.page').forEach(x=>x.hidden=x.dataset.pageView!==page);if(TAB_SUBS[page])applySubUI(page);if(!opts.keepNav){let t=tabOf(page);ACTIVE_TAB=t;$$('#bottomNav [data-page]').forEach(x=>{let on=x.dataset.page===t;x.classList.toggle('active',on);if(on)x.setAttribute('aria-current','page');else x.removeAttribute('aria-current')});document.documentElement.setAttribute('data-tab',t)}$$('.avatar-btn').forEach(x=>x.classList.toggle('active',page==='profile'));renderPageContent(page);refreshPills();if(opts.restoreScroll&&PAGE_SCROLL[page]!=null)window.scrollTo(0,PAGE_SCROLL[page]);else if(!opts.skipScroll)window.scrollTo(0,0)}
+function metricIcon(label){let l=(label||'').toLowerCase(),id='dot';if(l.includes('durasi')||l.includes('waktu'))id='clock';else if(l.includes('jarak')||l.includes('km')||l.includes('longest'))id='pin';else if(l.includes('elevasi')||l.includes('kenaikan')||l.includes('tertinggi'))id='mountain';else if(l.includes('aktivitas')||l.includes('sesi')||l.includes('tercatat'))id='bolt';else if(l.includes('ctl'))id='heart';else if(l.includes('atl'))id='battery';else if(l.includes('kepatuhan')||l.includes('sesuai')||l.includes('target'))id='check';else if(l.includes('pace'))id='shoe';else if(l.includes('speed')||l.includes('kecepatan')||l.includes('sprint'))id='gauge';else if(l.includes('power')||l.includes('watt'))id='bolt';else if(l.includes('kalori'))id='flame';return `<span class="icon"><svg><use href="#i-${id}"/></svg></span>`}
+function metric(label,value,note){return `<article class="metric"><span class="eyebrow"><span class="metric-icon">${metricIcon(label)}</span>${label}</span><b>${value}</b><small>${note}</small></article>`}
+
+function animateCountUp(el){if(el.dataset.counting)return;let text=el.textContent.trim(),m=text.match(/^(-?[\d.,]+)(.*)$/);if(!m)return;let numStr=m[1].replace(/,/g,''),suffix=m[2],end=parseFloat(numStr);if(isNaN(end))return;let decimals=(numStr.split('.')[1]||'').length,dur=650,startTime=null;el.dataset.counting='1';function step(ts){if(!startTime)startTime=ts;let p=Math.min(1,(ts-startTime)/dur),eased=1-Math.pow(1-p,3),val=end*eased;el.textContent=val.toFixed(decimals)+suffix;if(p<1)requestAnimationFrame(step);else{el.textContent=end.toFixed(decimals)+suffix;delete el.dataset.counting}}requestAnimationFrame(step)}
+function animateMetricsIn(root){(root||document).querySelectorAll('.metric b, .predict-card b, .detail-metric b').forEach(animateCountUp)}
+
+function positionPill(container){let pill=container.querySelector('.sub-tab-pill'),active=container.querySelector('.sub-tab.active');if(!pill||!active||!container.offsetParent)return;pill.style.width=active.offsetWidth+'px';pill.style.transform='translateX('+active.offsetLeft+'px)'}
+function initSubTabPills(){$$('.sub-tabs').forEach(c=>{if(!c.querySelector('.sub-tab-pill')){let pill=document.createElement('span');pill.className='sub-tab-pill';c.insertBefore(pill,c.firstChild)}positionPill(c)})}
+function refreshPills(){requestAnimationFrame(()=>$$('.sub-tabs').forEach(positionPill))}
+window.addEventListener('resize',refreshPills);
+
+function profilePhotoStyle(photo){return photo?` style="background-image:url('${esc(photo)}')"`:''}
+
+function ringAnimate(id,value,radius){let c=2*Math.PI*radius,val=Math.max(0,Math.min(100,value||0)),circle=$('#'+id);if(!circle)return;circle.style.transition='none';circle.style.strokeDasharray='0 '+c;circle.getBoundingClientRect();requestAnimationFrame(()=>{circle.style.transition='';circle.style.strokeDasharray=(val/100*c)+' '+c})}
+
+function drawGauge(value,color){let hex=color==='red'?COLOR.red:color==='orange'?COLOR.yellow:COLOR.green,circle=$('#gaugeCircle');if(circle)circle.style.stroke=hex;let dot=$('#dashRingDotTsb');if(dot)dot.style.background=hex;ringAnimate('gaugeCircle',value,52)}
+function tsbScore(tsb){return Math.max(0,Math.min(100,Math.round(50+tsb*1.2)))}
+
+function renderFitnessChart(){let series=(DATA.trainingLoad||{}).series||[];if(!series.length)return emptyChart('fitnessChartWrap','fitnessChart','Sinkronkan '+stravaTag()+' untuk melihat tren training load.',emptySyncAction());
+  renderChart('fitnessChartWrap','fitnessChart','bar',{labels:series.map(x=>fmtDateShort(x.date)),datasets:[
+    {type:'bar',label:'TSB (form)',data:series.map(x=>x.tsb),backgroundColor:series.map(x=>x.tsb<-10?'#ffb3a8':x.tsb>15?'#9ee6ae':COLOR.grid),borderRadius:4,barPercentage:.5,categoryPercentage:.75,order:3},
+    {type:'line',label:'CTL (fitness)',data:series.map(x=>x.ctl),borderColor:COLOR.blue,backgroundColor:healthAreaGradient(COLOR.blue),fill:true,tension:.35,pointRadius:0,borderWidth:2.5,order:1},
+    {type:'line',label:'ATL (fatigue)',data:series.map(x=>x.atl),borderColor:COLOR.orange,backgroundColor:healthAreaGradient(COLOR.orange),fill:true,tension:.35,pointRadius:0,borderWidth:2.5,order:2}
+  ]},{scales:{y:{grid:{color:COLOR.grid}},x:{ticks:{color:(ctx)=>{try{let lbl=fmtDateShort(DATA.today||'');return ctx.chart.data.labels[ctx.index]===lbl?COLOR.orange:COLOR.muted}catch(e){return COLOR.muted}}}}}});
+  let __fc=document.getElementById('fitnessChart');if(__fc)__fc.title='Label tanggal hari ini berwarna oranye';}
+
+function renderVolumeChart(items){let days=lastNDays(14),bySport=s=>days.map(d=>items.filter(x=>x.date===d&&x.sport===s).reduce((a,x)=>a+x.minutes,0)/60);if(!items.length)return emptyChart('volumeChartWrap','volumeChart','Belum ada aktivitas pada filter ini.');
+  let planSet={};(DATA.plan||[]).forEach(x=>{if(x.date)planSet[x.date]=1});let planTick=days.map(d=>!!planSet[d]);
+  renderChart('volumeChartWrap','volumeChart','bar',{labels:days.map(fmtDateShort),datasets:[
+    {label:'Cycling',data:bySport('Cycling'),backgroundColor:COLOR.orange,barPercentage:.55,categoryPercentage:.7},
+    {label:'Running',data:bySport('Running'),backgroundColor:COLOR.blue,barPercentage:.55,categoryPercentage:.7},
+    {label:'Lainnya',data:bySport('Other'),backgroundColor:'#c7c7cc',barPercentage:.55,categoryPercentage:.7}
+  ]},{scales:{x:{stacked:true,ticks:{color:(ctx)=>{try{return planTick[ctx.index]?COLOR.blue:COLOR.muted}catch(e){return COLOR.muted}}}},y:{stacked:true,grid:{color:COLOR.grid},title:{display:true,text:'jam',font:{size:10,weight:700}}}}});
+  let __vc=document.getElementById('volumeChart');if(__vc)__vc.title='Label biru = hari ada plan latihan';}
+
+function renderWeeklyDistanceChart(){let logs=DATA.logs||[],wk=weeklyBuckets(logs,8);if(!logs.length)return emptyChart('weeklyDistanceChartWrap','weeklyDistanceChart','Belum ada data mingguan.');
+  renderChart('weeklyDistanceChartWrap','weeklyDistanceChart','bar',{labels:wk.map(x=>x.label),datasets:[
+    {type:'bar',label:'Jarak (km)',data:wk.map(x=>+x.distance.toFixed(1)),backgroundColor:COLOR.orange,barPercentage:.5,categoryPercentage:.65,yAxisID:'y'},
+    {type:'line',label:'Elevasi (m)',data:wk.map(x=>Math.round(x.elevation)),borderColor:COLOR.ink2,backgroundColor:COLOR.ink2,tension:.35,borderWidth:2,pointRadius:0,pointHoverRadius:4,yAxisID:'y1'}
+  ]},{scales:{y:{grid:{color:COLOR.grid},position:'left',title:{display:true,text:'km',font:{size:10,weight:700}}},y1:{position:'right',grid:{display:false},border:{display:false},title:{display:true,text:'m',font:{size:10,weight:700}}}}})}
+</script>

@@ -1,0 +1,206 @@
+<script>
+'use strict';
+
+function attachSheetDrag(handleId,boxId,closeFn){
+  let handle=$('#'+handleId);if(!handle)return;
+  let box=$('#'+boxId),startY=0,dy=0,dragging=false;
+  handle.addEventListener('touchstart',e=>{if(window.innerWidth>=1000)return;startY=e.touches[0].clientY;dy=0;dragging=true;box.classList.add('dragging')},{passive:true});
+  handle.addEventListener('touchmove',e=>{if(!dragging)return;dy=Math.max(0,e.touches[0].clientY-startY);box.style.transform='translateY('+dy+'px)'},{passive:true});
+  handle.addEventListener('touchend',()=>{if(!dragging)return;dragging=false;box.classList.remove('dragging');if(dy>90){closeFn()}else{box.style.transform=''}});
+}
+
+function initPullToRefresh(){
+  let ind=$('#ptrIndicator');if(!ind)return;
+  let label=$('#ptrLabel'),startY=0,dist=0,pulling=false,startTarget=null;const THRESHOLD=84,MAX=110;
+  function loginOpen(){let ls=$('#loginScreen');return ls&&!ls.hidden}
+  function modalOpen(){let m=$('#modal');return m&&m.classList.contains('show')}
+  document.addEventListener('touchstart',e=>{
+    if(window.innerWidth>=1000||loginOpen()||modalOpen()||window.scrollY>4||LOAD_BUSY)return;
+    if(e.touches.length>1)return;
+    let t=e.target;if(t.closest&&(t.closest('input,select,textarea,button,a,.fab-stack,.popup-overlay,.modal')))return;
+    startY=e.touches[0].clientY;dist=0;pulling=true;startTarget=t;
+  },{passive:true});
+  document.addEventListener('touchmove',e=>{
+    if(!pulling)return;
+    if(window.scrollY>4){pulling=false;dist=0;ind.style.height='0px';ind.classList.remove('ready');return}
+    let delta=e.touches[0].clientY-startY;
+    if(delta<=0){dist=0;ind.style.height='0px';ind.classList.remove('ready');return}
+    dist=Math.min(delta*0.45,MAX);
+    ind.style.height=dist+'px';
+    ind.classList.toggle('ready',dist>=THRESHOLD)
+  },{passive:true});
+  document.addEventListener('touchend',async()=>{
+    if(!pulling)return;pulling=false;
+    if(dist>=THRESHOLD){
+      if(Date.now()-LAST_PTR_LOAD<8000||LOAD_BUSY){ind.classList.remove('ready');ind.style.height='0px';dist=0;return}
+      LAST_PTR_LOAD=Date.now();
+      ind.classList.add('loading');label.textContent='Menyinkronkan...';ind.style.height=THRESHOLD+'px';
+      try{await load()}catch(e){}
+      ind.classList.remove('loading','ready');label.textContent='Tarik untuk sinkronkan';ind.style.height='0px';dist=0;
+    }else{
+      ind.classList.remove('ready');ind.style.height='0px';dist=0;
+    }
+  });
+}
+
+async function load(){if(LOAD_BUSY)return;LOAD_BUSY=true;let first=!$('#app')||$('#app').hidden;try{let __ld=$('#loading');if(__ld){if(!LOADING_SKELETON_HTML)LOADING_SKELETON_HTML=__ld.innerHTML;else __ld.innerHTML=LOADING_SKELETON_HTML}showGlobalLoader('Memuat data…');if(first){$('#loading').hidden=false;$('#app').hidden=true}let keepPro=DATA&&DATA.pro,keepGarage=DATA&&DATA.bikeGarage;DATA=await gs('getAppData',currentAthleteId());if(keepGarage&&!DATA.bikeGarage)DATA.bikeGarage=keepGarage;ROUTE_CACHE=null;PLAN_FORM=null;PLAN_DONUT_FILTER=null;compareSelection=[];let n=DATA.profile?.nama||SESSION.nama||'Athlete',photo=DATA.profile?.profilePhoto||'';setAvatarEls(n,photo);$$('.js-athlete-name').forEach(el=>el.textContent=n);let pin=$('#profileIdName');if(pin)pin.textContent=n;let pis=$('#profileIdSub');if(pis)pis.textContent=(DATA.recommendation||{}).level||'Siap berlatih';$('#loading').hidden=true;$('#app').hidden=false;let v=currentPageView();if(v==='detail'){closeDetailPage()}else{renderPageContent(v)}requestAnimationFrame(()=>{initSubTabPills();$$('.page:not([hidden])').forEach(positionSubPill)})}catch(e){console.error(e);$('#loading').hidden=false;$('#loading').innerHTML=inlineSpinner('Gagal memuat, coba lagi…');toast('Gagal memuat data')}hideGlobalLoader();LOAD_BUSY=false}
+async function loadStrava(){try{let s=await gs('getStravaStatus',currentAthleteId());STRAVA_CONNECTED=!!s.connected;document.documentElement.setAttribute('data-strava',s.connected?'on':'off');let st=$('#syncState');if(st)st.innerHTML=s.connected?stravaTag()+' tersambung':stravaTag()+' belum tersambung';let sub=$('#syncStateSub');if(sub)sub.textContent=s.connected?('Akun: '+(s.athlete||'atlet')+'. Tarik aktivitas terbaru kapan saja.'):'Hubungkan akun agar aktivitas masuk otomatis.';let cl=document.querySelector('#stravaConnect .js-connect-label'),cs=document.querySelector('#stravaConnect .js-connect-sub');if(cl)cl.innerHTML=s.connected?'Putuskan '+stravaTag():'Hubungkan '+stravaTag();if(cs)cs.textContent=s.connected?'Hentikan akses aplikasi ke akun Strava':'Izinkan akses data aktivitas';let sc=$('#stravaConnect');if(sc){sc.classList.toggle('is-danger',!!s.connected);sc.onclick=()=>s.connected?(confirm('Putuskan koneksi Strava?')&&disconnectStrava()):connectStrava(s)}let ss=$('#stravaSync');if(ss){ss.hidden=!s.connected;ss.onclick=syncStrava}let badge=$('#dashboardSyncState');if(badge)badge.textContent=s.connected?'Strava tersambung':'Strava belum tersambung';$$('.acx-syncbtn').forEach(b=>b.title=s.connected?'Strava tersambung · sinkronisasi':'Strava belum tersambung');let ps=$('#profileSyncState');if(ps)ps.innerHTML=s.connected?stravaTag()+' tersambung · '+esc(s.athlete||''):stravaTag()+' belum tersambung';if(currentPageView()==='dashboard'&&!(DATA.logs||[]).length){try{renderDashboard()}catch(e){}}}catch(e){STRAVA_CONNECTED=false;document.documentElement.setAttribute('data-strava','off');let st=$('#syncState');if(st)st.textContent='Status sinkronisasi tidak tersedia'}}
+function connectStrava(s){if(!s.configured)return toast('Isi kredensial '+stravaTag()+' di Script Properties');window.open(s.authUrl,'_blank','noopener')}
+async function disconnectStrava(){showGlobalLoader('Memutus Strava…');await gs('disconnectStrava',currentAthleteId());hideGlobalLoader();toast(stravaTag()+' diputus');loadStrava()}
+async function syncStrava(){if(LOAD_BUSY){toast('Masih memuat, tunggu sebentar…');return}let root=document.documentElement,__syncT0=Date.now(),__syncT=setInterval(()=>{let t=$('#globalLoaderText');if(t)t.textContent='Menyinkronkan Strava… '+Math.round((Date.now()-__syncT0)/1000)+' dtk'},1000);root.classList.add('is-syncing');try{let p=$('#syncPopup');if(p)p.hidden=true;showGlobalLoader('Menyinkronkan Strava…');let r=await gs('syncStravaAll',currentAthleteId());await load();await loadStrava();clearInterval(__syncT);hideGlobalLoader();let next=DATA.dashboardPlan?`${DATA.dashboardPlanDay||'Plan berikutnya'}: ${DATA.dashboardPlan.title} ${duration(DATA.dashboardPlan.minutes)}`:'Susun plan mingguan untuk arahan berikutnya';toast(`${r.imported||0} aktivitas masuk. ${next}`)}catch(e){clearInterval(__syncT);hideGlobalLoader();toast('Sinkronisasi gagal: '+(e.message||e))}root.classList.remove('is-syncing')}
+
+async function initSession(){
+
+  showLoginScreen();
+}
+async function showLoginScreen(){
+  $('#appShell').hidden=true;$('#bottomNav').hidden=true;
+  $('#loginScreen').hidden=false;$('#loading').hidden=true;$('#app').hidden=true;
+  setAuthMode('login');
+}
+function setAuthMode(mode){
+  let isLogin=mode==='login';
+  $('#loginForm').hidden=!isLogin;$('#loginForm').reset();
+  $('#registerForm').hidden=isLogin;$('#registerForm').reset();
+  setBtnLoading($('#loginSubmitBtn'),false);setBtnLoading($('#registerSubmitBtn'),false);
+  $('#authIntro').textContent=isLogin?'Masuk dengan akunmu untuk melihat training load pribadimu.':'Buat akun barumu. Setiap akun bersifat pribadi.';
+  $('#authToggle').textContent=isLogin?'Belum punya akun? Daftar di sini':'Sudah punya akun? Masuk di sini';
+  $('#authToggle').dataset.mode=isLogin?'register':'login';
+  clearAuthError();
+}
+function setBtnLoading(btn,loading){ if(!btn)return; btn.disabled=loading; btn.classList.toggle('is-loading',loading) }
+function clearAuthError(){ let el=$('#authError'); if(!el)return; el.hidden=true; el.textContent=''; $$('#loginForm input,#registerForm input').forEach(i=>i.classList.remove('auth-field-invalid')) }
+function showAuthError(msg){
+  let el=$('#authError'); if(!el)return; el.textContent=msg; el.hidden=false;
+  let visibleForm=$('#loginForm').hidden?$('#registerForm'):$('#loginForm');
+  visibleForm.querySelectorAll('input').forEach(i=>i.classList.add('auth-field-invalid'));
+}
+async function doLoginSubmit(nama,pin,btn){
+  clearAuthError();setBtnLoading(btn,true);showGlobalLoader('Masuk…');
+  try{
+    let res=await gs('loginAthlete',nama,pin);
+    if(!res.ok){hideGlobalLoader();showAuthError(res.error||'Nama atau sandi salah.');setBtnLoading(btn,false);return}
+    SESSION={athleteId:res.athleteId,nama:res.nama};
+    setBtnLoading(btn,false);hideGlobalLoader();
+    $('#loginScreen').hidden=true;startApp();
+  }catch(e){hideGlobalLoader();showAuthError('Gagal login: '+(e.message||e));setBtnLoading(btn,false)}
+}
+async function doRegisterSubmit(nama,pin,btn){
+  clearAuthError();setBtnLoading(btn,true);
+  try{await gs('createAthlete',nama,pin);setBtnLoading(btn,false);await doLoginSubmit(nama,pin,btn)}
+  catch(e){showAuthError(e.message||String(e));setBtnLoading(btn,false)}
+}
+function logoutAthlete(){SESSION={athleteId:'',nama:''};STRAVA_CONNECTED=null;ROUTE_CACHE=null;WR_CUR=null;compareSelection=[];try{if(window.renderCompareBar)renderCompareBar()}catch(e){}try{Object.keys(CHARTS).forEach(k=>{try{CHARTS[k].destroy()}catch(err){}delete CHARTS[k]})}catch(e){}try{if(heatMap){heatMap.remove();heatMap=null}heatLayer=null}catch(e){}DATA={};DETAIL_STACK=[];try{switchPage('dashboard',{noOrigin:true})}catch(e){}setBtnLoading($('#loginSubmitBtn'),false);setBtnLoading($('#registerSubmitBtn'),false);hideGlobalLoader();$('#app').hidden=true;$('#appShell').hidden=true;$('#bottomNav').hidden=true;showLoginScreen()}
+function startApp(){$('#loginScreen').hidden=true;$('#appShell').hidden=false;$('#bottomNav').hidden=false;document.documentElement.setAttribute('data-tab','dashboard');load();loadStrava();requestAnimationFrame(initSubTabPills)}
+
+function hydrateStravaSlots(){let t=stravaTag();$$('.strava-logo-slot').forEach(x=>x.innerHTML=t)}
+
+function systemPrefersDark(){try{if(window.matchMedia)return window.matchMedia('(prefers-color-scheme: dark)').matches}catch(e){}let h=new Date().getHours();return h>=18||h<6}
+function resolveAutoTheme(){return systemPrefersDark()?'dark':'light'}
+function applyTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('theme',t)}catch(e){}let meta=document.querySelector('meta[name=theme-color]');if(meta)meta.setAttribute('content',t==='dark'?'#0b0b0f':'#f4f4f7')}
+function updateThemeSegUI(mode){let txt=mode==='auto'?'Otomatis · ikut sistem/jam HP':(mode==='dark'?'Selalu gelap':'Selalu terang');$$('#themeSeg [data-theme-mode],#themeSegLogin [data-theme-mode]').forEach(b=>b.classList.toggle('active',b.dataset.themeMode===mode));let label=$('#themeToggleLabel');if(label)label.textContent=txt;let labelLogin=$('#themeToggleLabelLogin');if(labelLogin)labelLogin.textContent=txt}
+function setThemeMode(mode){THEME_MODE=mode;try{localStorage.setItem('themeMode',mode)}catch(e){}applyTheme(mode==='auto'?resolveAutoTheme():mode);updateThemeSegUI(mode);refreshChartsOnly()}
+
+const VIEW_LABEL={auto:'Otomatis · mengikuti lebar layar',desktop:'Desktop · tata letak lebar',mobile:'HP · tata letak ringkas'};
+function updateViewUI(){
+  let VM=window.ViewMode;if(!VM)return;
+  let toMobile=VM.layout()==='desktop',fab=$('#viewFab');
+  if(fab){let t=toMobile?'Ganti ke tampilan HP':'Ganti ke tampilan desktop',u=fab.querySelector('use');fab.title=t;fab.setAttribute('aria-label',t);if(u)u.setAttribute('href',toMobile?'#i-phone':'#i-desktop')}
+  $$('#viewSeg [data-view-mode],#viewSegLogin [data-view-mode]').forEach(b=>b.classList.toggle('active',b.dataset.viewMode===VM.mode));
+  let vt=VIEW_LABEL[VM.mode]||VIEW_LABEL.auto,lb=$('#viewModeLabel');if(lb)lb.textContent=vt;let lbLogin=$('#viewModeLabelLogin');if(lbLogin)lbLogin.textContent=vt;
+}
+function refreshChartsOnly(){try{Object.keys(CHARTS).forEach(k=>{try{CHARTS[k]&&CHARTS[k].update()}catch(e){}})}catch(e){}refreshPills()}
+function initViewMode(){
+  let VM=window.ViewMode;if(!VM)return;
+  let deb=null;
+  VM.onchange=()=>{updateViewUI();clearTimeout(deb);deb=setTimeout(()=>{try{refreshChartsOnly()}catch(e){}},350)};
+  let fab=$('#viewFab');
+  if(fab)fab.onclick=()=>{let toMobile=VM.layout()==='desktop';VM.set(toMobile?'mobile':'desktop');collapseFab();toast(toMobile?'Tampilan HP':'Tampilan desktop')};
+  $$('#viewSeg [data-view-mode],#viewSegLogin [data-view-mode]').forEach(b=>b.onclick=()=>VM.set(b.dataset.viewMode));
+  updateViewUI();
+}
+function collapseFab(){let s=$('#fabStack');if(s)s.classList.add('fab-collapsed');let m=$('#fabMain');if(m)m.setAttribute('aria-expanded','false')}
+function toggleFab(){let s=$('#fabStack');if(!s)return;s.classList.toggle('fab-collapsed');let m=$('#fabMain');if(m)m.setAttribute('aria-expanded',s.classList.contains('fab-collapsed')?'false':'true')}
+function acxDelegatedClick(e){
+  let t=e.target;if(!t||!t.closest)return;
+  let sub=t.closest('.acx-subtab[data-sub]');if(sub){let nav=sub.closest('[data-subnav]');if(nav){setSub(nav.dataset.subnav,sub.dataset.sub);return}}
+  let el=t.closest('[data-open-search],[data-open-sync],[data-open-profile],[data-go],[data-detail],[data-action]');if(!el||el.onclick)return;
+  if(el.closest('.ovl-studio'))return;
+  if(el.hasAttribute('data-open-search')){openSearch();return}
+  if(el.hasAttribute('data-open-sync')){openSyncSheet();return}
+  if(el.hasAttribute('data-open-profile')){openProfile();if(el.dataset.anchor)setTimeout(()=>focusAnchor(el.dataset.anchor),180);return}
+  if(el.dataset.go){goWithAnchor(el.dataset.go,el.dataset.progressTab,el.dataset.anchor,el.dataset.sub);if(el.dataset.planCustom)setTimeout(()=>{try{setPlanTab('custom')}catch(x){}},60);return}
+  if(el.dataset.detail){openDetailPage(el.dataset.detail,el);return}
+  if(el.dataset.action){runBrowseAction(el.dataset.action,el.dataset.anchor)}
+}
+function acxNavClick(btn){
+  let page=btn.dataset.page,cur=currentPageView();
+  if(cur===page){window.scrollTo({top:0,behavior:'smooth'});return}
+  if(tabOf(cur)===page&&(cur==='detail'||cur==='profile'||cur==='overlay-editor')){DETAIL_STACK=[];switchPage(page,{restoreScroll:true});return}
+  switchPage(page,{restoreScroll:true});
+}
+function acxKeydown(e){
+  let tag=(e.target&&e.target.tagName)||'',typing=/INPUT|TEXTAREA|SELECT/.test(tag)||(e.target&&e.target.isContentEditable);
+  let pal=$('#searchPopup');
+  if(e.key==='Escape'){if(pal&&!pal.hidden){closeSearch();return}['syncPopup','feedbackPopup'].forEach(id=>{let p=$('#'+id);if(p)p.hidden=true});let m=$('#modal');if(m&&m.classList.contains('show'))closeModal();return}
+  if(typing)return;
+  let app=$('#appShell');if(!app||app.hidden)return;
+  if(e.key==='/'||((e.metaKey||e.ctrlKey)&&(e.key==='k'||e.key==='K'))){e.preventDefault();openSearch();return}
+  if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&/^[1-5]$/.test(e.key)){let b=$$('#bottomNav [data-page]')[Number(e.key)-1];if(b)acxNavClick(b)}
+}
+function on(id,ev,fn){let el=document.getElementById(id);if(el)el[ev]=fn;return el}
+function init(){initViewMode();hydrateStravaSlots();let savedMode='auto';try{savedMode=localStorage.getItem('themeMode')||'auto'}catch(e){}THEME_MODE=savedMode;applyTheme(savedMode==='auto'?resolveAutoTheme():savedMode);updateThemeSegUI(savedMode);
+  $$('#themeSeg [data-theme-mode],#themeSegLogin [data-theme-mode]').forEach(b=>b.onclick=()=>setThemeMode(b.dataset.themeMode));
+  let ldp=$('#loginDisplayPopup');on('loginDisplayFab','onclick',()=>{if(ldp)ldp.hidden=false});on('loginDisplayPopupClose','onclick',()=>{if(ldp)ldp.hidden=true});if(ldp)ldp.onclick=e=>{if(e.target.id==='loginDisplayPopup')ldp.hidden=true};attachSheetDrag('loginDisplaySheetHandle','loginDisplayPopupBox',()=>{if(ldp)ldp.hidden=true});
+  try{let mq=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)');if(mq){let onSysTheme=()=>{if(THEME_MODE==='auto'){applyTheme(resolveAutoTheme());refreshChartsOnly()}};if(mq.addEventListener)mq.addEventListener('change',onSysTheme);else if(mq.addListener)mq.addListener(onSysTheme)}}catch(e){}
+  setInterval(()=>{if(THEME_MODE==='auto'&&!document.hidden){let next=resolveAutoTheme();if(next!==document.documentElement.getAttribute('data-theme')){applyTheme(next);refreshChartsOnly()}}},900000);
+  let monday=startOfWeek(new Date()),sunday=new Date(monday);sunday.setDate(monday.getDate()+6);window.__dashRange='week';
+  ['dashFrom','shareFrom'].forEach(id=>{let el=$('#'+id);if(el)el.value=dateKey(monday)});['dashTo','shareTo'].forEach(id=>{let el=$('#'+id);if(el)el.value=dateKey(sunday)});
+  ['activityFrom','activityTo'].forEach(id=>{let el=$('#'+id);if(el)el.value=''});
+  initSession();
+  on('reloadBtn','onclick',()=>{let p=$('#syncPopup');if(p)p.hidden=true;toast('Memuat ulang data dari Spreadsheet');load()});
+  on('loginForm','onsubmit',e=>{e.preventDefault();let f=formData(e.target);doLoginSubmit(f.nama,f.pin,$('#loginSubmitBtn'))});
+  on('registerForm','onsubmit',e=>{e.preventDefault();let f=formData(e.target);doRegisterSubmit(f.nama,f.pin,$('#registerSubmitBtn'))});
+  on('authToggle','onclick',e=>setAuthMode(e.target.dataset.mode));
+  $$('#loginForm input,#registerForm input').forEach(i=>i.oninput=clearAuthError);
+  on('logoutBtn','onclick',()=>{if(confirm('Keluar dari akun ini?'))logoutAthlete()});
+  $$('#bottomNav [data-page]').forEach(x=>x.onclick=()=>acxNavClick(x));
+  on('applyDash','onclick',renderDashboard);on('applyShare','onclick',renderSharing);
+  ['activitySearch','activitySport','activityFrom','activityTo'].forEach(id=>{let el=$('#'+id);if(el)el.oninput=()=>{renderActivities();if(id!=='activitySearch')renderActivityQuick()}});
+  ['topSport','topMetric'].forEach(id=>{let el=$('#'+id);if(el)el.onchange=renderTop10});
+  on('profileSport','onchange',renderProfile);
+  on('profilePhotoInput','onchange',async e=>{let file=e.target.files[0];if(!file)return;try{DATA=await gs('saveProfilePhoto',await resizePhoto(file),currentAthleteId());renderSettings();let n=DATA.profile?.nama||'Athlete',photo=DATA.profile?.profilePhoto||'';setAvatarEls(n,photo);toast('Foto profil tersimpan')}catch(err){toast('Foto profil gagal disimpan')}});
+  on('removeProfilePhoto','onclick',async()=>{DATA=await gs('saveProfilePhoto','',currentAthleteId());renderSettings();setAvatarEls(DATA.profile?.nama||'Athlete','');toast('Foto profil dihapus')});
+  on('profileCloseBtn','onclick',closeProfile);on('profileBackBtn','onclick',closeProfile);
+  $$('[data-back-to]').forEach(b=>b.onclick=()=>switchPage(resolveBackTarget(b.dataset.backTo),{restoreScroll:true}));
+  $$('.sub-tab[data-plan-tab]').forEach(b=>b.onclick=()=>setPlanTab(b.dataset.planTab));
+  $$('[data-close]').forEach(x=>x.onclick=closeModal);on('modal','onclick',e=>{if(e.target.id==='modal')closeModal()});
+  on('metricsForm','onsubmit',async e=>{e.preventDefault();DATA=await gs('saveTrainingSettings',formData(e.target),currentAthleteId());renderSettings();toast('Pengukuran tersimpan')});
+  on('scheduleForm','onsubmit',async e=>{e.preventDefault();DATA=await gs('saveTrainingSettings',formData(e.target),currentAthleteId());renderSettings();toast('Jadwal tersimpan')});
+  on('goalsForm','onsubmit',async e=>{e.preventDefault();DATA=await gs('saveTrainingSettings',formData(e.target),currentAthleteId());renderSettings();toast('Target dan catatan tersimpan')});
+  on('hideRoutes','onchange',async e=>{DATA=await gs('savePrivacy',{hideRoutes:e.target.checked},currentAthleteId());toast(e.target.checked?'Peta rute disembunyikan':'Peta rute ditampilkan')});
+  on('openWrapped','onclick',openWrappedCard);on('downloadReport','onclick',downloadReportPdf);on('shareTextBtn','onclick',shareSummaryText);
+  on('ovlExportBtn','onclick',ovlExport);on('ovlUndoBtn','onclick',ovlUndo);
+  on('ovlActivitySelect','onchange',e=>{OVL.activityId=e.target.value;ovlSave();ovlDraw();ovlRenderPanes();ovlFetchStreams()});
+  $$('#ovlTabs [data-ovl-tab]').forEach(b=>b.onclick=()=>{OVL_TAB=b.dataset.ovlTab;ovlRenderPanes()});ovlInitStage();
+  $$('#heatmapTabs [data-heat-sport]').forEach(b=>b.onclick=()=>{$$('#heatmapTabs [data-heat-sport]').forEach(x=>x.classList.remove('active'));b.classList.add('active');initHeatmap(b.dataset.heatSport);refreshPills()});
+  on('routeRecoToggle','onclick',toggleRouteReco);on('calPrevMonth','onclick',calGoPrevMonth);on('calNextMonth','onclick',calGoNextMonth);
+  on('compareGo','onclick',showCompare);on('compareClear','onclick',()=>{compareSelection=[];renderCompareBar()});
+  let fy=$('#footerYear');if(fy)fy.textContent=new Date().getFullYear();
+  let ff=$('#feedbackForm');if(ff)ff.onsubmit=async e=>{e.preventDefault();let btn=ff.querySelector('button');btn.disabled=true;try{let res=await gs('submitFeedback',formData(ff),currentAthleteId());if(res&&res.ok){toast('Terima kasih! Masukanmu sudah terkirim');ff.reset();$('#feedbackPopup').hidden=true}else{toast('Masukan gagal terkirim, coba lagi')}}catch(err){toast('Masukan gagal terkirim, coba lagi')}btn.disabled=false};
+  on('openFeedback','onclick',()=>{$('#feedbackPopup').hidden=false});
+  on('feedbackPopupClose','onclick',()=>{$('#feedbackPopup').hidden=true});on('feedbackPopup','onclick',e=>{if(e.target.id==='feedbackPopup')$('#feedbackPopup').hidden=true});
+  on('syncPopupClose','onclick',()=>{$('#syncPopup').hidden=true});on('syncPopup','onclick',e=>{if(e.target.id==='syncPopup')$('#syncPopup').hidden=true});
+  on('detailPageBack','onclick',closeDetailPage);
+  attachSheetDrag('sheetHandle','detailBox',closeModal);attachSheetDrag('feedbackSheetHandle','feedbackPopupBox',()=>{$('#feedbackPopup').hidden=true});attachSheetDrag('syncSheetHandle','syncPopupBox',()=>{$('#syncPopup').hidden=true});
+  initPullToRefresh();
+  let si=$('#acxSearch');if(si){si.oninput=renderSearch;si.onkeydown=searchKey}on('acxSearchClose','onclick',closeSearch);on('searchPopup','onclick',e=>{if(e.target.id==='searchPopup')closeSearch()});
+  ['routeFilterSport','routeFilterDist','routeFilterElev','routeFilterTraffic','routeFilterSort'].forEach(id=>{let el=document.getElementById(id);if(el)el.onchange=()=>{let m={routeFilterSport:'sport',routeFilterDist:'dist',routeFilterElev:'elev',routeFilterTraffic:'traffic',routeFilterSort:'sort'};ROUTE_FILTERS[m[id]]=el.value;saveRouteFilters();syncRouteFilterUI();if(ROUTE_CACHE)paintRouteRecs(ROUTE_CACHE);else renderRoutesPage();refreshPills()}});
+  document.addEventListener('click',acxDelegatedClick);document.addEventListener('keydown',acxKeydown);
+  document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target&&e.target.matches&&e.target.matches('article[role=button]')){e.preventDefault();e.target.click()}});
+  let onScroll=()=>document.documentElement.classList.toggle('is-scrolled',(window.scrollY||0)>8);window.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('resize',()=>{clearTimeout(window.__pillT);window.__pillT=setTimeout(()=>$$('.page:not([hidden])').forEach(positionSubPill),120)});
+  initNavScrollState();
+  window.__ACS_BOOTED=true}
+document.addEventListener('DOMContentLoaded',()=>{init();$$('[data-dash-range]').forEach(b=>b.onclick=()=>setDashboardRange(b.dataset.dashRange));$$('[data-share-range]').forEach(b=>b.onclick=()=>setShareRange(b.dataset.shareRange));$$('[data-dash-chart]').forEach(b=>b.onclick=()=>setDashChart(b.dataset.dashChart));$$('[data-activity-view]').forEach(b=>b.onclick=()=>{ACTIVITY_VIEW=b.dataset.activityView;$$('[data-activity-view]').forEach(x=>x.classList.toggle('active',x===b));renderActivities()})});
+</script>

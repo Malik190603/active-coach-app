@@ -1,0 +1,407 @@
+<script>
+'use strict';
+
+const HEALTH_COLORS={move:'var(--ios-pink)',dist:'var(--ios-green)',time:'var(--ios-blue)',elev:'var(--ios-orange)',hr:'var(--ios-pink)',power:'var(--ios-purple)',cal:'var(--ios-red)',pace:'var(--ios-teal)'};
+function hFmtDay(d){return ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'][d.getDay()]}
+function hMonth(d){return ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][d.getMonth()]}
+function hRangeLabel(){let r=$('#dashRangeSeg')&&$('#dashRangeSeg').querySelector('.seg-item.active');return r?r.textContent:'Minggu'}
+function hSpark(values,color,type){
+  if(!values||values.length<2)return '';
+  let max=Math.max.apply(null,values)||1,n=values.length,w=100,h=26,gap=n>20?0.6:1.6,bw=(w-(n-1)*gap)/n;
+  if(type==='bar'){
+    return '<svg class="hcard-spark" viewBox="0 0 100 26" preserveAspectRatio="none">'+values.map((v,i)=>{
+      let bh=Math.max(v>0?2:0.8,(v/max)*24);
+      return '<rect x="'+(i*(bw+gap)).toFixed(2)+'" y="'+(26-bh).toFixed(2)+'" width="'+bw.toFixed(2)+'" height="'+bh.toFixed(2)+'" rx="'+Math.min(1.4,bw/2).toFixed(2)+'" fill="'+color+'" opacity="'+(v>0?1:.28)+'"/>'}).join('')+'</svg>';
+  }
+  let min=Math.min.apply(null,values),span=(max-min)||1;
+  let pts=values.map((v,i)=>[(i/(n-1))*100,24-((v-min)/span)*22]);
+  let d=pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ');
+  return '<svg class="hcard-spark" viewBox="0 0 100 26" preserveAspectRatio="none"><path d="'+d+'" fill="none" stroke="'+color+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>';
+}
+function hFitSize(text,base,min){
+  let len=String(text||'').length,steps=[[6,base],[9,base-4],[12,base-8],[99,min]];
+  for(let i=0;i<steps.length;i++)if(len<=steps[i][0])return steps[i][1];
+  return min;
+}
+function hCard(opt){
+  let vsize=hFitSize(opt.value,27,16);
+  return '<button type="button" class="hcard"'+(opt.detail?' data-detail="'+opt.detail+'"':'')+(opt.go?' data-go="'+opt.go+'"':'')+(opt.tab?' data-progress-tab="'+opt.tab+'"':'')+'>'+
+    '<span class="hcard-top"><span class="icon" style="color:'+opt.color+'"><svg><use href="#'+opt.icon+'"/></svg></span><span class="hcard-name">'+esc(opt.name)+'</span>'+(opt.time?'<span class="hcard-time">'+esc(opt.time)+'</span>':'')+'</span>'+
+    '<span class="hcard-val"><b style="font-size:'+vsize+'px">'+esc(opt.value)+'</b>'+(opt.unit?'<span>'+esc(opt.unit)+'</span>':'')+'</span>'+
+    (opt.sub?'<small class="hcard-sub">'+esc(opt.sub)+'</small>':'')+
+    (opt.spark||'')+
+  '</button>';
+}
+function hDaysBetween(from,to){let out=[],d=new Date(from+'T00:00:00'),end=new Date(to+'T00:00:00');while(d<=end&&out.length<400){out.push(dateKey(d));d.setDate(d.getDate()+1)}return out}
+function hBuckets(items,from,to){
+  let days=hDaysBetween(from,to);
+  if(days.length<=31)return days.map(d=>items.filter(x=>x.date===d));
+  let size=Math.ceil(days.length/26),out=[];
+  for(let i=0;i<days.length;i+=size){let slice=days.slice(i,i+size);out.push(items.filter(x=>slice.indexOf(x.date)>=0))}
+  return out;
+}
+function hPrevRange(from,to){
+  let a=new Date(from+'T00:00:00'),b=new Date(to+'T00:00:00'),span=Math.round((b-a)/86400000)+1;
+  let pb=new Date(a);pb.setDate(a.getDate()-1);let pa=new Date(pb);pa.setDate(pb.getDate()-span+1);
+  return {from:dateKey(pa),to:dateKey(pb)};
+}
+function hDelta(cur,prev){
+  if(!prev)return {dir:cur>0?'up':'flat',text:cur>0?'Baru':'—',pct:0};
+  let pct=Math.round((cur-prev)/prev*100);
+  return {dir:pct>2?'up':pct<-2?'down':'flat',text:(pct>0?'+':'')+pct+'%',pct:pct};
+}
+
+function hNiceMax(v){
+  if(v<=0)return 1;
+  let mag=Math.pow(10,Math.floor(Math.log10(v))),n=v/mag;
+  let step=n<=1?1:n<=1.5?1.5:n<=2?2:n<=2.5?2.5:n<=3?3:n<=4?4:n<=5?5:n<=6?6:n<=8?8:10;
+  return step*mag;
+}
+function hFmtNum(v,dec){
+  if(v>=1000)return Math.round(v).toLocaleString('id-ID');
+  if(dec==null)dec=v<10?1:0;
+  return Number(v).toLocaleString('id-ID',{minimumFractionDigits:dec,maximumFractionDigits:dec});
+}
+function hAxisChart(opt){
+  let vals=(opt.values||[]).map(v=>Number(v)||0),labels=opt.labels||[];
+  if(!vals.length)return '<p class="chart-empty">Belum ada data pada periode ini.</p>';
+  let dk=window.ViewMode?window.ViewMode.layout()==='desktop':window.innerWidth>=1000,W=opt.width||(dk?560:340),H=opt.height||(dk?190:164),padR=opt.padR||38,padL=2,padT=10,padB=20;
+  let gw=W-padL-padR,gh=H-padT-padB;
+  let top=hNiceMax(Math.max.apply(null,vals)||1);
+  let nonZero=vals.filter(v=>v>0),avg=nonZero.length?nonZero.reduce((a,b)=>a+b,0)/nonZero.length:0;
+  let y=v=>padT+gh-(v/top)*gh;
+  let out='<svg class="hchart" viewBox="0 0 '+W+' '+H+'" role="img">';
+
+  [0,0.5,1].forEach(function(f){
+    let yy=padT+gh-f*gh;
+    out+='<line class="hchart-grid" x1="'+padL+'" x2="'+(padL+gw)+'" y1="'+yy.toFixed(1)+'" y2="'+yy.toFixed(1)+'"/>';
+    out+='<text class="hchart-ylab" x="'+(padL+gw+7)+'" y="'+(yy+3.4).toFixed(1)+'">'+esc(hFmtNum(top*f,opt.dec))+'</text>';
+  });
+  let n=vals.length;
+  if(opt.type==='line'){
+    let pts=vals.map((v,i)=>[padL+(n===1?gw/2:(i/(n-1))*gw),y(v)]);
+    out+='<path class="hchart-area" d="'+pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+' L'+pts[n-1][0].toFixed(1)+','+(padT+gh)+' L'+pts[0][0].toFixed(1)+','+(padT+gh)+' Z" fill="'+opt.color+'" opacity=".14"/>';
+    out+='<path class="hchart-line" d="'+pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')+'" stroke="'+opt.color+'"/>';
+    pts.forEach(p=>{out+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.4" fill="'+opt.color+'"/>'});
+  }else{
+    let gap=n>24?1:n>12?2:3.5,bw=Math.max(1.6,(gw-(n-1)*gap)/n);
+    vals.forEach(function(v,i){
+      let x=padL+i*(bw+gap),bh=v>0?Math.max(2.5,(v/top)*gh):0;
+      if(!bh)return;
+      out+='<rect class="hchart-bar" x="'+x.toFixed(1)+'" y="'+(padT+gh-bh).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="'+Math.min(bw/2,2.6).toFixed(1)+'" fill="'+opt.color+'"><title>'+esc((labels[i]||'')+': '+hFmtNum(v,opt.dec)+' '+(opt.unit||''))+'</title></rect>';
+    });
+  }
+  if(avg>0&&opt.showAvg!==false){
+    out+='<line class="hchart-avg" x1="'+padL+'" x2="'+(padL+gw)+'" y1="'+y(avg).toFixed(1)+'" y2="'+y(avg).toFixed(1)+'"/>';
+    out+='<text class="hchart-avglab" x="'+(padL+2)+'" y="'+(y(avg)-4).toFixed(1)+'">RATA-RATA '+esc(hFmtNum(avg,opt.dec))+'</text>';
+  }
+
+  if(labels.length){
+    let idx=n<=7?labels.map((_,i)=>i):[0,Math.floor((n-1)/2),n-1];
+    idx.forEach(function(i){
+      let x=padL+(n===1?gw/2:(i/(n-1))*gw),anchor=i===0?'start':i===n-1?'end':'middle';
+      if(n<=7){let gap=n>24?1:n>12?2:3.5,bw=(gw-(n-1)*gap)/n;x=padL+i*(bw+gap)+bw/2;anchor='middle'}
+      out+='<text class="hchart-xlab" x="'+x.toFixed(1)+'" y="'+(H-6)+'" text-anchor="'+anchor+'">'+esc(labels[i]||'')+'</text>';
+    });
+  }
+  return out+'</svg>';
+}
+function hChartCard(opt){
+  return '<article class="card chart-card"'+(opt.go?' data-go="'+opt.go+'"':'')+'>'+
+    '<div class="chart-head">'+
+      '<span class="chart-kicker" style="color:'+opt.color+'">'+esc(opt.kicker||'TOTAL')+'</span>'+
+      '<div class="chart-val"><b style="font-size:'+hFitSize(opt.total,29,18)+'px">'+esc(opt.total)+'</b>'+(opt.unit?'<span>'+esc(opt.unit)+'</span>':'')+'</div>'+
+      (opt.range?'<small class="chart-range">'+esc(opt.range)+'</small>':'')+
+    '</div>'+
+    hAxisChart(opt)+
+  '</article>';
+}
+
+function hInsightRow(o){
+  return '<button type="button" class="ins-row"'+(o.go?' data-go="'+o.go+'"':'')+(o.tab?' data-progress-tab="'+o.tab+'"':'')+(o.detail?' data-detail="'+o.detail+'"':'')+'>'+
+    '<span class="ins-icon" style="background:'+o.color+'"><span class="icon"><svg><use href="#'+o.icon+'"/></svg></span></span>'+
+    '<span class="ins-text"><b>'+esc(o.title)+'</b><small>'+o.text+'</small></span>'+
+    '<span class="glist-chev icon"><svg><use href="#i-chevron"/></svg></span>'+
+  '</button>';
+}
+function hBuildInsights(items,prev,tl,a,from,to){
+  let out=[];
+  let dist=items.reduce((s,x)=>s+x.distance,0),pDist=prev.reduce((s,x)=>s+x.distance,0);
+  let mins=items.reduce((s,x)=>s+x.minutes,0),pMins=prev.reduce((s,x)=>s+x.minutes,0);
+  let days=hDaysBetween(from,to),activeDays=new Set(items.map(x=>x.date)).size;
+
+  if(days.length){
+    let pct=Math.round(activeDays/days.length*100);
+    out.push({icon:'i-check',color:'var(--ios-green)',title:'Konsistensi',
+      text:'Kamu aktif <b>'+activeDays+' dari '+days.length+' hari</b> ('+pct+'%) pada periode ini.',go:'calendar'});
+
+    let wdCount=[0,0,0,0,0,0,0],wdNames=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+    items.forEach(x=>{let dt=new Date(x.date+'T00:00:00');if(!isNaN(dt))wdCount[dt.getDay()]++});
+    let best=wdCount.indexOf(Math.max.apply(null,wdCount));
+    if(items.length>=3&&wdCount[best]>0)out.push({icon:'i-calendar',color:'var(--ios-teal)',title:'Pola hari aktif',
+      text:'Hari tersibukmu <b>'+wdNames[best]+'</b> ('+wdCount[best]+' sesi). Jadwalkan sesi kunci di hari ini agar tidak terlewat.',go:'calendar'});
+  }
+
+  if(tl&&tl.tsb!=null){
+    let t=tl.tsb,msg=t<=-20?'Beban sangat tinggi — prioritaskan pemulihan sebelum sesi berat berikutnya.':
+      t<=-10?'Kamu sedang menumpuk beban. Jaga sesi mudah tetap mudah.':
+      t<10?'Beban dan pemulihan seimbang. Kondisi bagus untuk latihan terstruktur.':
+      'Kamu segar. Ini jendela yang tepat untuk sesi berkualitas atau uji performa.';
+    out.push({icon:'i-battery',color:t<=-10?'var(--ios-orange)':'var(--ios-green)',title:'Kesiapan latihan',
+      text:'TSB <b>'+(t>=0?'+':'')+t+'</b>. '+msg,detail:'reminder'});
+  }
+
+  if(a&&a.ratio){
+    let r=a.ratio,acMsg=r<0.8?'Beban minggu ini jauh di bawah kebiasaan — aman, tapi kebugaran bisa menurun bila berlanjut.':
+      r<=1.3?'Beban minggu ini proporsional dengan 4 minggu terakhir — zona optimal untuk beradaptasi.':
+      r<=1.5?'Beban naik di atas kebiasaan. Tahan 1 minggu ringan setelah ini agar tidak overreaching.':
+      'Lonjakan beban tajam vs kebiasaan — risiko cedera naik. Prioritaskan sesi easy dan tidur cukup.';
+    out.push({icon:'i-gauge',color:r<0.8?'var(--ios-blue)':r<=1.3?'var(--ios-green)':r<=1.5?'var(--ios-orange)':'var(--ios-red)',title:'Rasio beban (ACWR)',
+      text:'Rasio <b>'+r+'</b>. '+acMsg,go:'progress',tab:'insights'});
+  }
+
+  let movers=[{n:'Jarak',c:dist,p:pDist,f:v=>hFmtNum(v,1)+' km'},{n:'Waktu bergerak',c:mins,p:pMins,f:v=>duration(Math.round(v))}]
+    .filter(m=>m.p>0).map(m=>Object.assign(m,{pct:Math.round((m.c-m.p)/m.p*100)}))
+    .sort((x,y)=>Math.abs(y.pct)-Math.abs(x.pct))[0];
+  if(movers&&Math.abs(movers.pct)>=5){
+    out.push({icon:movers.pct>0?'i-arrow-up':'i-arrow-down',color:movers.pct>0?'var(--ios-blue)':'var(--ios-orange)',
+      title:movers.n+(movers.pct>0?' naik':' turun'),
+      text:movers.n.toLowerCase()+' <b>'+(movers.pct>0?'+':'')+movers.pct+'%</b> dibanding periode sebelumnya ('+movers.f(movers.c)+' vs '+movers.f(movers.p)+').',
+      go:'progress',tab:'insights'});
+  }
+
+  let z=dominantHrZoneFor(items);
+  if(z){
+    let zones=DATA.hrZones||[],totals=zones.map(zn=>({zone:zn.zone,minutes:0})),allMin=0;
+    items.forEach(x=>{if(!(x.avgHr>0&&x.minutes>0))return;let hr=Math.round(x.avgHr),i=zones.findIndex((zn,idx)=>hr>=zn.low&&(zn.high===''||hr<=zn.high||idx===zones.length-1));if(i>=0){totals[i].minutes+=x.minutes;allMin+=x.minutes}});
+    let pctOf=n=>allMin?Math.round(totals[n].minutes/allMin*100):0,easyShare=pctOf(0)+pctOf(1),greyShare=pctOf(2);
+    let zAdvice=greyShare>=35?'Terlalu banyak Z3 — geser sesi easy ke Z2 dan sesi keras ke Z4+.':easyShare>=75?'Basis aerobik kuat — pertahankan, tambah 1 stimulus cepat/minggu.':'Distribusi cukup seimbang untuk periode ini.';
+    out.push({icon:'i-heart',color:'var(--ios-pink)',title:'Zona dominan',
+      text:'<b>'+esc(z.zone)+'</b> mengisi '+z.percent+'% waktu latihanmu ('+duration(z.minutes)+'). '+esc(zAdvice),go:'progress',tab:'zones'});
+  }
+
+  let hardest=items.slice().sort((x,y)=>(y.minutes||0)-(x.minutes||0))[0];
+  if(hardest&&hardest.minutes>0){
+    let hZones=DATA.hrZones||[],hTag='';
+    if(hardest.avgHr>0&&hZones.length){let hh=Math.round(hardest.avgHr),hi=hZones.findIndex((zn,idx)=>hh>=zn.low&&(zn.high===''||hh<=zn.high||idx===hZones.length-1));if(hi>=0)hTag=' · intensitas '+hZones[hi].zone}
+    out.push({icon:'i-flame',color:'var(--ios-red)',title:'Sesi terberat',
+      text:'<b>'+esc(hardest.title)+'</b> — '+duration(hardest.minutes)+(hardest.distance?' · '+hFmtNum(hardest.distance,1)+' km':'')+' pada '+fmtDateShort(hardest.date)+esc(hTag)+'.',go:'activities'});
+  }
+
+  if(a&&a.performancePrediction&&(a.performancePrediction.running||a.performancePrediction.cycling)){
+    let pp=a.performancePrediction,ppText=pp.running?'Estimasi pace 5K kamu <b>'+pace(pp.running.fiveKmPace)+'</b> berdasarkan sesi lari terbaru.':'Estimasi kecepatan cycling rata-rata kamu <b>'+pp.cycling.avgSpeed+' km/j</b> berdasarkan sesi terbaru.';
+    out.push({icon:'i-gauge',color:'var(--ios-indigo)',title:'Prediksi performa',
+      text:ppText,detail:'prediction'});
+  }
+
+  let q=DATA.dataQuality||{};
+  if(q.hrPercent!=null&&q.hrPercent<70){
+    out.push({icon:'i-shield',color:'var(--ios-yellow)',title:'Kelengkapan data',
+      text:'Hanya <b>'+Math.round(q.hrPercent)+'%</b> aktivitas punya data heart rate. Pakai HR monitor agar analisis zona lebih akurat.',go:'progress',tab:'insights'});
+  }
+  return out;
+}
+
+function hTrendRow(opt){
+  let icon=opt.dir==='up'?'i-arrow-up':opt.dir==='down'?'i-arrow-down':'i-minus';
+  return '<button type="button" class="glist-row trend-row"'+(opt.detail?' data-detail="'+opt.detail+'"':'')+(opt.go?' data-go="'+opt.go+'"':'')+(opt.tab?' data-progress-tab="'+opt.tab+'"':'')+'>'+
+    '<span class="glist-icon" style="background:'+opt.color+'"><span class="icon"><svg><use href="#'+icon+'"/></svg></span></span>'+
+    '<span class="glist-text"><b>'+esc(opt.name)+'</b><small>'+esc(opt.sub)+'</small></span>'+
+    '<span class="trend-delta '+opt.dir+'">'+esc(opt.delta)+'</span>'+
+    '<span class="glist-chev icon"><svg><use href="#i-chevron"/></svg></span>'+
+  '</button>';
+}
+
+let DASH_CHARTS=null,DASH_CHART_KEY='distance';
+function renderDashChart(){
+  let box=$('#dashChartCard');if(!box||!DASH_CHARTS)return;
+  let cfg=DASH_CHARTS[DASH_CHART_KEY]||DASH_CHARTS.distance;
+  box.innerHTML=hChartCard(cfg);
+  $$('#dashChartSeg .seg-item').forEach(b=>b.classList.toggle('active',b.dataset.dashChart===DASH_CHART_KEY));
+}
+function setDashChart(key){DASH_CHART_KEY=key;renderDashChart()}
+
+function renderDashPredictionMini(p){
+  if(!p||(!p.running&&!p.cycling))return '<div class="insight"><b>Data belum cukup</b><p>Butuh minimal 2 aktivitas lari atau cycling dalam 28 hari terakhir.</p></div>';
+  if(p.running){let g=Math.min(100,Math.round(600/(p.running.fiveKmPace*60)*100));return `<div class="mini-gauge" style="--value:${g}%"><b>${pace(p.running.fiveKmPace)}</b><small>pace 5K</small></div><div class="insight"><b>Estimasi 5K</b><p>${esc(p.running.message)}</p></div>`}
+  let g=Math.min(100,Math.round(p.cycling.avgSpeed/40*100));
+  return `<div class="mini-gauge" style="--value:${g}%"><b>${p.cycling.avgSpeed}</b><small>km/j rata-rata</small></div><div class="insight"><b>Estimasi Cycling</b><p>${esc(p.cycling.message)}</p></div>`
+}
+
+function renderDashGoalSimMini(){
+  if(!GOALSIM_RESULT||GOALSIM_RESULT.error)return '<div class="insight"><b>Atur targetmu</b><p>Simulasikan target speed, jarak, elevasi, atau FTP dan dapat rencana lengkap untuk mencapainya.</p></div>';
+  let r=GOALSIM_RESULT;
+  if(r.feasibility==='achieved')return `<div class="insight"><b>Target sudah tercapai</b><p>${esc(r.metricLabel)} ${esc(r.sport)} kamu sudah di level ${esc(goalSimFmtValue(r.metricKey,r.current))}.</p></div>`;
+  let fx=goalSimFeasibilityInfo(r.feasibility);
+  return `<div class="mini-gauge" style="--value:${Math.min(100,Math.round(100/r.weeksUsed*4))}%"><b>${r.weeksUsed}</b><small>minggu</small></div><div class="insight"><b>${esc(fx.label)}</b><p>Menuju ${esc(goalSimFmtValue(r.metricKey,r.target))} ${esc(r.metricLabel.toLowerCase())}.</p></div>`
+}
+
+function suggestNextSession(tsb){
+  if(tsb==null||isNaN(tsb))return {title:'Sesi easy percobaan',detail:'30 menit santai di Z2 untuk mengisi data awal. Setelah itu susun plan agar coach bisa memberi arahan tiap hari.'};
+  if(tsb<=-15)return {title:'Recovery 20-30 menit Z1',detail:'Tubuh masih lelah (TSB '+Math.round(tsb)+'). Gerak ringan saja — jalan, spin, atau jog sangat pelan.'};
+  if(tsb<10)return {title:'Easy 30-45 menit Z2',detail:'Kondisi netral (TSB '+Math.round(tsb)+'). Jaga percakapan tetap nyaman, ini sesi pembangun basis terbaik.'};
+  return {title:'Sesi kualitas 45-60 menit',detail:'Tubuh segar (TSB +'+Math.round(tsb)+'). Isi dengan blok tempo atau threshold, sisanya easy.'};
+}
+
+async function startBeginnerPlan(btn){
+  if(btn){btn.disabled=true;btn.textContent='Membuat plan...'}
+  try{
+    await gs('createWeeklyPlan',{sportType:'Cycling',runningDistance:'5K',types:[{id:'Endurance',percent:80},{id:'Tempo',percent:20}],offDays:['Senin'],hardDays:['Jumat'],longRideDay:'Minggu',weeks:1},currentAthleteId());
+    await load();
+    toast('Plan pemula aktif — cek My Plan dan mulai sesi pertamamu');
+  }catch(e){toast('Gagal membuat plan: '+(e.message||e));if(btn){btn.disabled=false;btn.textContent='Buatkan plan pemula'}}
+}
+function hGreeting(){let h=new Date().getHours();return h<11?'Selamat pagi':h<15?'Selamat siang':h<18?'Selamat sore':'Selamat malam'}
+function hFirstName(){let n=(DATA.profile&&DATA.profile.nama)||SESSION.nama||'';return String(n).trim().split(/\s+/)[0]||''}
+function hTile(o){
+  let d=o.delta,dHtml=(d&&d.text!=='—')?'<span class="acx-delta '+d.dir+'">'+(d.dir==='up'?'▲':d.dir==='down'?'▼':'•')+' '+esc(d.text.replace(/^[+-]/,''))+'</span>':'';
+  let attrs=(o.go?' data-go="'+o.go+'"':'')+(o.subview?' data-sub="'+o.subview+'"':'')+(o.detail?' data-detail="'+o.detail+'"':'')+(o.range?' data-range-from="'+o.range[0]+'" data-range-to="'+o.range[1]+'"':'');
+  return '<button type="button" class="acx-tile tone-'+o.tone+'"'+attrs+'>'+
+    '<span class="acx-tile-top"><span class="acx-tile-ic icon"><svg><use href="#'+o.icon+'"/></svg></span><span class="acx-tile-name">'+esc(o.name)+'</span>'+dHtml+'</span>'+
+    '<span class="acx-tile-val"><b>'+esc(o.value)+'</b>'+(o.unit?'<span>'+esc(o.unit)+'</span>':'')+'</span>'+
+    (o.sub?'<small class="acx-tile-sub">'+esc(o.sub)+'</small>':'')+(o.spark||'')+'</button>';
+}
+function hRing(pct,label,value,tone){pct=Math.max(0,Math.min(100,Math.round(pct||0)));let r=22,c=2*Math.PI*r;return '<div class="acx-ring tone-'+tone+'"><svg viewBox="0 0 54 54"><circle class="acx-ring-track" cx="27" cy="27" r="'+r+'"/><circle class="acx-ring-val" cx="27" cy="27" r="'+r+'" stroke-dasharray="'+(pct/100*c).toFixed(1)+' '+c.toFixed(1)+'"/></svg><b>'+pct+'%</b><small>'+esc(label)+'</small><span>'+esc(value)+'</span></div>'}
+function weeklyTargetRows(){
+  let target=DATA.weeklyTarget||{};
+  return ['cycling','running','minutes','elevation','sessions'].map(key=>{let x=target[key]||{},value=Number(x.distance??x.value??0)||0,goal=Number(x.goal)||0;return {key:key,value:value,goal:goal,pct:goal?Math.min(100,Math.round(value/goal*100)):0}});
+}
+function renderWeeklyTargets(){
+  let box=$('#dashTargets');if(!box)return;
+  let lab={cycling:['Cycling','km','tone-orange'],running:['Running','km','tone-blue'],minutes:['Durasi','menit','tone-green'],elevation:['Elevasi','m','tone-amber'],sessions:['Sesi','sesi','tone-pink']};
+  box.innerHTML=weeklyTargetRows().map(r=>{let l=lab[r.key],shown=l[1]==='km'?r.value.toFixed(1):l[1]==='menit'?duration(r.value):Math.round(r.value),goal=l[1]==='menit'?duration(r.goal):r.goal+' '+l[1];return `<div class="target-row acx-target ${l[2]}"><div class="target-row-head"><b>${l[0]}</b><span>${shown} / ${goal}</span></div><div class="target-track"><div class="target-fill" style="width:${r.pct}%"></div></div></div>`}).join('');
+}
+function hCurrentStreak(){let seen={};(DATA.logs||[]).forEach(x=>seen[x.date]=1);let c=new Date();c.setHours(0,0,0,0);if(!seen[dateKey(c)])c.setDate(c.getDate()-1);let n=0;while(seen[dateKey(c)]&&n<999){n++;c.setDate(c.getDate()-1)}return n}
+function renderDashWeek(){
+  let box=$('#dashWeek');if(!box)return;
+  let mon=startOfWeek(new Date()),today=dateKey(new Date()),planBy={};
+  (((DATA.planBuilder||{}).selection||{}).days||DATA.plan||[]).forEach(p=>{if(p&&p.date)planBy[p.date]=p});
+  let days=[],names=['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
+  for(let i=0;i<7;i++){let d=new Date(mon);d.setDate(mon.getDate()+i);let k=dateKey(d),acts=(DATA.logs||[]).filter(x=>x.date===k),mins=acts.reduce((s,x)=>s+x.minutes,0),p=planBy[k];let st=acts.length?'done':(p&&p.type&&p.type!=='Rest'?(k<today?'miss':'plan'):'rest');days.push({k:k,n:names[i],d:d.getDate(),st:st,mins:mins,today:k===today,p:p})}
+  let rows=weeklyTargetRows(),by={};rows.forEach(r=>by[r.key]=r);
+  let distKey=(by.cycling&&by.cycling.goal)?'cycling':'running',dist=by[distKey]||{pct:0,value:0,goal:0};
+  let rings=hRing(dist.pct,distKey==='cycling'?'Jarak sepeda':'Jarak lari',dist.value.toFixed(1)+' / '+(dist.goal||0)+' km','orange')+
+    hRing((by.minutes||{}).pct,'Durasi',durationShort((by.minutes||{}).value||0)+' / '+durationShort((by.minutes||{}).goal||0),'green')+
+    hRing((by.sessions||{}).pct,'Sesi',Math.round((by.sessions||{}).value||0)+' / '+((by.sessions||{}).goal||0),'pink');
+  let streak=hCurrentStreak(),done=days.filter(x=>x.st==='done').length;
+  box.innerHTML='<div class="acx-weekstrip">'+days.map(x=>'<button type="button" class="acx-day st-'+x.st+(x.today?' is-today':'')+'" data-day="'+x.k+'" title="'+esc(fmtDate(x.k))+'"><small>'+x.n+'</small><i>'+(x.st==='done'?'<span class="icon"><svg><use href="#i-check"/></svg></span>':x.d)+'</i><em>'+(x.mins?durationShort(x.mins):x.st==='plan'?'plan':x.st==='miss'?'lewat':'')+'</em></button>').join('')+'</div>'+
+    '<div class="acx-rings">'+rings+'</div>'+
+    '<div class="acx-week-foot"><span><span class="icon"><svg><use href="#i-flame"/></svg></span>'+(streak?'Streak <b>'+streak+' hari</b>':'Mulai streak hari ini')+'</span><span>'+done+'/7 hari aktif</span></div>';
+  box.querySelectorAll('[data-day]').forEach(b=>b.onclick=e=>{e.stopPropagation();let k=b.dataset.day,acts=(DATA.logs||[]).filter(x=>x.date===k);if(acts.length===1)showDetail(acts[0].id);else if(typeof showCalendarDay==='function')showCalendarDay(k)});
+}
+function renderDashLast(){
+  let box=$('#dashLastActivity');if(!box)return;
+  let x=(DATA.logs||[]).slice().sort((a,b)=>a.date<b.date?1:(a.date>b.date?-1:0))[0];
+  if(!x){box.innerHTML='<article class="acx-card acx-empty"><span class="acx-empty-ic icon"><svg><use href="#i-sync"/></svg></span><div><b>Belum ada aktivitas</b><p>Hubungkan dan sinkronkan Strava untuk mengisi dashboard.</p></div><button type="button" class="acx-btn" data-empty-action="sync">Sinkronkan</button></article>';return}
+  let hide=DATA.privacy&&DATA.privacy.hideRoutes,thumb=(!hide&&x.polyline)?svgRouteThumb(x.polyline,220,150):'';
+  let stats=[x.distance?['Jarak',x.distance.toFixed(1),'km']:null,['Waktu',durationShort(x.minutes),''],x.elevation?['Elevasi',Math.round(x.elevation),'m']:null,x.avgHr?['HR',Math.round(x.avgHr),'bpm']:(x.avgPower?['Power',Math.round(x.avgPower),'W']:null)].filter(Boolean).slice(0,4);
+  box.innerHTML='<article class="acx-card acx-last" data-id="'+esc(x.id)+'" role="button" tabindex="0">'+
+    '<div class="acx-last-map'+(thumb?'':' is-empty')+'">'+(thumb||'<span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>')+'</div>'+
+    '<div class="acx-last-body"><span class="acx-eyebrow"><span class="icon"><svg><use href="#'+sportIconId(x.sport)+'"/></svg></span>'+esc(x.sport||'Aktivitas')+' · '+esc(fmtDate(x.date))+'</span><b class="acx-last-title">'+esc(x.title||'Aktivitas')+'</b>'+
+    '<div class="acx-last-stats">'+stats.map(s=>'<div><small>'+s[0]+'</small><b>'+esc(s[1])+'<span>'+s[2]+'</span></b></div>').join('')+'</div></div></article>';
+  let card=box.querySelector('[data-id]');if(card)card.onclick=()=>showDetail(card.dataset.id);
+}
+function renderDashBriefing(tl,rec,a){
+  let box=$('#dashBriefing');if(!box)return;
+  let tp=DATA.dashboardPlan||null,planDay=DATA.dashboardPlanDay||'Hari ini',todayActs=DATA.todayActual||[],todayActual=todayActs.length,actualMins=todayActs.reduce((s,x)=>s+x.minutes,0);
+  let hasLogs=(DATA.logs||[]).length>0;
+  let readiness=tl.tsb<=-10?'Recovery disarankan':tl.tsb>=15?'Siap sesi berkualitas':(a&&a.ratio>1.5?'Naikkan hati-hati':(a&&a.ratio<0.8?'Bangun ulang pelan-pelan':'Siap latihan'));
+  let alerts=[];
+  if(tp&&tp.minutes>=120)alerts.push(['warn','Persiapan long session','Bawa minum & energi: 30–60 g karbohidrat per jam, mulai makan sebelum lapar.']);
+  if(tl.tsb<=-10)alerts.push(['alert','Kelelahan terdeteksi','Form rendah. Tetap di zona mudah dan ubah sesi berat jadi recovery bila kaki berat.']);
+  if(!todayActual&&tp&&tp.type!=='Rest')alerts.push(['warn','Belum ada aktivitas hari ini','Siapkan perlengkapan dan mulai dengan pemanasan, jangan langsung kejar intensitas.']);
+  let streak=hCurrentStreak();
+  if(streak>=2&&!todayActual&&tp&&tp.type!=='Rest')alerts.push(['ok','Jaga streak '+streak+' hari','Sesi ringan 20 menit cukup untuk melanjutkan streak.']);
+  LAST_REMINDERS=(tp?['<div class="insight"><b>'+esc(tp.title)+'</b><p>'+esc(planDay)+': '+duration(tp.minutes)+' · '+esc(tp.zone||'-')+(tp.detail?' · '+esc(tp.detail):'')+'</p></div>']:[]).concat(alerts.map(x=>'<div class="insight rest-'+x[0]+'"><b>'+esc(x[1])+'</b><p>'+esc(x[2])+'</p></div>'));
+  if(!LAST_REMINDERS.length)LAST_REMINDERS=['<div class="insight"><b>Belum ada rencana</b><p>Susun plan mingguan agar coach bisa memberi arahan tiap hari.</p></div>'];
+  let notes=alerts.length?'<div class="acx-notes">'+alerts.slice(0,2).map(x=>'<div class="acx-note n-'+x[0]+'"><span class="icon"><svg><use href="#'+(x[0]==='alert'?'i-warn':x[0]==='ok'?'i-flame':'i-bell')+'"/></svg></span><div><b>'+esc(x[1])+'</b><small>'+esc(x[2])+'</small></div></div>').join('')+(alerts.length>2?'<button type="button" class="acx-link" data-detail="reminder">Semua catatan ('+alerts.length+')</button>':'')+'</div>':'';
+  let html;
+  if(!hasLogs){
+    let steps=[{t:'Hubungkan Strava',d:!!STRAVA_CONNECTED},{t:'Sinkronkan aktivitas pertama',d:hasLogs},{t:'Aktifkan plan mingguan',d:!!tp}];
+    html='<article class="acx-card acx-session acx-onboard"><span class="acx-eyebrow">Selamat datang di Active Coach</span><h3>Mulai dalam 3 langkah</h3><ol class="acx-steps">'+steps.map(s=>'<li class="'+(s.d?'is-done':'')+'"><i>'+(s.d?'<span class="icon"><svg><use href="#i-check"/></svg></span>':'')+'</i>'+esc(s.t)+'</li>').join('')+'</ol><div class="acx-actions-row"><button class="acx-btn acx-btn-ghost" type="button" data-empty-action="sync">Hubungkan Strava</button><button class="acx-btn" type="button" id="starterPlanBtn">Buatkan plan pemula</button></div></article>';
+  }else if(tp){
+    let progress=tp.minutes?Math.min(100,Math.round(actualMins/tp.minutes*100)):0,rest=tp.type==='Rest';
+    html='<article class="acx-card acx-session'+(rest?' is-rest':'')+'"><div class="acx-session-top"><span class="acx-eyebrow">'+esc(planDay)+' · sesi terjadwal</span><span class="acx-chip">'+esc(readiness)+'</span></div>'+
+      '<h3>'+esc(tp.title)+'</h3><div class="acx-session-meta"><span><span class="icon"><svg><use href="#i-clock"/></svg></span>'+duration(tp.minutes)+'</span>'+(tp.zone?'<span><span class="icon"><svg><use href="#i-zones"/></svg></span>'+esc(tp.zone)+'</span>':'')+'</div>'+(tp.detail?'<p class="acx-session-detail">'+esc(tp.detail)+'</p>':'')+
+      (rest?'':'<div class="acx-progress"><div class="acx-progress-head"><span>'+(todayActual?'Aktual hari ini':'Belum dimulai')+'</span><b>'+(todayActual?duration(actualMins)+' / '+duration(tp.minutes):progress+'%')+'</b></div><div class="acx-progress-track"><i style="width:'+(todayActual?progress:0)+'%"></i></div></div>')+
+      notes+'<div class="acx-actions-row"><button class="acx-btn" type="button" id="heroPlanDetail">Struktur sesi</button><button class="acx-btn acx-btn-ghost" type="button" data-go="training" data-sub="plan">Menu minggu</button></div></article>';
+  }else{
+    let sg=suggestNextSession(tl.tsb);
+    html='<article class="acx-card acx-session"><div class="acx-session-top"><span class="acx-eyebrow">Saran coach · belum ada plan</span><span class="acx-chip">'+esc(readiness)+'</span></div><h3>'+esc(sg.title)+'</h3><p class="acx-session-detail">'+esc(sg.detail)+'</p>'+notes+'<div class="acx-actions-row"><button class="acx-btn" type="button" data-go="training" data-sub="plan" data-plan-custom="1">Susun plan minggu ini</button><button class="acx-btn acx-btn-ghost" type="button" data-detail="tomorrow">Jam terbaik besok</button></div></article>';
+  }
+  box.innerHTML=html;
+  let starterBtn=$('#starterPlanBtn');if(starterBtn)starterBtn.onclick=()=>startBeginnerPlan(starterBtn);
+  let heroDetail=$('#heroPlanDetail');if(heroDetail&&tp)heroDetail.onclick=()=>showPlanDayDetail(tp.date);
+  bindNavTargets(box);
+}
+function renderDashboard(){
+  let r=monthRange(),from=$('#dashFrom').value||r.from,to=$('#dashTo').value||r.to,sport=$('#dashSport').value;
+  let items=activityItems({from:from,to:to,sport:sport}),rec=DATA.recommendation||{},a=DATA.analytics||{},tl=DATA.trainingLoad||{};
+  let now=new Date(),dl=$('#dashDateLabel'),fn=hFirstName();if(dl)dl.textContent=hFmtDay(now)+', '+now.getDate()+' '+hMonth(now)+' · '+hGreeting()+(fn?', '+fn:'');
+  let note=$('#dashRangeNote');if(note)note.textContent=fmtDateShort(from)+' – '+fmtDateShort(to);
+
+  drawGauge(tsbScore(tl.tsb),rec.color);ringAnimate('gaugeCircleCtl',tl.ctl||0,41);ringAnimate('gaugeCircleAtl',tl.atl||0,30);
+  let sc=$('#dashScore');if(sc)sc.textContent=(tl.tsb==null||isNaN(tl.tsb))?'--':((tl.tsb>0?'+':'')+Math.round(tl.tsb));
+  let lv=$('#dashLevel');if(lv){lv.textContent=rec.level||'Belum ada data';lv.className='level '+(rec.color||'green')}
+  let adv=$('#dashAdvice');if(adv)adv.innerHTML=rec.text||('Sinkronkan '+stravaTag()+' agar coach dapat menganalisis training load-mu.');
+  let lg=$('#dashReadyLegend');if(lg)lg.innerHTML='<span><i class="ring-dot tsb" id="dashRingDotTsb"></i>Form <b>'+((tl.tsb==null||isNaN(tl.tsb))?'–':Math.round(tl.tsb))+'</b></span><span><i class="ring-dot ctl"></i>Fitness <b>'+Math.round(tl.ctl||0)+'</b></span><span><i class="ring-dot atl"></i>Lelah <b>'+Math.round(tl.atl||0)+'</b></span>';
+  drawGauge(tsbScore(tl.tsb),rec.color);
+
+  renderDashBriefing(tl,rec,a);
+  renderDashLast();
+  renderDashWeek();
+
+  let mins=items.reduce((s,x)=>s+x.minutes,0),dist=items.reduce((s,x)=>s+x.distance,0),elev=items.reduce((s,x)=>s+x.elevation,0);
+  let hrItems=items.filter(x=>x.avgHr>0),avgHr=hrItems.length?Math.round(hrItems.reduce((s,x)=>s+x.avgHr,0)/hrItems.length):0;
+  let cal=items.reduce((s,x)=>s+(x.calories||0),0),buckets=hBuckets(items,from,to);
+  let pr=hPrevRange(from,to),prev=activityItems({from:pr.from,to:pr.to,sport:sport});
+  let pDist=prev.reduce((s,x)=>s+x.distance,0),pMins=prev.reduce((s,x)=>s+x.minutes,0),pElev=prev.reduce((s,x)=>s+x.elevation,0);
+  let rng=[from,to];
+  let mb=$('#dashMetrics');
+  if(mb){mb.innerHTML=
+    hTile({name:'Jarak',icon:'i-route',tone:'green',value:hFmtNum(dist,1),unit:'km',sub:items.length+' aktivitas',delta:hDelta(dist,pDist),spark:hSpark(buckets.map(b=>b.reduce((s,x)=>s+x.distance,0)),'var(--tone)','bar'),range:rng})+
+    hTile({name:'Waktu',icon:'i-clock',tone:'blue',value:durationShort(mins),sub:'waktu bergerak',delta:hDelta(mins,pMins),spark:hSpark(buckets.map(b=>b.reduce((s,x)=>s+x.minutes,0)),'var(--tone)','bar'),range:rng})+
+    hTile({name:'Elevasi',icon:'i-mountain',tone:'amber',value:Math.round(elev).toLocaleString('id-ID'),unit:'m',sub:'total kenaikan',delta:hDelta(elev,pElev),spark:hSpark(buckets.map(b=>b.reduce((s,x)=>s+x.elevation,0)),'var(--tone)','bar'),range:rng})+
+    hTile({name:'Sesi',icon:'i-pulse',tone:'pink',value:String(items.length),unit:'sesi',sub:mins?'rata-rata '+durationShort(Math.round(mins/(items.length||1))):'belum ada sesi',delta:hDelta(items.length,prev.length),spark:hSpark(buckets.map(b=>b.length),'var(--tone)','bar'),range:rng})+
+    '<div class="acx-tile-extra"><button type="button" data-detail="calories"><span class="icon"><svg><use href="#i-flame"/></svg></span>'+(cal?Math.round(cal).toLocaleString('id-ID')+' kkal':'Kalori belum tersedia')+'</button><button type="button" data-go="performance" data-sub="intensity"><span class="icon"><svg><use href="#i-heart"/></svg></span>'+(avgHr?'HR rata-rata '+avgHr+' bpm':'Belum ada data HR')+'</button></div>';
+    mb.querySelectorAll('[data-range-from]').forEach(b=>b.onclick=()=>{let f=$('#activityFrom'),t=$('#activityTo');if(f)f.value=b.dataset.rangeFrom;if(t)t.value=b.dataset.rangeTo;switchPage('training',{sub:'activities'})});
+    bindNavTargets(mb.querySelector('.acx-tile-extra'));
+  }
+
+  let dayKeys=hDaysBetween(from,to),grouped=dayKeys.length<=31,chartLabels,distSeries,minSeries,elevSeries;
+  if(grouped){
+    chartLabels=dayKeys.map(d=>{let dt=new Date(d+'T00:00:00');return dayKeys.length<=7?['M','S','S','R','K','J','S'][dt.getDay()]:String(dt.getDate())});
+    distSeries=dayKeys.map(d=>items.filter(x=>x.date===d).reduce((s2,x)=>s2+x.distance,0));
+    minSeries=dayKeys.map(d=>items.filter(x=>x.date===d).reduce((s2,x)=>s2+x.minutes,0));
+    elevSeries=dayKeys.map(d=>items.filter(x=>x.date===d).reduce((s2,x)=>s2+x.elevation,0));
+  }else{
+    chartLabels=buckets.map((b,i)=>String(i+1));
+    distSeries=buckets.map(b=>b.reduce((s2,x)=>s2+x.distance,0));
+    minSeries=buckets.map(b=>b.reduce((s2,x)=>s2+x.minutes,0));
+    elevSeries=buckets.map(b=>b.reduce((s2,x)=>s2+x.elevation,0));
+  }
+  let rangeText=fmtDateShort(from)+' – '+fmtDateShort(to),hrSorted=items.filter(x=>x.avgHr>0).slice().sort((x,y)=>x.date<y.date?-1:1);
+  DASH_CHARTS={
+    distance:{kicker:'TOTAL JARAK',total:hFmtNum(dist,1),unit:'km',color:'var(--ios-green)',values:distSeries,labels:chartLabels,dec:1,range:rangeText,type:'bar'},
+    time:{kicker:'TOTAL WAKTU',total:duration(mins),unit:'',color:'var(--ios-blue)',values:minSeries,labels:chartLabels,dec:0,range:rangeText,type:'bar'},
+    elevation:{kicker:'TOTAL ELEVASI',total:hFmtNum(elev,0),unit:'m',color:'var(--ios-orange)',values:elevSeries,labels:chartLabels,dec:0,range:rangeText,type:'bar'},
+    hr:{kicker:'RATA-RATA DETAK',total:avgHr?String(avgHr):'—',unit:avgHr?'bpm':'',color:'var(--ios-pink)',values:hrSorted.map(x=>x.avgHr),labels:hrSorted.map(x=>fmtDateShort(x.date)),dec:0,range:rangeText,type:'line'}
+  };
+  renderDashChart();
+
+  let insights=hBuildInsights(items,prev,tl,a,from,to);
+  try{
+    let bikes=(DATA.bikeGarage&&DATA.bikeGarage.bikes)||[],due=typeof bikeServiceDue==='function'?bikeServiceDue():[];
+    if(bikes.length){
+      let urgent=due.filter(x=>x.remaining<=0).length,soon=due.filter(x=>x.remaining>0&&x.remaining<=500).length;
+      if(urgent||soon)insights.unshift({icon:'i-wrench',color:urgent?'var(--ios-red)':'var(--ios-orange)',title:'Garasi',text:urgent?'<b>'+urgent+' part</b> melewati jadwal servis. Cek prioritas perawatan.':'<b>'+soon+' part</b> mendekati jadwal servis.',go:'garage',detail:''});
+    }
+  }catch(e){}
+  if(!DATA.bikeGarage&&!window.__garageLoading&&typeof gs==='function'){window.__garageLoading=true;gs('getBikeGarage',currentAthleteId()).then(r=>{DATA.bikeGarage=r||{bikes:[]};window.__garageLoading=false;if(currentPageView()==='dashboard')renderDashboard()}).catch(()=>{window.__garageLoading=false})}
+  insights=insights.slice(0,5);
+  let insBox=$('#dashInsights');
+  if(insBox){insBox.innerHTML=insights.length?insights.map(hInsightRow).join(''):'<div class="acx-card acx-empty-sm">Belum cukup data untuk membuat insight.</div>';bindNavTargets(insBox)}
+  bindNavTargets($('#dashChartCard'));
+  let rc=$('#dashReadyCard');if(rc&&!rc.__b){rc.__b=1;bindNavTargets(rc.parentNode.querySelector('.acx-sec'))}
+}
+</script>
