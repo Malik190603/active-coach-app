@@ -138,9 +138,29 @@
     haptic('error');
   }
   function randomNonce() { var a = new Uint8Array(12); (window.crypto || window.msCrypto).getRandomValues(a); return Array.from(a, function (b) { return b.toString(16).padStart(2, '0'); }).join(''); }
-  function startStravaLogin() {
+  /* Cek server sebelum membuka Strava, supaya masalah setup tampil jelas di aplikasi (bukan halaman JSON). */
+  async function preflight() {
+    var c = cfg(), base = c.url + '/functions/v1/', h = { apikey: c.anonKey };
+    var r;
+    try { r = await fetch(base + 'strava-callback?ping=1', { headers: h, redirect: 'manual', cache: 'no-store' }); }
+    catch (e) { return navigator.onLine === false ? 'Tidak ada koneksi internet.' : ''; }
+    if (r.type === 'opaqueredirect' || (r.status >= 300 && r.status < 400)) return 'Fungsi "strava-callback" di Supabase masih versi lama. Buka Supabase › Edge Functions › strava-callback › Code, ganti dengan versi terbaru, lalu Deploy.';
+    if (r.status === 404) return 'Fungsi "strava-callback" tidak ditemukan di Supabase. Buka Edge Functions dan pastikan ada fungsi bernama persis "strava-callback" (huruf kecil, pakai tanda minus). Saat membuat lewat editor, ganti nama acaknya dulu sebelum Deploy.';
+    if (r.status === 401) return 'Fungsi "strava-callback" masih meminta JWT. Matikan "Verify JWT" di pengaturan fungsi itu, lalu coba lagi.';
+    var j = {}; try { j = await r.json(); } catch (e) {}
+    if (r.ok && j && j.ok) {
+      if (!j.strava) return 'Secret STRAVA_CLIENT_ID belum diisi di Supabase › Edge Functions › Secrets.';
+      if (!j.service) return 'Service role key tidak tersedia untuk Edge Function. Coba deploy ulang fungsi "strava-callback".';
+      try { var p = await fetch(base + 'proxy?config=1', { headers: h, cache: 'no-store' }); if (p.status === 404) return 'Fungsi "proxy" tidak ditemukan di Supabase. Buat Edge Function bernama persis "proxy" (isi dari supabase/functions/proxy/index.ts) dan matikan "Verify JWT".'; } catch (e) {}
+    }
+    return '';
+  }
+  async function startStravaLogin() {
     if (!configured()) { toggleServerPanel(true); note('Atur server dulu (sekali saja)'); return; }
     if (authBusy) return;
+    authBusy = true; setLoginState('waiting'); var lb = $('#stravaLoginLabel'); if (lb) lb.textContent = 'Memeriksa server…';
+    var problem = await preflight(); authBusy = false;
+    if (problem) { loginError(problem); return; }
     var nonce = randomNonce();
     LS.set('acx_auth_nonce', { n: nonce, t: Date.now() });
     var url = cfg().url + '/functions/v1/strava-callback?start=1&nonce=' + nonce;

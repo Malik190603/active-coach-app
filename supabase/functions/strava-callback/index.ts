@@ -99,6 +99,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const u = new URL(req.url), q = u.searchParams;
 
+  // Cek dari aplikasi: fungsi ada & versi terbaru
+  if (q.has('ping')) return json({ ok: true, v: 2, strava: !!env('STRAVA_CLIENT_ID'), service: !!SERVICE });
+
   // Aplikasi mengambil hasil login
   if (req.method === 'POST' && q.has('redeem')) {
     let b: { code?: string; nonce?: string } = {};
