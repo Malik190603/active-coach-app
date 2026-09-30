@@ -1,0 +1,71 @@
+<script>
+'use strict';
+/* =====================================================================
+   Kritik & saran: riwayat masukan pengguna (+ balasan pengembang) dan
+   Kotak masuk untuk admin (pemilik aplikasi): baca, balas, tandai selesai.
+   ===================================================================== */
+let FB_ADMIN=false,FB_FILTER='baru',FB_CACHE=[];
+function fbTime(t){try{let d=new Date(t);return d.toLocaleDateString('id-ID',{day:'numeric',month:'short'})+' · '+d.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}catch(e){return ''}}
+function fbKindTone(k){return /bug/i.test(k)?'red':/kritik/i.test(k)?'amber':/saran/i.test(k)?'blue':'gray'}
+async function fbCheckAdmin(){
+  if(!window.ACX||!ACX.rest)return;
+  try{let r=await ACX.rest('GET','ac_admins?select=user_id');FB_ADMIN=Array.isArray(r)&&r.length>0}catch(e){FB_ADMIN=false}
+  fbPaintRow();if(!FB_ADMIN)return;
+  try{let rows=await ACX.rest('GET','ac_feedback?select=id&status=eq.baru');let n=(rows||[]).length,seen=+(localStorage.getItem('acx_fb_seen')||0);
+    fbPaintRow(n);if(n>seen){toast('📬 '+n+' masukan baru dari pengguna');localStorage.setItem('acx_fb_seen',String(n))}else if(n<seen)localStorage.setItem('acx_fb_seen',String(n))}catch(e){}
+}
+function fbPaintRow(n){
+  let host=document.querySelector('[data-page-view="profile"] #openFeedback');if(!host)return;
+  let row=document.getElementById('fbInboxRow');
+  if(!FB_ADMIN){if(row)row.remove();return}
+  if(!row){host.insertAdjacentHTML('afterend','<button type="button" class="acx-row" id="fbInboxRow"><span class="acx-row-ic tone-violet icon"><svg><use href="#i-bell"/></svg></span><span class="acx-row-text"><b>Kotak masuk masukan</b><small>Kritik & saran dari semua pengguna</small></span><span class="fb-badge" id="fbBadge" hidden></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');row=document.getElementById('fbInboxRow');row.onclick=fbOpenInbox}
+  let b=document.getElementById('fbBadge');if(b&&n!=null){b.hidden=!n;b.textContent=n>99?'99+':String(n)}
+}
+/* ---------- riwayat milik pengguna (di popup Saran & Kritik) ---------- */
+async function fbLoadMine(){
+  let box=document.getElementById('fbMine');if(!box||!window.ACX||!ACX.rest)return;
+  let uid=ACX.session&&ACX.session.user&&ACX.session.user.id;if(!uid)return;
+  try{let rows=await ACX.rest('GET','ac_feedback?select=id,kind,message,status,reply,replied_at,created_at&user_id=eq.'+encodeURIComponent(uid)+'&order=created_at.desc&limit=20');
+    if(!rows||!rows.length){box.innerHTML='';return}
+    box.innerHTML='<div class="fb-mine-title">Masukanmu</div>'+rows.map(r=>`<div class="fb-item mine"><div class="fb-meta"><span class="fb-kind tone-${fbKindTone(r.kind)}">${esc(r.kind)}</span><span>${esc(fbTime(r.created_at))}</span><span class="fb-status s-${esc(r.status)}">${r.status==='selesai'?'Selesai':r.status==='dibaca'?'Dibaca':'Terkirim'}</span></div><p>${esc(r.message)}</p>${r.reply?`<div class="fb-reply"><b>Balasan pengembang</b>${esc(r.reply)}</div>`:''}</div>`).join('');
+  }catch(e){box.innerHTML=''}
+}
+function fbAfterSend(){setTimeout(fbLoadMine,600);setTimeout(fbCheckAdmin,900)}
+/* ---------- kotak masuk admin ---------- */
+async function fbOpenInbox(){
+  let box=document.createElement('div');box.className='st-sheet fb-sheet';box.id='fbSheet';
+  box.innerHTML=`<div class="st-sheet-box"><div class="sheet-handle"><i></i></div><div class="st-sheet-head"><h3>Kotak masuk masukan</h3><button type="button" class="sheet-close" data-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button></div>
+    <div class="st-seg" id="fbSeg">${[['baru','Baru'],['dibaca','Dibaca'],['selesai','Selesai'],['semua','Semua']].map(o=>`<button type="button" data-v="${o[0]}" class="${o[0]===FB_FILTER?'on':''}">${o[1]}</button>`).join('')}</div>
+    <div class="st-sheet-list" id="fbList"><p class="st-note" style="text-align:center;padding:24px">Memuat…</p></div></div>`;
+  document.body.appendChild(box);
+  let close=()=>{box.classList.add('out');setTimeout(()=>box.remove(),220);fbCheckAdmin()};
+  box.onclick=e=>{if(e.target===box||e.target.closest('[data-x]'))close()};
+  box.querySelectorAll('#fbSeg button').forEach(b=>b.onclick=()=>{FB_FILTER=b.dataset.v;box.querySelectorAll('#fbSeg button').forEach(x=>x.classList.toggle('on',x===b));fbPaintList()});
+  await fbFetch();fbPaintList();
+}
+async function fbFetch(){try{FB_CACHE=await ACX.rest('GET','ac_feedback?select=*&order=created_at.desc&limit=300')||[]}catch(e){FB_CACHE=[];let l=document.getElementById('fbList');if(l)l.innerHTML='<p class="st-note" style="text-align:center;padding:24px">Gagal memuat: '+esc(e.message)+(e.status===404?'<br>Jalankan SQL 20261001120000_feedback.sql di Supabase.':'')+'</p>'}}
+function fbPaintList(){
+  let l=document.getElementById('fbList');if(!l)return;
+  let rows=FB_CACHE.filter(r=>FB_FILTER==='semua'||r.status===FB_FILTER);
+  if(!rows.length){l.innerHTML='<p class="st-note" style="text-align:center;padding:28px">'+(FB_FILTER==='baru'?'Tidak ada masukan baru 🎉':'Belum ada masukan.')+'</p>';return}
+  l.innerHTML=rows.map(r=>`<div class="fb-item" data-id="${r.id}"><div class="fb-meta"><b>${esc(r.name||'Pengguna')}</b><span class="fb-kind tone-${fbKindTone(r.kind)}">${esc(r.kind)}</span><span>${esc(fbTime(r.created_at))}</span></div>
+    <p>${esc(r.message)}</p><small class="fb-dev">${esc([r.app_version?'v'+r.app_version:'',r.device].filter(Boolean).join(' · '))}</small>
+    ${r.reply?`<div class="fb-reply"><b>Balasanmu · ${esc(fbTime(r.replied_at))}</b>${esc(r.reply)}</div>`:''}
+    <div class="fb-actions">${r.status!=='selesai'?`<button type="button" data-act="done">✓ Selesai</button>`:`<button type="button" data-act="reopen">↺ Buka lagi</button>`}<button type="button" data-act="reply">${r.reply?'Ubah balasan':'Balas'}</button>${r.status==='baru'?'<button type="button" data-act="read">Tandai dibaca</button>':''}<button type="button" data-act="del" class="del">Hapus</button></div></div>`).join('');
+  l.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>fbAct(+b.closest('[data-id]').dataset.id,b.dataset.act));
+}
+async function fbAct(id,act){
+  let r=FB_CACHE.find(x=>x.id===id);if(!r)return;let patch=null;
+  if(act==='done')patch={status:'selesai'};
+  if(act==='reopen')patch={status:'dibaca'};
+  if(act==='read')patch={status:'dibaca'};
+  if(act==='reply'){let t=prompt('Balasan untuk '+(r.name||'pengguna')+':',r.reply||'');if(t==null)return;t=t.trim();patch={reply:t||null,replied_at:t?new Date().toISOString():null,status:t?'selesai':r.status}}
+  if(act==='del'){if(!confirm('Hapus masukan ini?'))return;try{await ACX.rest('DELETE','ac_feedback?id=eq.'+id);FB_CACHE=FB_CACHE.filter(x=>x.id!==id);fbPaintList();toast('Masukan dihapus')}catch(e){toast('Gagal: '+e.message)}return}
+  try{await ACX.rest('PATCH','ac_feedback?id=eq.'+id,patch,'return=minimal');Object.assign(r,patch);fbPaintList();if(window.acxHaptic)acxHaptic('success');toast(act==='reply'?'Balasan tersimpan — pengguna melihatnya di menu Saran & kritik':'Status diperbarui')}catch(e){toast('Gagal: '+e.message)}
+}
+window.ACX_BACK=window.ACX_BACK||[];ACX_BACK.push(()=>{let s=document.getElementById('fbSheet');if(s){s.remove();return true}return false});
+document.addEventListener('DOMContentLoaded',()=>{
+  let pop=document.getElementById('feedbackPopupBox');if(pop&&!document.getElementById('fbMine'))pop.insertAdjacentHTML('beforeend','<div class="fb-mine" id="fbMine"></div>');
+  let ob=document.getElementById('openFeedback');if(ob)ob.addEventListener('click',()=>setTimeout(fbLoadMine,50));
+});
+</script>

@@ -280,6 +280,12 @@
   async function dispatch(fn, args) {
     if (fn === 'loginAthlete' || fn === 'createAthlete') return { ok: false, error: 'Gunakan tombol "Masuk dengan Strava".' };
     if (fn === 'generateReportPdf') return finishReport(await callEngine(fn, args));
+    if (fn === 'submitFeedback') {
+      var res = await callEngine(fn, args);
+      if (res && res.ok) { try { await sendFeedbackCentral(args[0] || {}); res.central = true; } catch (e) { res.central = false; console.warn('Kotak masuk masukan belum siap:', e.message); } }
+      try { if (typeof fbAfterSend === 'function') fbAfterSend(); } catch (e) {}
+      return res;
+    }
     return callEngine(fn, args);
   }
   function runner(ok, no) {
@@ -567,7 +573,11 @@
       '<button type="button" class="upd-later" id="updAlt" hidden>Unduh lewat browser</button></div>';
     document.body.appendChild(box);
     $('#updGo').onclick = function () { haptic('light'); updDownload(); };
-    $('#updAlt').onclick = function () { if (NATIVE && P.Browser) P.Browser.open({ url: rel.url }); else _open.call(window, rel.url, '_blank'); };
+    $('#updAlt').onclick = function () {
+      // buka di aplikasi browser penuh (bukan tab di dalam aplikasi) agar konfirmasi unduhan APK terlihat
+      if (NATIVE) { note('Kalau unduhan tertahan di 100%, buka notifikasi browser lalu ketuk "Tetap download".'); setTimeout(function () { window.location.href = rel.url; }, 400); }
+      else _open.call(window, rel.url, '_blank');
+    };
     updSet('idle', 0, 'Datamu aman — tersimpan di akunmu dan tidak hilang saat update.');
   }
   async function checkForUpdate(manual) {
@@ -662,6 +672,20 @@
     if (!r.ok) throw new Error('REST ' + r.status);
     return method === 'GET' ? r.json() : null;
   }
+  async function acxRest(method, path, body, prefer) {
+    var s = await freshSession(); if (!s || !s.access_token) throw new Error('Belum masuk');
+    var c = cfg(), h = { apikey: c.anonKey, Authorization: 'Bearer ' + s.access_token };
+    if (body !== undefined) h['Content-Type'] = 'application/json';
+    if (prefer) h.Prefer = prefer;
+    var r = await fetch(c.url + '/rest/v1/' + path, { method: method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
+    var t = await r.text(), j = null; try { j = t ? JSON.parse(t) : null; } catch (e) {}
+    if (!r.ok) { var err = new Error((j && (j.message || j.hint)) || ('Server ' + r.status)); err.status = r.status; err.code = j && j.code; throw err; }
+    return j;
+  }
+  async function sendFeedbackCentral(data) {
+    var s = currentSession || {}, dev = (navigator.userAgent.match(/Android [\d.]+[^;)]*;?\s*([^;)]*)/) || [])[0] || navigator.platform || '';
+    await acxRest('POST', 'ac_feedback', [{ user_id: s.user && s.user.id, name: (typeof SESSION !== 'undefined' && SESSION.nama) || displayNameOf(s), kind: String(data.tipe || 'Saran fitur').slice(0, 40), message: String(data.pesan || '').trim().slice(0, 4000), app_version: String(window.AC_BUILD || ''), device: String(dev).slice(0, 80) }], 'return=minimal');
+  }
   async function ensureWebhook() {
     var last = LS.get('acx_wh_ok') || 0; if (Date.now() - last < 24 * 3600000) return;
     try {
@@ -697,7 +721,7 @@
     paintAccount();
     runTriggersSoon(8000);
     setTimeout(autoSync, 6000);
-    setTimeout(function () { ensureWebhook(); checkInbox(); }, 4000);
+    setTimeout(function () { ensureWebhook(); checkInbox(); try { if (typeof fbCheckAdmin === 'function') fbCheckAdmin(); } catch (e) {} }, 4000);
     setTimeout(function () { try { if (typeof nfSchedule === 'function') nfSchedule(); } catch (e) {} }, 12000);
     if (pendingLink) { var l = pendingLink; pendingLink = null; setTimeout(function () { handleDeepLink(l); }, 1500); }
   }
@@ -804,11 +828,12 @@
       runTriggersSoon(3000);
       setTimeout(autoSync, 2500);
       setTimeout(checkInbox, 1200);
+      setTimeout(function () { try { if (typeof fbCheckAdmin === 'function') fbCheckAdmin(); } catch (e) {} }, 2500);
       setTimeout(function () { try { if (typeof nfSchedule === 'function') nfSchedule({ skipGarage: true }); } catch (e) {} }, 6000);
     });
     P.App.addListener('pause', function () { if (engineReady) send({ type: 'flush' }).catch(function () {}); });
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
-  window.ACX = { checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

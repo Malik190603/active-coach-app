@@ -90,6 +90,10 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 | Data | Google Sheets | Supabase (+ cache di HP, tetap bisa dibuka offline) |
 
 
+## Kritik & saran
+
+Masukan dari menu **Saran & kritik** masuk ke tabel `ac_feedback` (jalankan `supabase/migrations/20261001120000_feedback.sql` sekali). Akun Strava pertama yang masuk (pemilik aplikasi) otomatis menjadi admin dan melihat **Profil → Kotak masuk masukan**: daftar masukan semua pengguna, badge jumlah yang baru, tombol Balas / Selesai / Hapus. Pengirim melihat status dan balasanmu di menu Saran & kritik miliknya. Masukan lama ikut dipindahkan oleh SQL tersebut.
+
 ## Pembaruan wajib
 
 Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Saat dibuka atau kembali aktif, aplikasi (mulai v1.1.15) memeriksa rilis terbaru. Kalau ada versi lebih baru, aplikasi **terkunci** di layar *Pembaruan wajib* sampai versi terbaru dipasang: APK diunduh di dalam aplikasi (dengan progres), lalu penginstal Android terbuka — pasang menimpa, data tetap ada. Pertama kali, Android meminta izin *Instal aplikasi tidak dikenal* untuk Active Coach. Jika offline, kunci tetap berlaku bila versi baru sudah pernah terdeteksi.
