@@ -448,11 +448,13 @@
       '<button type="button" class="acx-row" id="acxNotifRow"><span class="acx-row-ic tone-amber icon"><svg><use href="#i-bell"/></svg></span><span class="acx-row-text"><b>Notifikasi</b><small>Pengingat latihan, rekap mingguan, servis</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxImportActRow"><span class="acx-row-ic tone-blue icon"><svg><use href="#i-route"/></svg></span><span class="acx-row-text"><b>Impor aktivitas (GPX/TCX/FIT)</b><small>Dari Garmin, Coros, Wahoo, dll. di luar Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<input type="file" id="acxActFile" accept=".gpx,.tcx,.fit,application/gpx+xml,application/octet-stream" hidden>' +
+      '<button type="button" class="acx-row" id="acxUpdateRow"><span class="acx-row-ic tone-green icon"><svg><use href="#i-sync"/></svg></span><span class="acx-row-text"><b>Periksa pembaruan</b><small>Versi terpasang ' + esc(window.AC_BUILD || '') + '</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxPrivacyRow"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-shield"/></svg></span><span class="acx-row-text"><b>Privasi & data</b><small>Kebijakan privasi · Powered by Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxDeleteRow"><span class="acx-row-ic tone-red icon"><svg><use href="#i-trash"/></svg></span><span class="acx-row-text"><b style="color:var(--acx-red)">Hapus akun & data</b><small>Hapus permanen dari server & cabut izin Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<p class="acx-powered">Active Coach versi ' + esc(window.AC_BUILD || '') + '<br>Powered by Strava · Active Coach tidak berafiliasi dengan Strava.</p>' +
       '<input type="file" id="acxImportFile" accept=".json,application/json,text/plain" hidden>');
     $('#acxDeleteRow').onclick = deleteAccountFlow;
+    $('#acxUpdateRow').onclick = function () { checkForUpdate(true); };
     $('#acxNotifRow').onclick = function () { if (typeof nfOpenSettings === 'function') nfOpenSettings(); };
     $('#acxImportActRow').onclick = function () { $('#acxActFile').value = ''; $('#acxActFile').click(); };
     $('#acxActFile').onchange = function (e) { var f = e.target.files && e.target.files[0]; if (f && typeof impImportFile === 'function') impImportFile(f); };
@@ -498,6 +500,50 @@
     };
     var rl = $('#reloadBtn small'); if (rl) rl.textContent = 'Ambil ulang data terbaru dari server';
   }
+  /* ---------- pembaruan aplikasi: cek rilis terbaru di GitHub ---------- */
+  function verParts(v) { return String(v || '').replace(/^v/i, '').split('.').map(function (x) { return parseInt(x, 10) || 0; }); }
+  function verNewer(a, b) { var x = verParts(a), y = verParts(b); for (var i = 0; i < Math.max(x.length, y.length); i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; }
+  function currentVersion() { return (window.ACX_CONFIG && window.ACX_CONFIG.version) || window.AC_BUILD || '0'; }
+  async function fetchLatestRelease() {
+    var repo = (window.ACX_CONFIG && window.ACX_CONFIG.updateRepo) || 'Malik190603/active-coach-app';
+    var r = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
+    if (!r.ok) throw new Error('GitHub ' + r.status);
+    var j = await r.json(), apk = (j.assets || []).find(function (a) { return /\.apk$/i.test(a.name || ''); });
+    return { version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /#wajib|\[wajib\]/i.test(j.body || '') };
+  }
+  function notesHtml(md) {
+    return esc(md).replace(/^## (.*)$/gm, '<b>$1</b>').replace(/^[-*] (.*)$/gm, '• $1').split('\n').filter(function (l) { return l.trim() && !/Unduh file \.apk/i.test(l); }).slice(0, 14).join('<br>');
+  }
+  function showUpdateSheet(rel) {
+    if ($('#updSheet')) return;
+    var box = document.createElement('div'); box.className = 'st-sheet upd-sheet'; box.id = 'updSheet';
+    box.innerHTML = '<div class="st-sheet-box"><div class="upd-hero"><span class="upd-ic"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span><div><h3>Versi baru tersedia</h3><small>' + esc(currentVersion()) + ' → <b>' + esc(rel.version) + '</b>' + (rel.size ? ' · ' + (rel.size / 1048576).toFixed(1) + ' MB' : '') + '</small></div></div>' +
+      '<div class="upd-notes">' + (notesHtml(rel.notes) || 'Perbaikan & peningkatan terbaru.') + '</div>' +
+      '<button type="button" class="acx-btn upd-go" id="updGo">Unduh & pasang versi ' + esc(rel.version) + '</button>' +
+      '<p class="upd-help">Setelah unduhan selesai, ketuk file APK-nya lalu pilih <b>Pasang/Update</b>. Datamu aman.</p>' +
+      (rel.mandatory ? '' : '<button type="button" class="upd-later" id="updLater">Nanti saja</button>') + '</div>';
+    document.body.appendChild(box);
+    $('#updGo').onclick = function () { haptic('light'); if (NATIVE && P.Browser) P.Browser.open({ url: rel.url }); else _open.call(window, rel.url, '_blank'); };
+    var later = $('#updLater'); if (later) later.onclick = function () { LS.set('acx_upd_snooze', { v: rel.version, until: Date.now() + 20 * 3600000 }); box.classList.add('out'); setTimeout(function () { box.remove(); }, 220); };
+    if (!rel.mandatory) box.onclick = function (e) { if (e.target === box && later) later.click(); };
+  }
+  async function checkForUpdate(manual) {
+    if (!manual && !NATIVE) return;
+    if (!manual) { var last = LS.get('acx_upd_checked') || 0; if (Date.now() - last < 3 * 3600000) { var cached = LS.get('acx_upd_latest'); if (cached && verNewer(cached.version, currentVersion())) maybeShow(cached); return; } }
+    try {
+      var rel = await fetchLatestRelease(); LS.set('acx_upd_checked', Date.now()); LS.set('acx_upd_latest', rel);
+      if (verNewer(rel.version, currentVersion())) { if (manual) showUpdateSheet(rel); else maybeShow(rel); }
+      else if (manual) note('Kamu sudah memakai versi terbaru (' + currentVersion() + ')');
+    } catch (e) { if (manual) note('Tidak bisa memeriksa pembaruan: ' + e.message); }
+  }
+  function maybeShow(rel) {
+    var sn = LS.get('acx_upd_snooze');
+    if (!rel.mandatory && sn && sn.v === rel.version && sn.until > Date.now()) return;
+    showUpdateSheet(rel);
+  }
+  window.ACX_BACK = window.ACX_BACK || [];
+  window.ACX_BACK.push(function () { var s = $('#updSheet'); if (s) { var l = $('#updLater'); if (l) { l.click(); return true; } return true; } return false; });
+
   /* ---------- putuskan Strava (cabut izin) & hapus akun ---------- */
   async function freshSession() {
     var s = currentSession || LS.get('acx_session'); if (!s) return null;
@@ -651,6 +697,7 @@
   var __origLogout = null;
   document.addEventListener('DOMContentLoaded', function () {
     initLoginUi(); injectProfileRows();
+    setTimeout(function () { checkForUpdate(false); }, 2500);
     try { if (typeof nfInit === 'function') nfInit(); } catch (e) {}
     if (typeof logoutAthlete === 'function') {
       __origLogout = logoutAthlete;
@@ -708,6 +755,7 @@
       P.App.exitApp();
     });
     P.App.addListener('resume', function () {
+      setTimeout(function () { checkForUpdate(false); }, 1500);
       var ls = $('#loginScreen');
       if (ls && !ls.hidden && ls.getAttribute('data-state') === 'waiting' && !authBusy && Date.now() - browserOpenAt > 4000) setTimeout(function () { if (!authBusy && ls.getAttribute('data-state') === 'waiting') setLoginState('idle'); }, 2500);
       if (!engineReady) return;
@@ -721,5 +769,5 @@
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
-  window.ACX = { checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

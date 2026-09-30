@@ -58,7 +58,7 @@ for (const f of ['gas-shim.js', 'worker.js', 'app-engine.js']) copy(path.join(AP
 copy(path.join(APP, 'bridge.js'), path.join(OUT, 'bridge.js'));
 
 // ---------- konfigurasi server (opsional, bisa juga diisi dari layar login aplikasi) ----------
-const conf = { supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '' };
+const conf = { supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '', updateRepo: process.env.GITHUB_REPOSITORY || 'Malik190603/active-coach-app', version: VERSION };
 const confFile = path.join(ROOT, 'app', 'config.local.json');
 if (fs.existsSync(confFile)) Object.assign(conf, JSON.parse(read(confFile)));
 write(path.join(OUT, 'config.js'), 'window.ACX_CONFIG = ' + JSON.stringify(conf, null, 2) + ';\n');

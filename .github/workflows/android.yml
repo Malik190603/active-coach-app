@@ -91,10 +91,16 @@ jobs:
           name: ActiveCoach-APK
           path: ActiveCoach-*.apk
 
+      - name: Catatan rilis (dari pesan commit)
+        run: |
+          { echo "## Yang baru"; git log -1 --pretty=format:%B | grep -v -E '^(Co-Authored-By|Claude-Session):' | sed '/^$/N;/^\n$/D'; echo; echo; echo "Unduh file .apk di bawah dari HP lalu pasang menimpa versi lama."; } > release-notes.md
+          cat release-notes.md
+
       - name: Terbitkan di Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.1.${{ github.run_number }}
           name: Active Coach v1.1.${{ github.run_number }}
-          body: APK Android Active Coach (Masuk dengan Strava, peta baru, Studio 16 template). Unduh file .apk di bawah dari HP lalu pasang menimpa versi lama.
+          body_path: release-notes.md
+          make_latest: true
           files: ActiveCoach-*.apk
