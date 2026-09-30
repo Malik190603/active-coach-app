@@ -42,6 +42,7 @@ jobs:
 
       - name: Susun aplikasi web (www/)
         env:
+          VERSION_CODE: ${{ github.run_number }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: npm run build

@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'src'), APP = path.join(ROOT, 'app'), OUT = path.join(ROOT, 'www'), NM = path.join(ROOT, 'node_modules');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+// Versi tampil = major.minor dari package.json + nomor build GitHub (mis. 1.1.9), sama dengan nama file APK
+const RUN = process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER || '';
+const VERSION = RUN ? pkg.version.split('.').slice(0, 2).join('.') + '.' + RUN : pkg.version;
 
 function read(p) { return fs.readFileSync(p, 'utf8'); }
 function write(p, s) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); }
@@ -42,7 +45,7 @@ const cdn = {
 };
 for (const [url, local] of Object.entries(cdn)) html = html.split(`src="${url}"`).join(`src="${local}"`);
 html = html.replace('href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"', 'href="vendor/leaflet.css"');
-html = html.replace(/window\.AC_BUILD='[^']*'/, `window.AC_BUILD='app-${pkg.version}'`);
+html = html.replace(/window\.AC_BUILD='[^']*'/, `window.AC_BUILD='${VERSION}'`);
 html = html.replace('<base target="_top">', '');
 html = html.replace(/\n\s*var t=document\.createElement\('div'\);t\.textContent='Active Coach [\s\S]*?t\.remove\(\)\},7000\)/, '');
 html = html.replace('</defs>', '<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2.6"/><path d="M4.5 7.5 12 13l7.5-5.5"/></symbol></defs>');

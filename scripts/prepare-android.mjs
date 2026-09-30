@@ -35,7 +35,9 @@ if (!manifest.includes('android:scheme="activecoach"')) {
 const gradlePath = path.join(ROOT, 'android/app/build.gradle');
 let gradle = fs.readFileSync(gradlePath, 'utf8');
 const code = Number(process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER || 1);
-gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode ' + code).replace(/versionName\s+"[^"]*"/, 'versionName "' + pkg.version + '"');
+const versionName = (process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER) ? pkg.version.split('.').slice(0, 2).join('.') + '.' + code : pkg.version;
+gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode ' + code).replace(/versionName\s+"[^"]*"/, 'versionName "' + versionName + '"');
+console.log('Versi aplikasi: ' + versionName + ' (kode ' + code + ')');
 fs.writeFileSync(gradlePath, gradle);
 
 // 3) Ikon & splash dari folder assets/

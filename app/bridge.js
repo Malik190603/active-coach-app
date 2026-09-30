@@ -434,7 +434,7 @@
       '<button type="button" class="acx-row" id="acxExportRow"><span class="acx-row-ic tone-indigo icon"><svg><use href="#i-share"/></svg></span><span class="acx-row-text"><b>Cadangkan data</b><small>Simpan salinan lengkap (.json)</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxPrivacyRow"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-shield"/></svg></span><span class="acx-row-text"><b>Privasi & data</b><small>Kebijakan privasi · Powered by Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxDeleteRow"><span class="acx-row-ic tone-red icon"><svg><use href="#i-trash"/></svg></span><span class="acx-row-text"><b style="color:var(--acx-red)">Hapus akun & data</b><small>Hapus permanen dari server & cabut izin Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
-      '<p class="acx-powered">Powered by Strava · Active Coach tidak berafiliasi dengan Strava.</p>' +
+      '<p class="acx-powered">Active Coach versi ' + esc(window.AC_BUILD || '') + '<br>Powered by Strava · Active Coach tidak berafiliasi dengan Strava.</p>' +
       '<input type="file" id="acxImportFile" accept=".json,application/json,text/plain" hidden>');
     $('#acxDeleteRow').onclick = deleteAccountFlow;
     $('#acxPrivacyRow').onclick = function () { window.open(PRIVACY_URL, '_blank'); };
