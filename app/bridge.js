@@ -509,7 +509,7 @@
     var r = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
     if (!r.ok) throw new Error('GitHub ' + r.status);
     var j = await r.json(), apk = (j.assets || []).find(function (a) { return /\.apk$/i.test(a.name || ''); });
-    return { version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /#wajib|\[wajib\]/i.test(j.body || '') };
+    return { version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /^\s*(##\s*Yang baru\s*)?\[WAJIB\]/m.test(j.body || '') };
   }
   function notesHtml(md) {
     return esc(md).replace(/^## (.*)$/gm, '<b>$1</b>').replace(/^[-*] (.*)$/gm, '• $1').split('\n').filter(function (l) { return l.trim() && !/Unduh file \.apk/i.test(l); }).slice(0, 14).join('<br>');

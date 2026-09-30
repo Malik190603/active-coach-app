@@ -92,7 +92,7 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 
 ## Pembaruan otomatis
 
-Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Aplikasi (mulai v1.1.11) memeriksa rilis terbaru saat dibuka / kembali aktif (tiap 3 jam) dan menampilkan lembar **Versi baru tersedia** dengan tombol unduh langsung ke APK terbaru. Pengguna bisa memilih *Nanti saja*; tulis `#wajib` di pesan commit untuk rilis yang harus dipasang (tombol *Nanti* disembunyikan). Cek manual: **Profil → Periksa pembaruan**.
+Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Aplikasi (mulai v1.1.11) memeriksa rilis terbaru saat dibuka / kembali aktif (tiap 3 jam) dan menampilkan lembar **Versi baru tersedia** dengan tombol unduh langsung ke APK terbaru. Pengguna bisa memilih *Nanti saja*; awali judul commit dengan `[WAJIB]` untuk rilis yang harus dipasang (tombol *Nanti* disembunyikan). Cek manual: **Profil → Periksa pembaruan**.
 
 ## Kunci rilis (tanda tangan APK pribadi)
 
