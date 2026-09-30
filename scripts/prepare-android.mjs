@@ -31,6 +31,14 @@ if (!manifest.includes('android:scheme="activecoach"')) {
   console.log('Deep link activecoach:// ditambahkan');
 }
 
+// 1b) Izin memasang update APK dari dalam aplikasi
+manifest = fs.readFileSync(manifestPath, 'utf8');
+if (!manifest.includes('REQUEST_INSTALL_PACKAGES')) {
+  manifest = manifest.replace(/<application/, '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n    <application');
+  fs.writeFileSync(manifestPath, manifest);
+  console.log('Izin REQUEST_INSTALL_PACKAGES ditambahkan');
+}
+
 // 2) Versi aplikasi (versionCode dari nomor build CI bila ada)
 const gradlePath = path.join(ROOT, 'android/app/build.gradle');
 let gradle = fs.readFileSync(gradlePath, 'utf8');

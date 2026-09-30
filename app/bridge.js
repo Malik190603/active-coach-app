@@ -513,35 +513,76 @@
   function notesHtml(md) {
     return esc(md).replace(/^## (.*)$/gm, '<b>$1</b>').replace(/^[-*] (.*)$/gm, '• $1').split('\n').filter(function (l) { return l.trim() && !/Unduh file \.apk/i.test(l); }).slice(0, 14).join('<br>');
   }
+  /* Pembaruan WAJIB: layar penuh, aplikasi tidak bisa dipakai sampai versi terbaru terpasang.
+     APK diunduh di dalam aplikasi (dengan progres) lalu penginstal Android dibuka langsung. */
+  var updRel = null, updFile = '', updBusy = false;
+  function updSet(state, pct, msg) {
+    var bar = $('#updBar'), st = $('#updStatus'), go = $('#updGo'), alt = $('#updAlt');
+    if (bar) { bar.parentNode.hidden = state === 'idle'; bar.style.width = Math.max(3, Math.min(100, pct || 0)) + '%'; }
+    if (st) st.innerHTML = msg || '';
+    if (go) { go.disabled = state === 'downloading'; go.textContent = state === 'downloading' ? 'Mengunduh… ' + Math.round(pct || 0) + '%' : state === 'ready' ? 'Pasang versi ' + updRel.version : 'Perbarui sekarang'; }
+    if (alt) alt.hidden = state !== 'error';
+  }
+  async function updDownload() {
+    if (updBusy || !updRel) return;
+    if (updFile) return updInstall();
+    var FT = P.FileTransfer, FS = P.Filesystem;
+    if (!NATIVE || !FT || !FS) { _open.call(window, updRel.url, '_blank'); return; }
+    updBusy = true; updSet('downloading', 0, 'Mengunduh versi ' + esc(updRel.version) + '… jangan tutup aplikasi.');
+    var handle = null;
+    try {
+      var name = 'ActiveCoach-' + updRel.version + '.apk';
+      try { await FS.deleteFile({ path: name, directory: 'CACHE' }); } catch (e) {}
+      var uri = (await FS.getUri({ path: name, directory: 'CACHE' })).uri, path = String(uri).replace(/^file:\/\//, '');
+      var total = updRel.size || 0;
+      handle = await FT.addListener('progress', function (p) { var t = p.lengthComputable && p.contentLength ? p.contentLength : total; if (t) updSet('downloading', p.bytes / t * 100, 'Mengunduh ' + (p.bytes / 1048576).toFixed(1) + ' / ' + (t / 1048576).toFixed(1) + ' MB'); });
+      await FT.downloadFile({ url: updRel.url, path: path, progress: true, connectTimeout: 20000, readTimeout: 60000 });
+      updFile = uri; updBusy = false;
+      updSet('ready', 100, 'Unduhan selesai. Ketuk <b>Pasang</b>, lalu pilih <b>Update</b>.');
+      haptic('success');
+      await updInstall();
+    } catch (e) {
+      updBusy = false; updFile = '';
+      updSet('error', 0, 'Unduhan gagal: ' + esc((e && e.message) || e) + '. Periksa internet lalu coba lagi.');
+      haptic('error');
+    } finally { try { if (handle) handle.remove(); } catch (e) {} }
+  }
+  async function updInstall() {
+    if (!updFile) return;
+    try { await P.FileOpener.open({ filePath: updFile, contentType: 'application/vnd.android.package-archive', openWithDefault: true }); updSet('ready', 100, 'Penginstal Android terbuka. Kalau diminta, izinkan <b>Instal aplikasi tidak dikenal</b> untuk Active Coach, lalu kembali dan ketuk <b>Pasang</b> lagi.'); }
+    catch (e) { updSet('ready', 100, 'Tidak bisa membuka penginstal (' + esc((e && e.message) || e) + '). Coba lagi atau unduh lewat browser.'); var alt = $('#updAlt'); if (alt) alt.hidden = false; }
+  }
   function showUpdateSheet(rel) {
-    if ($('#updSheet')) return;
-    var box = document.createElement('div'); box.className = 'st-sheet upd-sheet'; box.id = 'updSheet';
-    box.innerHTML = '<div class="st-sheet-box"><div class="upd-hero"><span class="upd-ic"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span><div><h3>Versi baru tersedia</h3><small>' + esc(currentVersion()) + ' → <b>' + esc(rel.version) + '</b>' + (rel.size ? ' · ' + (rel.size / 1048576).toFixed(1) + ' MB' : '') + '</small></div></div>' +
+    updRel = rel;
+    var box = $('#updSheet');
+    if (box && box.dataset.v === rel.version) return;
+    if (box) box.remove();
+    updFile = '';
+    box = document.createElement('div'); box.className = 'upd-gate'; box.id = 'updSheet'; box.dataset.v = rel.version;
+    box.innerHTML = '<div class="upd-card"><span class="upd-ic"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></span>' +
+      '<h3>Pembaruan wajib</h3><p class="upd-ver">Versi kamu <b>' + esc(currentVersion()) + '</b> sudah tidak berlaku. Pasang versi <b>' + esc(rel.version) + '</b>' + (rel.size ? ' (' + (rel.size / 1048576).toFixed(1) + ' MB)' : '') + ' untuk melanjutkan.</p>' +
       '<div class="upd-notes">' + (notesHtml(rel.notes) || 'Perbaikan & peningkatan terbaru.') + '</div>' +
-      '<button type="button" class="acx-btn upd-go" id="updGo">Unduh & pasang versi ' + esc(rel.version) + '</button>' +
-      '<p class="upd-help">Setelah unduhan selesai, ketuk file APK-nya lalu pilih <b>Pasang/Update</b>. Datamu aman.</p>' +
-      (rel.mandatory ? '' : '<button type="button" class="upd-later" id="updLater">Nanti saja</button>') + '</div>';
+      '<div class="upd-prog" hidden><i id="updBar"></i></div><p class="upd-status" id="updStatus">Datamu aman — tersimpan di akunmu dan tidak hilang saat update.</p>' +
+      '<button type="button" class="acx-btn upd-go" id="updGo">Perbarui sekarang</button>' +
+      '<button type="button" class="upd-later" id="updAlt" hidden>Unduh lewat browser</button></div>';
     document.body.appendChild(box);
-    $('#updGo').onclick = function () { haptic('light'); if (NATIVE && P.Browser) P.Browser.open({ url: rel.url }); else _open.call(window, rel.url, '_blank'); };
-    var later = $('#updLater'); if (later) later.onclick = function () { LS.set('acx_upd_snooze', { v: rel.version, until: Date.now() + 20 * 3600000 }); box.classList.add('out'); setTimeout(function () { box.remove(); }, 220); };
-    if (!rel.mandatory) box.onclick = function (e) { if (e.target === box && later) later.click(); };
+    $('#updGo').onclick = function () { haptic('light'); updDownload(); };
+    $('#updAlt').onclick = function () { if (NATIVE && P.Browser) P.Browser.open({ url: rel.url }); else _open.call(window, rel.url, '_blank'); };
+    updSet('idle', 0, 'Datamu aman — tersimpan di akunmu dan tidak hilang saat update.');
   }
   async function checkForUpdate(manual) {
     if (!manual && !NATIVE) return;
-    if (!manual) { var last = LS.get('acx_upd_checked') || 0; if (Date.now() - last < 3 * 3600000) { var cached = LS.get('acx_upd_latest'); if (cached && verNewer(cached.version, currentVersion())) maybeShow(cached); return; } }
+    var cached = LS.get('acx_upd_latest');
     try {
       var rel = await fetchLatestRelease(); LS.set('acx_upd_checked', Date.now()); LS.set('acx_upd_latest', rel);
-      if (verNewer(rel.version, currentVersion())) { if (manual) showUpdateSheet(rel); else maybeShow(rel); }
-      else if (manual) note('Kamu sudah memakai versi terbaru (' + currentVersion() + ')');
-    } catch (e) { if (manual) note('Tidak bisa memeriksa pembaruan: ' + e.message); }
+      if (rel.version && verNewer(rel.version, currentVersion())) showUpdateSheet(rel);
+      else { var ex = $('#updSheet'); if (ex) ex.remove(); if (manual) note('Kamu sudah memakai versi terbaru (' + currentVersion() + ')'); }
+    } catch (e) {
+      // offline / batas API: tetap kunci bila sebelumnya sudah diketahui ada versi lebih baru
+      if (cached && cached.version && verNewer(cached.version, currentVersion())) showUpdateSheet(cached);
+      else if (manual) note('Tidak bisa memeriksa pembaruan: ' + e.message);
+    }
   }
-  function maybeShow(rel) {
-    var sn = LS.get('acx_upd_snooze');
-    if (!rel.mandatory && sn && sn.v === rel.version && sn.until > Date.now()) return;
-    showUpdateSheet(rel);
-  }
-  window.ACX_BACK = window.ACX_BACK || [];
-  window.ACX_BACK.push(function () { var s = $('#updSheet'); if (s) { var l = $('#updLater'); if (l) { l.click(); return true; } return true; } return false; });
 
   /* ---------- putuskan Strava (cabut izin) & hapus akun ---------- */
   async function freshSession() {
@@ -696,7 +737,7 @@
   var __origLogout = null;
   document.addEventListener('DOMContentLoaded', function () {
     initLoginUi(); injectProfileRows();
-    setTimeout(function () { checkForUpdate(false); }, 2500);
+    checkForUpdate(false);
     try { if (typeof nfInit === 'function') nfInit(); } catch (e) {}
     if (typeof logoutAthlete === 'function') {
       __origLogout = logoutAthlete;
@@ -738,6 +779,7 @@
   if (NATIVE && P.App) {
     P.App.addListener('appUrlOpen', function (e) { handleDeepLink(e && e.url); });
     P.App.addListener('backButton', function () {
+      if ($('#updSheet')) { try { P.App.minimizeApp(); } catch (e) { P.App.exitApp(); } return; }
       if (typeof window.acxBackHandler === 'function' && window.acxBackHandler()) return;
       var pick = $('.acx-pick'); if (pick) return;
       var pal = $('#searchPopup'); if (pal && !pal.hidden) { closeSearch(); return; }
@@ -754,7 +796,7 @@
       P.App.exitApp();
     });
     P.App.addListener('resume', function () {
-      setTimeout(function () { checkForUpdate(false); }, 1500);
+      checkForUpdate(false);
       var ls = $('#loginScreen');
       if (ls && !ls.hidden && ls.getAttribute('data-state') === 'waiting' && !authBusy && Date.now() - browserOpenAt > 4000) setTimeout(function () { if (!authBusy && ls.getAttribute('data-state') === 'waiting') setLoginState('idle'); }, 2500);
       if (!engineReady) return;

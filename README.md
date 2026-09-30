@@ -90,9 +90,9 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 | Data | Google Sheets | Supabase (+ cache di HP, tetap bisa dibuka offline) |
 
 
-## Pembaruan otomatis
+## Pembaruan wajib
 
-Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Aplikasi (mulai v1.1.11) memeriksa rilis terbaru saat dibuka / kembali aktif (tiap 3 jam) dan menampilkan lembar **Versi baru tersedia** dengan tombol unduh langsung ke APK terbaru. Pengguna bisa memilih *Nanti saja*; awali judul commit dengan `[WAJIB]` untuk rilis yang harus dipasang (tombol *Nanti* disembunyikan). Cek manual: **Profil → Periksa pembaruan**.
+Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Saat dibuka atau kembali aktif, aplikasi (mulai v1.1.15) memeriksa rilis terbaru. Kalau ada versi lebih baru, aplikasi **terkunci** di layar *Pembaruan wajib* sampai versi terbaru dipasang: APK diunduh di dalam aplikasi (dengan progres), lalu penginstal Android terbuka — pasang menimpa, data tetap ada. Pertama kali, Android meminta izin *Instal aplikasi tidak dikenal* untuk Active Coach. Jika offline, kunci tetap berlaku bila versi baru sudah pernah terdeteksi.
 
 ## Tanda tangan APK
 
