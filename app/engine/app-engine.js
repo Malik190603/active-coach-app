@@ -110,3 +110,23 @@ function appStravaAccessToken() {
   if (!a.stravaAccessToken || a.stravaExpiresAt < Math.floor(Date.now() / 1000) + 60) { try { return refreshStravaToken(id); } catch (e) { return a.stravaAccessToken || ''; } }
   return a.stravaAccessToken;
 }
+
+/* Impor aktivitas dari file (GPX/TCX/FIT) — disimpan seperti aktivitas biasa, tanpa tautan Strava. */
+function appImportActivity(a, athleteId) {
+  ensureRuntimeDatabase();
+  athleteId = String(athleteId || PropertiesService.getScriptProperties().getProperty('APP_ATHLETE_ID') || DEFAULT_ATHLETE_ID);
+  if (!a || !a.id || !/^file-/.test(String(a.id))) return { ok: false, error: 'Data aktivitas tidak valid' };
+  var sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEETS.logs), id = String(a.id);
+  var last = sh.getLastRow();
+  if (last > 1) {
+    var ids = sh.getRange(2, 1, last - 1, 1).getDisplayValues(), owners = sh.getRange(2, LOG_HEADERS.length, last - 1, 1).getDisplayValues();
+    for (var i = 0; i < ids.length; i++) if (ids[i][0] === 'L-' + id && String(owners[i][0]) === athleteId) return { ok: false, duplicate: true };
+  }
+  saveStravaActivity(a, athleteId);
+  var n = sh.getLastRow(), col = sh.getRange(2, 1, n - 1, 1).getDisplayValues();
+  for (var j = col.length - 1; j >= 0; j--) {
+    if (col[j][0] === 'L-' + id) { sh.getRange(j + 2, 23, 1, 2).setValues([['', '']]); sh.getRange(j + 2, 26).setValue(''); sh.getRange(j + 2, 27, 1, 2).setValues([[0, 0]]); break; }
+  }
+  auditEvent('FILE_IMPORT', athleteId, (a.name || '') + ' ' + Math.round(num(a.distance)) + ' m');
+  return { ok: true, id: 'L-' + id };
+}

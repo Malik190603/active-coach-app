@@ -461,8 +461,10 @@
                   <canvas id="stCanvas" aria-label="Pratinjau kartu"></canvas>
                   <div class="st-safe" id="stSafe" hidden><i class="t"><span>Area profil IG</span></i><i class="b"><span>Area balasan IG</span></i></div>
                   <div class="st-loading" id="stLoading" hidden><span class="lg-spin"></span>Memuat peta…</div>
+                  <div class="st-rec" id="stRec" hidden><span class="st-rec-dot"></span>Merekam video… <b>0%</b></div>
                 </div>
                 <p class="st-hint" id="stHint"></p>
+                <button type="button" class="st-video-btn" id="stVideo"><span class="icon"><svg><use href="#i-play"/></svg></span>Buat video animasi (5 dtk)</button>
               </div>
             </div>
             <div class="st-right">
@@ -703,6 +705,9 @@
   <?!= include('JSPlan') ?>
   <?!= include('JSReview') ?>
   <?!= include('JSGarage') ?>
+  <?!= include('JSNotify') ?>
+  <?!= include('JSImport') ?>
+  <?!= include('JSOnboard') ?>
   <?!= include('JSApp') ?>
   <script>
   (function(){

@@ -1,0 +1,53 @@
+<script>
+'use strict';
+/* =====================================================================
+   Onboarding pengguna baru: 3 langkah singkat agar zona, target & plan
+   langsung akurat. Sinkron Strava pertama berjalan di latar belakang.
+   ===================================================================== */
+function obDone(){try{return !!localStorage.getItem('acx_onb_'+currentAthleteId())}catch(e){return true}}
+function obMark(){try{localStorage.setItem('acx_onb_'+currentAthleteId(),String(Date.now()))}catch(e){}}
+function obOpen(opts){
+  opts=opts||{};if(document.getElementById('obSheet'))return;
+  let st={step:0,sport:'both',ride:100,run:20,hrMax:'',hrRest:'',ftp:'',hard1:'Rabu',hard2:'Sabtu',notif:true,time:'06:00'};
+  let prof=(DATA&&DATA.profile)||{};if(prof.goalCyclingKm)st.ride=+prof.goalCyclingKm;if(prof.goalRunningKm)st.run=+prof.goalRunningKm;if(prof.hariHard1)st.hard1=prof.hariHard1;if(prof.hariHard2)st.hard2=prof.hariHard2;
+  let box=document.createElement('div');box.className='ob';box.id='obSheet';document.body.appendChild(box);
+  let days=['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'];
+  let chips=(name,vals,cur,unit)=>`<div class="ob-chips" data-ob="${name}">${vals.map(v=>`<button type="button" class="${String(v)===String(cur)?'on':''}" data-v="${v}">${v}${unit||''}</button>`).join('')}</div>`;
+  function render(){
+    let s=st.step,first=(prof.nama||SESSION.nama||'Atlet').split(' ')[0];
+    let body=[
+      `<span class="ob-emoji">👋</span><h2>Halo, ${esc(first)}!</h2><p>Tiga pertanyaan singkat supaya coach langsung pas untukmu. ${opts.syncing?'<b>Aktivitas Strava-mu sedang diimpor di latar belakang.</b>':''}</p>
+       <div class="ob-label">Fokus olahraga</div>${`<div class="ob-seg" data-ob="sport">${[['ride','🚴 Sepeda'],['run','🏃 Lari'],['both','Keduanya']].map(o=>`<button type="button" class="${st.sport===o[0]?'on':''}" data-v="${o[0]}">${o[1]}</button>`).join('')}</div>`}
+       ${st.sport!=='run'?'<div class="ob-label">Target sepeda per minggu</div>'+chips('ride',[50,100,150,200,300],st.ride,' km'):''}
+       ${st.sport!=='ride'?'<div class="ob-label">Target lari per minggu</div>'+chips('run',[10,20,30,40,60],st.run,' km'):''}`,
+      `<span class="ob-emoji">❤️</span><h2>Detak jantung & power</h2><p>Kosongkan kalau belum tahu — Active Coach akan memperkirakannya otomatis dari aktivitasmu.</p>
+       <div class="ob-fields"><label>HR maks<input type="number" inputmode="numeric" data-f="hrMax" placeholder="Otomatis" value="${st.hrMax}"><em>bpm</em></label>
+       <label>HR istirahat<input type="number" inputmode="numeric" data-f="hrRest" placeholder="Otomatis" value="${st.hrRest}"><em>bpm</em></label>
+       ${st.sport!=='run'?`<label>FTP<input type="number" inputmode="numeric" data-f="ftp" placeholder="Otomatis" value="${st.ftp}"><em>watt</em></label>`:''}</div>`,
+      `<span class="ob-emoji">📅</span><h2>Jadwal & pengingat</h2><p>Coach menaruh 2 sesi berat per minggu di hari pilihanmu, lalu mengingatkanmu setiap pagi.</p>
+       <div class="ob-label">Sesi berat 1</div>${chips('hard1',days,st.hard1)}
+       <div class="ob-label">Sesi berat 2</div>${chips('hard2',days,st.hard2)}
+       <label class="st-toggle"><span><b>Pengingat latihan harian</b><small>Isi sesuai plan & kondisi tubuh</small></span><input type="checkbox" data-f="notif"${st.notif?' checked':''}><i></i></label>
+       ${st.notif?'<div class="ob-label">Jam pengingat</div>'+chips('time',['05:00','05:30','06:00','06:30','07:00','18:00'],st.time):''}`
+    ][s];
+    box.innerHTML=`<div class="ob-box"><div class="ob-top"><div class="ob-dots">${[0,1,2].map(i=>`<i class="${i<=s?'on':''}"></i>`).join('')}</div><button type="button" class="ob-skip" data-skip>Lewati</button></div><div class="ob-body" key="${s}">${body}</div>
+      <div class="ob-actions">${s?'<button type="button" class="acx-btn st-btn-ghost" data-back>Kembali</button>':''}<button type="button" class="acx-btn ob-next" data-next>${s<2?'Lanjut':'Mulai latihan 🚀'}</button></div></div>`;
+    box.querySelectorAll('[data-ob]').forEach(g=>g.querySelectorAll('button').forEach(b=>b.onclick=()=>{let k=g.dataset.ob,v=b.dataset.v;st[k]=/^\d+$/.test(v)&&k!=='time'?+v:v;if(window.acxHaptic)acxHaptic('select');render()}));
+    box.querySelectorAll('[data-f]').forEach(inp=>{inp.oninput=inp.onchange=()=>{st[inp.dataset.f]=inp.type==='checkbox'?inp.checked:inp.value.replace(/[^\d]/g,'');if(inp.type==='checkbox')render()}});
+    box.querySelector('[data-next]').onclick=()=>{if(st.step<2){st.step++;render()}else finish()};
+    let bk=box.querySelector('[data-back]');if(bk)bk.onclick=()=>{st.step--;render()};
+    box.querySelector('[data-skip]').onclick=()=>{obMark();close()};
+  }
+  function close(){box.classList.add('out');setTimeout(()=>box.remove(),260)}
+  async function finish(){
+    obMark();
+    let data={goalCyclingKm:st.sport==='run'?'':st.ride,goalRunningKm:st.sport==='ride'?'':st.run,hariHard1:st.hard1,hariHard2:st.hard2===st.hard1?(st.hard1==='Minggu'?'Sabtu':'Minggu'):st.hard2};
+    if(st.hrMax)data.hrMaxOverride=st.hrMax;if(st.hrRest)data.hrRestOverride=st.hrRest;if(st.ftp)data.ftpOverride=st.ftp;
+    close();toast('Siap! Coach menyesuaikan plan untukmu');
+    gs('saveTrainingSettings',data,currentAthleteId()).then(d=>{if(d&&d.logs)DATA=d;try{renderPageContent(currentPageView())}catch(e){}}).catch(()=>{});
+    if(typeof nfSavePrefs==='function'){let p=nfPrefs();p.daily=!!st.notif;p.time=st.time;p.asked=true;nfSavePrefs(p);if(st.notif){let s=await nfPermission(true);if(s==='granted')setTimeout(()=>nfSchedule({skipGarage:true}),1500)}}
+  }
+  render();
+}
+window.ACX_BACK=window.ACX_BACK||[];ACX_BACK.push(()=>{let s=document.getElementById('obSheet');if(s){s.querySelector('[data-back]')?s.querySelector('[data-back]').click():s.querySelector('[data-skip]').click();return true}return false});
+</script>

@@ -278,7 +278,7 @@ html[data-view="desktop"] .heatmap-panel .heatmap-map{height:520px}
 .st-field input,.st-caption{width:100%;box-sizing:border-box;border:1px solid var(--acx-line-2);border-radius:14px;background:var(--acx-surface-2);color:var(--acx-text);font:500 15px/1.45 Inter,system-ui;padding:12px 13px;outline:none;transition:border-color .2s,box-shadow .2s}
 .st-field input:focus,.st-caption:focus{border-color:var(--acx-pink);box-shadow:0 0 0 3px color-mix(in srgb,var(--acx-pink) 20%,transparent)}
 .st-caption{resize:vertical;min-height:150px;margin-bottom:10px;font-size:14px}
-.st-actions{display:none;position:fixed;z-index:40;left:50%;transform:translateX(-50%);bottom:calc(var(--acx-nav-h,66px) + 20px + env(safe-area-inset-bottom,0px));width:calc(100% - 24px);max-width:520px;display:flex;gap:8px;padding:8px;border-radius:22px;background:var(--acx-glass);backdrop-filter:saturate(180%) blur(18px);-webkit-backdrop-filter:saturate(180%) blur(18px);border:1px solid var(--acx-line);box-shadow:var(--acx-shadow-lg)}
+.st-actions{display:none;position:fixed;z-index:40;left:50%;transform:translateX(-50%);bottom:calc(var(--acx-nav-h,66px) + 20px + env(safe-area-inset-bottom,0px));width:calc(100% - 24px);max-width:520px;gap:8px;padding:8px;border-radius:22px;background:var(--acx-glass);backdrop-filter:saturate(180%) blur(18px);-webkit-backdrop-filter:saturate(180%) blur(18px);border:1px solid var(--acx-line);box-shadow:var(--acx-shadow-lg)}
 .st-actions .acx-btn{flex:1;height:48px;justify-content:center;display:inline-flex;align-items:center;gap:8px;font-size:14.5px}
 .st-btn-ghost{background:var(--acx-surface-2)!important;color:var(--acx-text)!important;box-shadow:none!important;border:1px solid var(--acx-line)!important}
 .st-btn-main{background:linear-gradient(135deg,var(--acx-pink),var(--acx-violet))!important;color:#fff!important;flex:1.35!important}
@@ -328,4 +328,39 @@ html.is-offline body:after{content:"Offline — perubahan disimpan di HP";positi
 .lg-powered{margin:0;text-align:center;font-size:11.5px;font-weight:600;color:rgba(255,255,255,.5)}
 .lg-legal a{color:rgba(255,255,255,.8);text-decoration:underline;white-space:nowrap}
 .lg-strava{background:#FC5200}
+
+.st-video-btn{display:inline-flex;align-items:center;gap:8px;margin-top:10px;height:40px;padding:0 16px;border-radius:99px;border:1px solid var(--acx-line-2);background:var(--acx-surface);color:var(--acx-text);font:700 13.5px Inter,system-ui;cursor:pointer;box-shadow:var(--acx-shadow);transition:transform .15s var(--ease-out)}
+.st-video-btn .icon{font-size:16px;color:var(--acx-pink)}.st-video-btn:active{transform:scale(.96)}.st-video-btn:disabled{opacity:.5}
+.st-rec{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:99px;background:rgba(0,0,0,.72);color:#fff;font:700 12.5px Inter,system-ui;z-index:3}
+.st-rec-dot{width:9px;height:9px;border-radius:50%;background:#ef4444;animation:recBlink 1s infinite}
+@keyframes recBlink{50%{opacity:.25}}
+.nf-perm{margin:0 0 10px;padding:11px 12px;border-radius:14px;background:color-mix(in srgb,var(--acx-amber) 16%,transparent);font-size:13px;line-height:1.45}
+
+/* ---------------------------- ONBOARDING ---------------------------- */
+.ob{position:fixed;inset:0;z-index:10050;background:rgba(8,8,14,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .25s ease}
+.ob.out{animation:fadeOut .25s ease forwards}
+.ob-box{width:100%;max-width:520px;max-height:92vh;overflow:auto;background:var(--acx-surface);color:var(--acx-text);border-radius:28px 28px 0 0;padding:16px 20px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -20px 60px -20px rgba(0,0,0,.6);animation:sheetUp .4s var(--ease-out)}
+html[data-view="desktop"] .ob{align-items:center}html[data-view="desktop"] .ob-box{border-radius:28px}
+.ob-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.ob-dots{display:flex;gap:6px}.ob-dots i{width:22px;height:5px;border-radius:9px;background:var(--acx-line-2);transition:background .3s}.ob-dots i.on{background:var(--acx-strava)}
+.ob-skip{border:0;background:none;color:var(--acx-text-3);font:700 13px Inter,system-ui;cursor:pointer}
+.ob-body{animation:paneIn .35s var(--ease-out)}
+.ob-emoji{font-size:40px;display:block;margin:4px 0 6px}
+.ob-body h2{margin:0 0 6px;font-size:25px;font-weight:850;letter-spacing:-.6px}
+.ob-body>p{margin:0 0 14px;color:var(--acx-text-2);font-size:14px;line-height:1.5}
+.ob-label{font-size:12px;font-weight:800;color:var(--acx-text-3);text-transform:uppercase;letter-spacing:.6px;margin:14px 0 8px}
+.ob-seg{display:flex;gap:6px;padding:4px;border-radius:14px;background:var(--acx-sunken)}
+.ob-seg button{flex:1;height:42px;border:0;border-radius:11px;background:none;color:var(--acx-text-2);font:700 13.5px Inter,system-ui;cursor:pointer}
+.ob-seg button.on{background:var(--acx-surface);color:var(--acx-text);box-shadow:0 2px 8px -4px rgba(0,0,0,.3)}
+.ob-chips{display:flex;flex-wrap:wrap;gap:8px}
+.ob-chips button{height:38px;padding:0 14px;border-radius:12px;border:1px solid var(--acx-line-2);background:var(--acx-surface);color:var(--acx-text);font:700 13px Inter,system-ui;cursor:pointer;transition:all .18s var(--ease-out)}
+.ob-chips button.on{background:var(--acx-strava);border-color:var(--acx-strava);color:#fff}
+.ob-fields{display:grid;gap:10px}
+.ob-fields label{display:flex;align-items:center;gap:10px;padding:0 14px;height:52px;border-radius:14px;background:var(--acx-surface-2);border:1px solid var(--acx-line);font-weight:700;font-size:14px}
+.ob-fields input{flex:1;min-width:0;border:0;background:none;outline:none;text-align:right;color:var(--acx-text);font:700 17px Inter,system-ui}
+.ob-fields em{font-style:normal;color:var(--acx-text-3);font-size:12.5px;min-width:40px;flex:none}
+.ob-actions{display:flex;gap:10px;margin-top:18px}
+.ob-actions .acx-btn{flex:1;height:50px;justify-content:center;display:inline-flex;align-items:center}
+.ob-next{background:var(--acx-strava)!important;color:#fff!important;flex:1.6!important}
+.ob .st-toggle{margin-top:14px}
 </style>

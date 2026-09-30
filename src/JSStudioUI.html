@@ -54,6 +54,8 @@ function stRender(ctx,W,H,k,opt){
   S.loading=!!(x.stravaId&&ST_STREAMS[x.stravaId]===undefined);
   S.drawBg(ctx);
   ctx.save();
+  if(ST_ANIM){let t=ST_ANIM.t,e=stEase(t/.16),c=stEase((t-.08)/.6);ctx.globalAlpha=e;ctx.translate(0,(1-e)*H*.03);
+    if(c<1){let Dc=Object.assign({},D,{distance:D.distance*c,minutes:D.minutes*c,elev:D.elev*c,kcal:D.kcal*c,sec:(D.sec||0)*c});Dc.metrics=D.metrics.map(m=>stMetric(Dc,m.k)||m);D=Dc}}
   if(tpl.movable&&!opt.auto){let a=tpl.anchor(W,H,S);ctx.translate(a[0]+ST.dx*W,a[1]+ST.dy*H);ctx.scale(ST.scale,ST.scale);ctx.translate(-a[0],-a[1])}
   try{tpl.draw(ctx,W,H,D,S)}catch(e){console.error('Template '+tpl.k,e)}
   ctx.restore();
@@ -267,6 +269,34 @@ async function stExport(){
   }catch(e){toast('Gagal membagikan: '+(e.message||e))}
   [btn,top].forEach(b=>{if(b){b.disabled=false;b.classList.remove('is-busy')}});
 }
+async function stExportVideo(){
+  let x=stActivity();if(!x){toast('Pilih aktivitas dulu');return}
+  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){toast('Perangkat ini belum mendukung rekam video');return}
+  let types=['video/mp4;codecs=avc1.42E01E','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'],mime=types.find(t=>{try{return MediaRecorder.isTypeSupported(t)}catch(e){return false}});
+  if(!mime){toast('Format video tidak didukung perangkat ini');return}
+  let btn=$('#stVideo'),ov=$('#stRec');if(btn)btn.disabled=true;
+  try{
+    await stFonts();
+    let tpl=stTpl(),f=stFmt(),bg=stEffBg(tpl);
+    if(bg.mode==='map'){let m=stMapFor(tpl,f.w,f.h,stStyleFor(tpl,f.w,f.h,1).acc);let t0=Date.now();while(m&&m.pending&&Date.now()-t0<15000)await new Promise(r=>setTimeout(r,200))}
+    let W=720,H=Math.round(W*f.h/f.w),k=W/f.w,cv=document.createElement('canvas');cv.width=W;cv.height=H;let ctx=cv.getContext('2d');
+    let draw=t=>{ST_ANIM=t>=1?null:{t};ctx.setTransform(k,0,0,k,0,0);if(bg.mode==='transparent'){ctx.fillStyle='#111';ctx.fillRect(0,0,f.w,f.h)}stRender(ctx,f.w,f.h,k);ST_ANIM=null};
+    draw(0);
+    let stream=cv.captureStream(30),rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8000000}),chunks=[];
+    rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+    let done=new Promise(ok=>rec.onstop=ok);
+    if(ov){ov.hidden=false}
+    rec.start(250);
+    let DUR=5200,t0=performance.now();
+    await new Promise(ok=>{let step=now=>{let el=now-t0,t=Math.min(1,el/(DUR*.72));draw(t);if(ov)ov.querySelector('b').textContent=Math.min(100,Math.round(el/DUR*100))+'%';if(el<DUR)requestAnimationFrame(step);else ok()};requestAnimationFrame(step)});
+    rec.stop();await done;stream.getTracks().forEach(tr=>tr.stop());
+    let blob=new Blob(chunks,{type:mime.split(';')[0]});if(!blob.size)throw new Error('Video kosong');
+    let ext=/mp4/.test(mime)?'mp4':'webm',name='activecoach-'+tpl.k+'-'+String(x.date||'').slice(0,10)+'.'+ext;
+    let ok=window.ACX&&ACX.shareImage?await ACX.shareImage(blob,name,stCurrentCaption()):true;
+    if(ok){if(window.acxHaptic)acxHaptic('success');toast(ext==='mp4'?'Video siap dibagikan':'Video (WebM) siap — sebagian aplikasi butuh MP4')}
+  }catch(e){toast('Gagal membuat video: '+(e.message||e))}
+  ST_ANIM=null;if(ov)ov.hidden=true;if(btn)btn.disabled=false;stDraw();
+}
 let ST_FONT_P=null;
 function stFonts(){if(ST_FONTS_OK||!document.fonts)return Promise.resolve();if(ST_FONT_P)return ST_FONT_P;
   let list=['400 40px Inter','500 40px Inter','600 40px Inter','700 40px Inter','800 40px Inter','900 40px Inter','300 40px Inter','400 40px Anton',"400 40px 'Bebas Neue'","400 40px 'Space Mono'","700 40px 'Space Mono'","900 40px 'Playfair Display'","italic 900 40px 'Playfair Display'",'700 40px Caveat','600 40px Caveat'];
@@ -296,6 +326,7 @@ function studioInit(){
   let pi=$('#stPhotoInput');if(pi)pi.onchange=e=>{let f=e.target.files&&e.target.files[0];e.target.value='';stLoadPhoto(f)};
   ['stShare','stShareTop'].forEach(id=>{let b=$('#'+id);if(b)b.onclick=stExport});
   let cc=$('#stCopyCaption');if(cc)cc.onclick=()=>stCopy(stCurrentCaption());
+  let vb=$('#stVideo');if(vb)vb.onclick=stExportVideo;
   stBindStage();
   window.addEventListener('resize',()=>{if(currentPageView()!=='overlay-editor')return;clearTimeout(window.__stRz);window.__stRz=setTimeout(()=>{stSizeStage();stDraw()},120)});
   document.addEventListener('acx:theme',()=>{if(currentPageView()==='overlay-editor')stDraw()});

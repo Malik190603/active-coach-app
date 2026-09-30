@@ -1,0 +1,95 @@
+<script>
+'use strict';
+/* =====================================================================
+   Impor aktivitas dari file GPX / TCX / FIT (Garmin, Coros, Wahoo, Polar…)
+   Diproses di HP: rute, jarak, waktu bergerak, elevasi, HR, cadence, power.
+   ===================================================================== */
+function impEncodePolyline(pts){let out='',pLat=0,pLng=0;const enc=v=>{v=v<0?~(v<<1):v<<1;let s='';while(v>=0x20){s+=String.fromCharCode((0x20|(v&0x1f))+63);v>>=5}return s+String.fromCharCode(v+63)};pts.forEach(p=>{let la=Math.round(p[0]*1e5),lo=Math.round(p[1]*1e5);out+=enc(la-pLat)+enc(lo-pLng);pLat=la;pLng=lo});return out}
+function impHav(a,b){let R=6371000,t=Math.PI/180,dLa=(b[0]-a[0])*t,dLo=(b[1]-a[1])*t,x=Math.sin(dLa/2)**2+Math.cos(a[0]*t)*Math.cos(b[0]*t)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(x)))}
+function impNum(v){let n=parseFloat(v);return isFinite(n)?n:null}
+function impText(el,sel){let n=el.querySelector(sel);return n?n.textContent.trim():''}
+function impLocal(ms,offsetMin){let d=new Date(ms+(offsetMin==null?-new Date(ms).getTimezoneOffset():offsetMin)*60000);return d.toISOString().slice(0,19)}
+
+/* ---------- XML: GPX & TCX ---------- */
+function impParseXml(text){
+  let doc=new DOMParser().parseFromString(text,'application/xml');if(doc.querySelector('parsererror'))throw new Error('File tidak bisa dibaca (XML rusak)');
+  let byLocal=(el,name)=>[...el.getElementsByTagName('*')].filter(n=>n.localName===name);
+  let first=(el,name)=>{let n=byLocal(el,name)[0];return n?n.textContent.trim():''};
+  let pts=[],name='',type='';
+  if(doc.documentElement.localName==='gpx'){
+    name=first(doc,'name');type=first(doc,'type');
+    byLocal(doc,'trkpt').forEach(p=>{let lat=impNum(p.getAttribute('lat')),lon=impNum(p.getAttribute('lon'));if(lat==null||lon==null)return;let t=Date.parse(first(p,'time'));pts.push({lat,lon,t:isFinite(t)?t:null,ele:impNum(first(p,'ele')),hr:impNum(first(p,'hr')),cad:impNum(first(p,'cad')),pw:impNum(first(p,'power'))})});
+    return {pts,name,type,summary:{}};
+  }
+  if(doc.documentElement.localName==='TrainingCenterDatabase'){
+    let act=byLocal(doc,'Activity')[0];if(!act)throw new Error('File TCX tidak berisi aktivitas');
+    type=act.getAttribute('Sport')||'';name=first(act,'Notes')||'';
+    let cal=0,dist=0,time=0;byLocal(act,'Lap').forEach(l=>{cal+=impNum(first(l,'Calories'))||0;dist+=impNum([...l.children].find(c=>c.localName==='DistanceMeters')?.textContent)||0;time+=impNum(first(l,'TotalTimeSeconds'))||0});
+    byLocal(act,'Trackpoint').forEach(p=>{let t=Date.parse(first(p,'Time')),lat=impNum(first(p,'LatitudeDegrees')),lon=impNum(first(p,'LongitudeDegrees'));let hrEl=byLocal(p,'HeartRateBpm')[0];pts.push({lat,lon,t:isFinite(t)?t:null,ele:impNum(first(p,'AltitudeMeters')),dist:impNum(first(p,'DistanceMeters')),hr:hrEl?impNum(first(hrEl,'Value')):null,cad:impNum(first(p,'Cadence'))??impNum(first(p,'RunCadence')),pw:impNum(first(p,'Watts')),spd:impNum(first(p,'Speed'))})});
+    return {pts,name,type,summary:{calories:cal,distance:dist,elapsed:time}};
+  }
+  throw new Error('Format file tidak dikenali');
+}
+
+/* ---------- FIT (biner) ---------- */
+function impParseFit(buf){
+  let dv=new DataView(buf),hs=dv.getUint8(0);
+  if(buf.byteLength<14||String.fromCharCode(dv.getUint8(8),dv.getUint8(9),dv.getUint8(10),dv.getUint8(11))!=='.FIT')throw new Error('Bukan file FIT yang valid');
+  let end=Math.min(buf.byteLength,hs+dv.getUint32(4,true)),pos=hs,defs={},lastTs=0,records=[],session=null,sport=null,localOff=null;
+  const SZ={0:1,1:1,2:1,3:2,4:2,5:4,6:4,7:1,8:4,9:8,10:1,11:2,12:4,13:1,14:8,15:8,16:8};
+  const INV={1:0x7F,2:0xFF,0:0xFF,3:0x7FFF,4:0xFFFF,5:0x7FFFFFFF,6:0xFFFFFFFF,10:0,11:0,12:0};
+  function rd(bt,off,size,le){let b=bt&0x1F,s=SZ[b]||1;if(b===7||size!==s&&size%s!==0)return null;try{switch(b){case 0:case 2:case 10:case 13:return dv.getUint8(off);case 1:return dv.getInt8(off);case 3:return dv.getInt16(off,le);case 4:case 11:return dv.getUint16(off,le);case 5:return dv.getInt32(off,le);case 6:case 12:return dv.getUint32(off,le);case 8:return dv.getFloat32(off,le);case 9:return dv.getFloat64(off,le);default:return null}}catch(e){return null}}
+  while(pos<end-1){
+    let h=dv.getUint8(pos++);
+    if(h&0x80){let lt=(h>>5)&3,off=h&0x1F,def=defs[lt];if(!def)break;let ts=(lastTs&~0x1F)+off;if(off<(lastTs&0x1F))ts+=0x20;lastTs=ts;pos=readData(def,pos,ts);continue}
+    let lt=h&0x0F;
+    if(h&0x40){pos++;let arch=dv.getUint8(pos++),le=arch===0,gm=le?dv.getUint16(pos,true):dv.getUint16(pos,false);pos+=2;let n=dv.getUint8(pos++),fields=[];for(let i=0;i<n;i++){fields.push({num:dv.getUint8(pos),size:dv.getUint8(pos+1),bt:dv.getUint8(pos+2)});pos+=3}let dev=0;if(h&0x20){let nd=dv.getUint8(pos++);for(let i=0;i<nd;i++){dev+=dv.getUint8(pos+1);pos+=3}}defs[lt]={gm,le,fields,dev};continue}
+    let def=defs[lt];if(!def)break;pos=readData(def,pos,null);
+  }
+  function readData(def,p,cts){
+    let v={};def.fields.forEach(f=>{let x=rd(f.bt,p,f.size,def.le),b=f.bt&0x1F;if(x!=null&&!(INV[b]!=null&&x===INV[b]&&b!==10&&b!==11&&b!==12)&&!((b===10||b===11||b===12)&&x===0))v[f.num]=x;p+=f.size});p+=def.dev;
+    if(v[253]!=null)lastTs=v[253];let ts=v[253]!=null?v[253]:cts;
+    if(def.gm===20){let r={t:ts!=null?(ts+631065600)*1000:null};if(v[0]!=null&&v[1]!=null&&v[0]!==0x7FFFFFFF){r.lat=v[0]*(180/2147483648);r.lon=v[1]*(180/2147483648)}
+      r.ele=v[78]!=null?v[78]/5-500:v[2]!=null?v[2]/5-500:null;r.hr=v[3]??null;r.cad=v[4]??null;r.dist=v[5]!=null?v[5]/100:null;r.spd=v[73]!=null?v[73]/1000:v[6]!=null?v[6]/1000:null;r.pw=v[7]??null;records.push(r)}
+    else if(def.gm===18&&!session)session=v;
+    else if(def.gm===12&&v[0]!=null&&sport==null)sport=v[0];
+    else if(def.gm===34&&v[5]!=null&&v[253]!=null)localOff=Math.round((v[5]-v[253])/60);
+    return p;
+  }
+  let sp=session&&session[5]!=null?session[5]:sport,type={1:'Run',2:'Ride',11:'Walk',17:'Hike',5:'Swim',10:'Workout'}[sp]||'';
+  let summary={};if(session){summary={distance:session[9]!=null?session[9]/100:null,moving:session[8]!=null?session[8]/1000:null,elapsed:session[7]!=null?session[7]/1000:null,calories:session[11]??null,avgHr:session[16]??null,maxHr:session[17]??null,cadence:session[18]??null,power:session[20]??null,maxPower:session[21]??null,ascent:session[22]??null,maxSpeed:session[15]!=null?session[15]/1000:null}}
+  return {pts:records,name:'',type,summary,localOffset:localOff};
+}
+
+/* ---------- ringkasan → bentuk aktivitas ala Strava ---------- */
+function impSummarize(r,fileName){
+  let pts=r.pts.filter(p=>p.t!=null||p.lat!=null);if(pts.length<2&&!r.summary.distance)throw new Error('File tidak berisi titik rekaman');
+  let geo=pts.filter(p=>p.lat!=null&&p.lon!=null&&Math.abs(p.lat)<=90),dist=0,moving=0,gain=0,maxSpd=0,prevEle=null,hr=[],cad=[],pw=[];
+  let tStart=pts.find(p=>p.t)?.t||Date.now(),tEnd=[...pts].reverse().find(p=>p.t)?.t||tStart;
+  for(let i=1;i<pts.length;i++){let a=pts[i-1],b=pts[i],d=0;if(a.dist!=null&&b.dist!=null)d=Math.max(0,b.dist-a.dist);else if(a.lat!=null&&b.lat!=null)d=impHav([a.lat,a.lon],[b.lat,b.lon]);let dt=a.t&&b.t?(b.t-a.t)/1000:0;dist+=d;let v=b.spd!=null?b.spd:(dt>0?d/dt:0);if(dt>0&&dt<=30&&v>0.4)moving+=dt;if(dt>0&&dt<=10&&v<35)maxSpd=Math.max(maxSpd,v)}
+  pts.forEach(p=>{if(p.ele!=null){if(prevEle==null)prevEle=p.ele;else if(p.ele-prevEle>=2){gain+=p.ele-prevEle;prevEle=p.ele}else if(prevEle-p.ele>=2)prevEle=p.ele}if(p.hr>0)hr.push(p.hr);if(p.cad>0)cad.push(p.cad);if(p.pw!=null&&p.pw>=0)pw.push(p.pw)});
+  let S=r.summary||{},avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+  dist=S.distance||dist;moving=S.moving||moving||(tEnd-tStart)/1000;let elapsed=S.elapsed||(tEnd-tStart)/1000;
+  let spd=moving>0?dist/moving:0,t=String(r.type||'').toLowerCase(),type=/run|lari/.test(t)?'Run':/bik|ride|cycl|sepeda/.test(t)?'Ride':/walk/.test(t)?'Walk':/hik/.test(t)?'Hike':(spd*3.6>=13?'Ride':'Run');
+  let startLocal=impLocal(tStart,r.localOffset),hour=+startLocal.slice(11,13),part=hour<10?'Pagi':hour<15?'Siang':hour<18?'Sore':'Malam';
+  let label={Run:'Lari',Ride:'Gowes',Walk:'Jalan',Hike:'Hiking'}[type]||'Aktivitas';
+  let route=acxDecimate?acxDecimate(geo.map(p=>[p.lat,p.lon]),600):geo.map(p=>[p.lat,p.lon]);
+  let key=String(Math.round(tStart/1000))+'-'+Math.round(dist);
+  return {id:'file-'+key,name:(r.name||'').trim()||(label+' '+part),type,start_date_local:startLocal+'Z',distance:dist,moving_time:Math.round(moving),elapsed_time:Math.round(elapsed),total_elevation_gain:Math.round(S.ascent||gain),average_speed:spd,max_speed:S.maxSpeed||maxSpd,average_heartrate:S.avgHr||Math.round(avg(hr)),max_heartrate:S.maxHr||(hr.length?Math.max(...hr):0),average_cadence:S.cadence||Math.round(avg(cad)),average_watts:S.power||Math.round(avg(pw)),max_watts:S.maxPower||(pw.length?Math.max(...pw):0),calories:S.calories||0,description:'Diimpor dari '+fileName,map:{summary_polyline:route.length>1?impEncodePolyline(route):''}};
+}
+async function impImportFile(file){
+  if(!file)return;let name=file.name||'aktivitas',ext=(name.split('.').pop()||'').toLowerCase();
+  if(file.size>40*1024*1024){toast('File terlalu besar (maks 40 MB)');return}
+  showGlobalLoader('Membaca '+esc(name)+'…');
+  try{
+    let r=ext==='fit'?impParseFit(await file.arrayBuffer()):impParseXml(await file.text());
+    let a=impSummarize(r,name);
+    let res=await gs('appImportActivity',a,currentAthleteId());
+    hideGlobalLoader();
+    if(res&&res.duplicate){toast('Aktivitas ini sudah pernah diimpor');return}
+    if(!res||!res.ok)throw new Error((res&&res.error)||'Gagal menyimpan');
+    toast('Diimpor: '+esc(a.name)+' · '+(a.distance/1000).toFixed(1)+' km');if(window.acxHaptic)acxHaptic('success');
+    await load();
+  }catch(e){hideGlobalLoader();toast('Impor gagal: '+esc(e.message||e))}
+}
+</script>

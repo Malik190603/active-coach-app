@@ -74,6 +74,9 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 - **Peta:** tombol lapis untuk gaya peta (Standar, Satelit, Topo, Terang, Gelap), tombol layar penuh, dan pusatkan rute. Kalau satu server peta gagal, aplikasi otomatis pindah ke server cadangan.
 - **Studio:** Berbagi → Studio. 16 template (stiker transparan, minimalis, angka raksasa, rute neon, struk, poster finisher, split per KM, profil elevasi, kartu kaca, Now Playing, notifikasi, rekap minggu, sampul majalah, polaroid, data lengkap, peta rute). Latar transparan/foto/warna/peta sungguhan, warna aksen otomatis dari foto, pilihan data, privasi rute, ukuran Story/Feed/Kotak, caption + hashtag otomatis. Tombol **Bagikan** membuka menu Android (Instagram, WhatsApp, Simpan).
 - **Putuskan Strava / Hapus akun:** *Putuskan Strava* mencabut izin di Strava dan menghapus token. **Profil → Hapus akun & data** menghapus akun dan seluruh data secara permanen (butuh `strava-callback` versi terbaru). Kebijakan privasi ada di `PRIVACY.md`.
+- **Notifikasi:** Profil → Notifikasi. Pengingat latihan harian sesuai plan (jam bisa dipilih), rekap mingguan (Minggu 19:00), dan pengingat servis sepeda.
+- **Impor file:** Profil → Impor aktivitas (GPX/TCX/FIT) untuk aktivitas dari Garmin, Coros, Wahoo, dll. yang tidak ada di Strava.
+- **Video animasi:** di Studio, tombol *Buat video animasi (5 dtk)* — rute tergambar & angka berjalan, hasil MP4 untuk Reels/Story.
 - **Cadangan:** buka **Profil → Cadangkan data** untuk menyimpan salinan lengkap (.json). Pulihkan lewat **Profil → Pulihkan dari cadangan**.
 - **Laporan PDF dan kartu Wrapped:** tombol unduh akan membuka menu *Simpan / Bagikan* Android.
 
@@ -85,6 +88,21 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 | Analisis otomatis tiap jam | Trigger Apps Script | Berjalan saat aplikasi dibuka (dan tiap 30 menit selama terbuka) |
 | Login | Nama + PIN | Masuk dengan Strava |
 | Data | Google Sheets | Supabase (+ cache di HP, tetap bisa dibuka offline) |
+
+
+## Kunci rilis (tanda tangan APK pribadi)
+
+Secara bawaan APK ditandatangani kunci debug yang ada di repo. Supaya tidak ada orang lain yang bisa membuat "update palsu", pakai kunci rilis pribadi:
+
+1. Buka **Settings → Secrets and variables → Actions → tab Secrets → New repository secret**, lalu buat 4 secret:
+   `RELEASE_KEYSTORE_B64`, `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` (isinya dari file kunci yang kamu simpan).
+2. Jalankan ulang workflow (**Actions → Build APK Android → Run workflow**). Log langkah "Kunci tanda tangan" akan menulis *Memakai kunci rilis pribadi*.
+3. **Sekali saja:** uninstall Active Coach versi lama di HP, lalu pasang APK baru. Data aman di server — cukup *Connect with Strava* lagi. Update berikutnya bisa langsung dipasang menimpa.
+4. Simpan file kunci & sandinya baik-baik (mis. Google Drive pribadi). Kalau hilang, update berikutnya harus uninstall lagi.
+
+## Webhook Strava (aktivitas baru langsung masuk)
+
+Tidak perlu diatur manual: setelah login, aplikasi meminta fungsi `strava-callback` mendaftarkan webhook ke Strava (sekali). Setiap ada aktivitas baru, Strava memberi tahu server dan aplikasi langsung menyinkronkan saat dibuka/aktif (dicek tiap 90 detik selama aplikasi terbuka). Jika izin dicabut dari strava.com, aplikasi otomatis memutus Strava. Butuh `strava-callback` versi terbaru. Webhook lama dari versi web (Apps Script) diganti otomatis.
 
 ## Struktur proyek
 

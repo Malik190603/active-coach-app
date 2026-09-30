@@ -255,7 +255,20 @@
     if (moved) note(moved + ' aktivitas dari akun lama sudah dipindahkan');
     else note('Halo, ' + String(SESSION.nama || 'Atlet').split(' ')[0] + '! 👋');
     if (applied && applied.scopeOk === false) setTimeout(function () { note('Izin "lihat semua aktivitas" tidak dicentang — aktivitas privat tidak ikut. Masuk ulang untuk mengubah.'); }, 2600);
-    if (applied && (applied.needsFirstSync || moved)) setTimeout(firstSync, moved ? 2200 : 900);
+    if (applied && applied.needsFirstSync && !moved && typeof obOpen === 'function') { quietFirstSync(); setTimeout(function () { try { obOpen({ syncing: true }); } catch (e) {} }, 1400); }
+    else if (applied && (applied.needsFirstSync || moved)) setTimeout(firstSync, moved ? 2200 : 900);
+  }
+  async function quietFirstSync() {
+    if (!engineReady) return;
+    if (typeof LOAD_BUSY !== 'undefined' && LOAD_BUSY) { setTimeout(quietFirstSync, 700); return; }
+    var root = document.documentElement; root.classList.add('is-syncing'); autoBusy = true;
+    try {
+      var r = await callEngine('syncStravaAll', [SESSION.athleteId]); markSynced();
+      if (typeof softRefresh === 'function') await softRefresh();
+      if (typeof loadStrava === 'function') loadStrava();
+      note(((r && r.imported) || 0) + ' aktivitas diimpor dari Strava ✓'); haptic('success');
+    } catch (e) { note('Impor Strava gagal: ' + e.message + ' — tarik layar ke bawah untuk mencoba lagi'); }
+    root.classList.remove('is-syncing'); autoBusy = false;
   }
   function firstSync() {
     if (!engineReady || typeof syncStrava !== 'function') return;
@@ -432,11 +445,17 @@
       '<div class="acx-row as-static"><span class="acx-row-ic tone-teal icon"><svg><use href="#i-layers"/></svg></span><span class="acx-row-text"><b>Penyimpanan</b><small id="acxSyncState">Tersinkron dengan server</small><small>' + esc(hostName) + '</small></span></div>' +
       '<button type="button" class="acx-row" id="acxImportRow"><span class="acx-row-ic tone-green icon"><svg><use href="#i-download"/></svg></span><span class="acx-row-text"><b>Pulihkan dari cadangan</b><small>File .json dari Cadangkan data / Google Sheets lama</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxExportRow"><span class="acx-row-ic tone-indigo icon"><svg><use href="#i-share"/></svg></span><span class="acx-row-text"><b>Cadangkan data</b><small>Simpan salinan lengkap (.json)</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
+      '<button type="button" class="acx-row" id="acxNotifRow"><span class="acx-row-ic tone-amber icon"><svg><use href="#i-bell"/></svg></span><span class="acx-row-text"><b>Notifikasi</b><small>Pengingat latihan, rekap mingguan, servis</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
+      '<button type="button" class="acx-row" id="acxImportActRow"><span class="acx-row-ic tone-blue icon"><svg><use href="#i-route"/></svg></span><span class="acx-row-text"><b>Impor aktivitas (GPX/TCX/FIT)</b><small>Dari Garmin, Coros, Wahoo, dll. di luar Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
+      '<input type="file" id="acxActFile" accept=".gpx,.tcx,.fit,application/gpx+xml,application/octet-stream" hidden>' +
       '<button type="button" class="acx-row" id="acxPrivacyRow"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-shield"/></svg></span><span class="acx-row-text"><b>Privasi & data</b><small>Kebijakan privasi · Powered by Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxDeleteRow"><span class="acx-row-ic tone-red icon"><svg><use href="#i-trash"/></svg></span><span class="acx-row-text"><b style="color:var(--acx-red)">Hapus akun & data</b><small>Hapus permanen dari server & cabut izin Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<p class="acx-powered">Active Coach versi ' + esc(window.AC_BUILD || '') + '<br>Powered by Strava · Active Coach tidak berafiliasi dengan Strava.</p>' +
       '<input type="file" id="acxImportFile" accept=".json,application/json,text/plain" hidden>');
     $('#acxDeleteRow').onclick = deleteAccountFlow;
+    $('#acxNotifRow').onclick = function () { if (typeof nfOpenSettings === 'function') nfOpenSettings(); };
+    $('#acxImportActRow').onclick = function () { $('#acxActFile').value = ''; $('#acxActFile').click(); };
+    $('#acxActFile').onchange = function (e) { var f = e.target.files && e.target.files[0]; if (f && typeof impImportFile === 'function') impImportFile(f); };
     $('#acxPrivacyRow').onclick = function () { window.open(PRIVACY_URL, '_blank'); };
     paintSyncState();
     $('#acxImportRow').onclick = function () { $('#acxImportFile').value = ''; $('#acxImportFile').click(); };
@@ -550,10 +569,50 @@
     } catch (e) { console.warn('Sinkron otomatis gagal', e && e.message); }
     root.classList.remove('is-syncing'); autoBusy = false;
   }
+  /* ---------- webhook Strava: aktivitas baru langsung masuk, izin dicabut terdeteksi ---------- */
+  async function userRest(method, path) {
+    var s = await freshSession(); if (!s || !s.access_token) throw new Error('no session');
+    var c = cfg(), r = await fetch(c.url + '/rest/v1/' + path, { method: method, headers: { apikey: c.anonKey, Authorization: 'Bearer ' + s.access_token } });
+    if (!r.ok) throw new Error('REST ' + r.status);
+    return method === 'GET' ? r.json() : null;
+  }
+  async function ensureWebhook() {
+    var last = LS.get('acx_wh_ok') || 0; if (Date.now() - last < 24 * 3600000) return;
+    try {
+      var s = await freshSession(); if (!s || !s.access_token) return;
+      var c = cfg(), h = redeemHeaders(c); h.Authorization = 'Bearer ' + s.access_token;
+      var r = await fetch(c.url + '/functions/v1/strava-callback?subscribe=1', { method: 'POST', headers: h, body: '{}' });
+      var j = {}; try { j = await r.json(); } catch (e) {}
+      if (r.ok && j.linked) LS.set('acx_wh_ok', Date.now());
+      if (j.webhook && !j.webhook.ok) console.warn('Webhook Strava:', j.webhook.error);
+    } catch (e) {}
+  }
+  var inboxBusy = false;
+  async function checkInbox() {
+    if (inboxBusy || !engineReady || navigator.onLine === false || typeof SESSION === 'undefined' || !SESSION.athleteId) return;
+    inboxBusy = true;
+    try {
+      var rows = await userRest('GET', 'ac_meta?select=key,value&key=in.(strava_inbox,strava_revoked)');
+      var map = {}; (rows || []).forEach(function (r) { map[r.key] = r.value || {}; });
+      if (map.strava_revoked) {
+        try { await callEngine('disconnectStrava', [SESSION.athleteId]); } catch (e) {}
+        await userRest('DELETE', 'ac_meta?key=eq.strava_revoked').catch(function () {});
+        if (typeof loadStrava === 'function') loadStrava();
+        note('Izin Strava dicabut dari strava.com — sinkron berhenti. Sambungkan lagi lewat ikon sinkron kapan saja.');
+      } else if (map.strava_inbox && map.strava_inbox.at > (LS.get('acx_inbox_seen') || 0)) {
+        LS.set('acx_inbox_seen', map.strava_inbox.at);
+        await autoSync(true);
+      }
+    } catch (e) {}
+    inboxBusy = false;
+  }
+  setInterval(function () { if (document.visibilityState === 'visible') checkInbox(); }, 90000);
   function afterLogin() {
     paintAccount();
     runTriggersSoon(8000);
     setTimeout(autoSync, 6000);
+    setTimeout(function () { ensureWebhook(); checkInbox(); }, 4000);
+    setTimeout(function () { try { if (typeof nfSchedule === 'function') nfSchedule(); } catch (e) {} }, 12000);
     if (pendingLink) { var l = pendingLink; pendingLink = null; setTimeout(function () { handleDeepLink(l); }, 1500); }
   }
 
@@ -592,6 +651,7 @@
   var __origLogout = null;
   document.addEventListener('DOMContentLoaded', function () {
     initLoginUi(); injectProfileRows();
+    try { if (typeof nfInit === 'function') nfInit(); } catch (e) {}
     if (typeof logoutAthlete === 'function') {
       __origLogout = logoutAthlete;
       window.logoutAthlete = async function () {
@@ -654,10 +714,12 @@
       send({ type: 'remote' }).then(function (n) { if (n && typeof softRefresh === 'function') softRefresh(); }).catch(function () {});
       runTriggersSoon(3000);
       setTimeout(autoSync, 2500);
+      setTimeout(checkInbox, 1200);
+      setTimeout(function () { try { if (typeof nfSchedule === 'function') nfSchedule({ skipGarage: true }); } catch (e) {} }, 6000);
     });
     P.App.addListener('pause', function () { if (engineReady) send({ type: 'flush' }).catch(function () {}); });
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
-  window.ACX = { autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

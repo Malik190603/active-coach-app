@@ -1,0 +1,81 @@
+<script>
+'use strict';
+/* =====================================================================
+   Notifikasi pintar (lokal, tanpa server): pengingat latihan harian sesuai
+   plan, rekap mingguan, dan pengingat servis sepeda.
+   ===================================================================== */
+const NF_IDS={daily:1000,weekly:1100,service:1200};
+function nfPlugin(){let c=window.Capacitor;return c&&c.isNativePlatform&&c.isNativePlatform()&&c.Plugins&&c.Plugins.LocalNotifications||null}
+function nfPrefs(){let d={daily:true,time:'06:00',weekly:true,service:true,asked:false};try{return Object.assign(d,JSON.parse(localStorage.getItem('acx_notif')||'{}'))}catch(e){return d}}
+function nfSavePrefs(p){try{localStorage.setItem('acx_notif',JSON.stringify(p))}catch(e){}}
+async function nfPermission(ask){
+  let L=nfPlugin();if(!L)return 'unsupported';
+  try{let s=await L.checkPermissions();if(s.display==='granted')return 'granted';if(!ask)return s.display;let r=await L.requestPermissions();return r.display}catch(e){return 'denied'}
+}
+function nfAt(date,hm){let [h,m]=String(hm||'06:00').split(':').map(Number),d=new Date(date);d.setHours(h||0,m||0,0,0);return d}
+function nfPlanText(p){if(!p)return '';let t=p.title||p.name||'Sesi latihan',mins=p.minutes?(' '+duration(p.minutes)):'';return t+mins}
+function nfDailyBody(dayKey,idx){
+  let plan=(DATA.plan||[]).find(x=>x.date===dayKey),tl=DATA.trainingLoad||{},tsb=tl.tsb;
+  if(plan&&!/istirahat|rest|off/i.test(plan.title||'')){
+    let hint=idx===0&&tsb!=null?(tsb<=-20?' · Tubuh masih lelah, jaga intensitas.':tsb>=5?' · Kamu segar, waktunya kualitas!':''):'';
+    return {title:'Latihan hari ini 💪',body:nfPlanText(plan)+hint};
+  }
+  if(plan)return {title:'Hari pemulihan 🧘',body:'Plan hari ini: '+(plan.title||'istirahat')+'. Jalan santai & tidur cukup mempercepat adaptasi.'};
+  return {title:'Waktunya bergerak 🏃',body:'Belum ada plan untuk hari ini. Buka Active Coach untuk menyusun plan minggu ini.'};
+}
+async function nfGarageAlerts(){
+  try{
+    if(!DATA.bikeGarage){let r=await gs('getBikeGarage',currentAthleteId());if(r)DATA.bikeGarage=r}
+    let M=typeof garageModel==='function'?garageModel():null;if(!M||!M.per)return [];
+    let out=[];Object.keys(M.per).forEach(id=>{let p=M.per[id],b=p.bike;if(!b||b.retired)return;(b.parts||[]).forEach(pt=>{try{let st=garagePartStatus(b,pt,p);if(st.level==='bad')out.push({key:b.id+':'+(pt.id||pt.name),bike:b.name||'Sepeda',part:pt.name||'Komponen'})}catch(e){}})});
+    return out;
+  }catch(e){return []}
+}
+async function nfSchedule(opts){
+  opts=opts||{};let L=nfPlugin();if(!L||typeof DATA==='undefined'||!DATA||!DATA.logs)return;
+  let prefs=nfPrefs();if(await nfPermission(false)!=='granted')return;
+  try{let pend=await L.getPending();let ids=(pend.notifications||[]).map(n=>({id:n.id})).filter(n=>n.id>=1000&&n.id<1300);if(ids.length)await L.cancel({notifications:ids})}catch(e){}
+  let list=[],now=Date.now();
+  if(prefs.daily){for(let i=0;i<7;i++){let d=new Date();d.setDate(d.getDate()+i);let at=nfAt(d,prefs.time);if(at.getTime()<now+60000)continue;let key=dateKey(d);if(i===0&&(DATA.todayActual||[]).length)continue;let c=nfDailyBody(key,i);list.push({id:NF_IDS.daily+i,title:c.title,body:c.body,schedule:{at,allowWhileIdle:true},extra:{go:'dashboard'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})}}
+  if(prefs.weekly){let d=new Date(),add=(7-d.getDay())%7;d.setDate(d.getDate()+add);let at=nfAt(d,'19:00');if(at.getTime()<now+60000){at.setDate(at.getDate()+7)}
+    list.push({id:NF_IDS.weekly,title:'Rekap minggu ini siap 📊',body:'Lihat progres mingguanmu dan bagikan kartu Rekap Minggu dari Studio.',schedule:{at,allowWhileIdle:true},extra:{go:'studio',tpl:'recap'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})}
+  if(prefs.service&&!opts.skipGarage){let seen={};try{seen=JSON.parse(localStorage.getItem('acx_notif_service')||'{}')}catch(e){}
+    let alerts=(await nfGarageAlerts()).filter(a=>!seen[a.key]||now-seen[a.key]>7*864e5).slice(0,3);
+    alerts.forEach((a,i)=>{seen[a.key]=now;list.push({id:NF_IDS.service+i,title:'Waktunya servis 🔧',body:a.part+' di '+a.bike+' sudah melewati batas pemakaian.',schedule:{at:new Date(now+4000+i*1500),allowWhileIdle:true},extra:{go:'garage'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})});
+    try{localStorage.setItem('acx_notif_service',JSON.stringify(seen))}catch(e){}}
+  if(list.length){try{await L.schedule({notifications:list})}catch(e){console.warn('Notifikasi gagal dijadwalkan',e)}}
+}
+function nfHandleTap(extra){
+  extra=extra||{};try{
+    if(extra.go==='studio'){if(typeof studioOpen==='function'){studioOpen();setTimeout(()=>{if(extra.tpl&&typeof stSetTpl==='function')stSetTpl(extra.tpl)},400)}}
+    else if(extra.go==='garage')switchPage('garage');
+    else switchPage('dashboard');
+  }catch(e){}
+}
+let NF_BOUND=false;
+function nfInit(){
+  let L=nfPlugin();if(!L||NF_BOUND)return;NF_BOUND=true;
+  try{L.addListener('localNotificationActionPerformed',a=>{let ex=a&&a.notification&&a.notification.extra;let go=()=>{if(document.getElementById('appShell').hidden){setTimeout(go,800);return}nfHandleTap(ex)};go()})}catch(e){}
+}
+/* Sheet pengaturan notifikasi (dari Profil) */
+function nfOpenSettings(){
+  let p=nfPrefs(),box=document.createElement('div');box.className='st-sheet';box.id='nfSheet';
+  let times=['05:00','05:30','06:00','06:30','07:00','17:00','18:00','19:00'];
+  box.innerHTML=`<div class="st-sheet-box"><div class="sheet-handle"><i></i></div><div class="st-sheet-head"><h3>Notifikasi</h3><button type="button" class="sheet-close" data-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button></div>
+    <div class="nf-perm" id="nfPerm" hidden></div>
+    ${stToggle('nfDaily','Pengingat latihan harian','Isi sesuai plan & kondisi tubuhmu',p.daily)}
+    <div class="st-label" style="margin-top:6px">Jam pengingat</div><div class="st-seg" data-seg="nftime">${times.map(t=>`<button type="button" class="${t===p.time?'on':''}" data-v="${t}">${t}</button>`).join('')}</div>
+    ${stToggle('nfWeekly','Rekap mingguan','Minggu 19:00 — siap dibagikan dari Studio',p.weekly)}
+    ${stToggle('nfService','Pengingat servis sepeda','Saat komponen melewati batas pemakaian',p.service)}
+    <div class="st-row" style="margin-top:10px"><button type="button" class="acx-btn" id="nfSave" style="width:100%;justify-content:center">Simpan</button></div></div>`;
+  document.body.appendChild(box);
+  let close=()=>{box.classList.add('out');setTimeout(()=>box.remove(),220)};
+  box.onclick=e=>{if(e.target===box||e.target.closest('[data-x]'))close()};
+  box.querySelectorAll('[data-seg="nftime"] button').forEach(b=>b.onclick=()=>{p.time=b.dataset.v;box.querySelectorAll('[data-seg="nftime"] button').forEach(x=>x.classList.toggle('on',x===b))});
+  nfPermission(false).then(s=>{let el=box.querySelector('#nfPerm');if(s==='unsupported'){el.hidden=false;el.textContent='Notifikasi hanya tersedia di aplikasi Android.'}else if(s!=='granted'){el.hidden=false;el.innerHTML='Izin notifikasi belum diberikan. Ketuk <b>Simpan</b> lalu pilih <b>Izinkan</b>.'}});
+  box.querySelector('#nfSave').onclick=async()=>{p.daily=box.querySelector('#nfDaily').checked;p.weekly=box.querySelector('#nfWeekly').checked;p.service=box.querySelector('#nfService').checked;p.asked=true;nfSavePrefs(p);
+    let s=(p.daily||p.weekly||p.service)?await nfPermission(true):'granted';
+    if(s==='granted'||s==='unsupported'){await nfSchedule({skipGarage:true});toast('Notifikasi disimpan');close()}else toast('Izin notifikasi ditolak. Aktifkan di Pengaturan HP › Aplikasi › Active Coach › Notifikasi.')};
+}
+window.ACX_BACK=window.ACX_BACK||[];ACX_BACK.push(()=>{let s=document.getElementById('nfSheet');if(s){s.remove();return true}return false});
+</script>

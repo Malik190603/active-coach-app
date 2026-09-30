@@ -47,20 +47,44 @@ jobs:
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: npm run build
 
+      - name: Kunci tanda tangan
+        id: sign
+        env:
+          KEYSTORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "RELEASE_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+            echo "Memakai kunci rilis pribadi (GitHub Secrets)"
+          else
+            mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+            echo "::warning::Kunci rilis belum diisi di GitHub Secrets — APK memakai kunci debug. Lihat README bagian Kunci rilis."
+          fi
+
       - name: Siapkan proyek Android
         env:
           VERSION_CODE: ${{ github.run_number }}
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: npm run android:prepare
-
-      - name: Kunci tanda tangan
-        run: mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
 
       - name: Build APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ "${{ steps.sign.outputs.mode }}" = "release" ]; then ./gradlew assembleRelease --no-daemon --stacktrace; else ./gradlew assembleDebug --no-daemon --stacktrace; fi
 
       - name: Beri nama file
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk "ActiveCoach-v1.1.${{ github.run_number }}.apk"
+        run: |
+          f=$(ls android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/debug/app-debug.apk 2>/dev/null | head -1)
+          echo "APK: $f"
+          cp "$f" "ActiveCoach-v1.1.${{ github.run_number }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:

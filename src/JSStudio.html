@@ -52,7 +52,7 @@ const ST_ICON={
 };
 const ST_METRIC_ICON={distance:'pin',time:'clock',pace:'bolt',speed:'speed',elev:'mountain',hr:'heart',kcal:'flame',power:'gauge',cadence:'cad',maxspeed:'speed'};
 
-let ST_META={},ST=null,ST_PHOTO=null,ST_PHOTO_INFO=null,ST_STREAMS={},ST_MAPCACHE={},ST_PANE='tpl',ST_CAT='all',ST_THUMB_KEY='',ST_RAF=0,ST_CAPTION_V=0,ST_FONTS_OK=false,ST_BOUND=false;
+let ST_ANIM=null,ST_META={},ST=null,ST_PHOTO=null,ST_PHOTO_INFO=null,ST_STREAMS={},ST_MAPCACHE={},ST_PANE='tpl',ST_CAT='all',ST_THUMB_KEY='',ST_RAF=0,ST_CAPTION_V=0,ST_FONTS_OK=false,ST_BOUND=false;
 function stDefaults(){return {act:'',tpl:'sticker',fmt:'story',bg:{mode:'auto',color:'sunset',dim:28,fy:50,map:'voyager'},bgLock:false,accent:'auto',text:'auto',metrics:null,scale:1,dx:0,dy:0,title:'',sub:'',showName:true,brand:true,trim:true,safe:false}}
 function stKey(){return 'acxStudio:'+(typeof currentAthleteId==='function'?currentAthleteId():'')}
 function stLoad(){let d=stDefaults();try{let s=JSON.parse(localStorage.getItem(stKey())||'null');if(s&&typeof s==='object'){d=Object.assign(d,s);d.bg=Object.assign(stDefaults().bg,s.bg||{});if(d.bg.mode==='photo')d.bg.mode='auto'}}catch(e){}if(!ST_FORMATS[d.fmt])d.fmt='story';if(!ST_TPLS.some(t=>t.k===d.tpl))d.tpl='sticker';return d}
@@ -164,6 +164,7 @@ function stData(x){
 }
 
 /* ---------------------------- helper canvas ---------------------------- */
+function stEase(t){return t<0?0:t>1?1:1-Math.pow(1-t,3)}
 function F(w,px,fam,style){return (style?style+' ':'')+w+' '+Math.max(1,Math.round(px))+'px '+(SF[fam]||fam)+', Inter, system-ui, sans-serif'}
 function rr(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
 function sh(ctx,on,blur,alpha,oy){if(on){ctx.shadowColor='rgba(0,0,0,'+(alpha==null?.45:alpha)+')';ctx.shadowBlur=blur==null?18:blur;ctx.shadowOffsetX=0;ctx.shadowOffsetY=oy==null?3:oy}else{ctx.shadowColor='transparent';ctx.shadowBlur=0;ctx.shadowOffsetY=0}}
@@ -188,10 +189,12 @@ function projectRoute(pts,box,pad){
 function routePath(ctx,m){ctx.beginPath();m.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]))}
 function drawRoute(ctx,D,box,o){
   o=o||{};let m=o.mapped||projectRoute(D.pts,box,o.pad||0);if(!m)return false;
+  let animP=1;if(ST_ANIM){animP=stEase(Math.max(0,Math.min(1,(ST_ANIM.t-.08)/.6)));if(animP<1){let full=m,n=Math.max(2,Math.ceil(full.length*animP));m=full.slice(0,n);o=Object.assign({},o,{markers:false,_head:m[m.length-1],_start:full[0]})}}
   ctx.save();ctx.lineJoin='round';ctx.lineCap='round';
   if(o.glow){ctx.shadowColor=o.glowColor||o.color;ctx.shadowBlur=o.glow;routePath(ctx,m);ctx.strokeStyle=hexA(o.glowColor||o.color,.55);ctx.lineWidth=(o.width||8)*2.2;ctx.stroke();ctx.shadowBlur=o.glow*.5;routePath(ctx,m);ctx.strokeStyle=o.color;ctx.lineWidth=(o.width||8);ctx.stroke();ctx.shadowBlur=0;if(o.core){routePath(ctx,m);ctx.strokeStyle=o.core;ctx.lineWidth=(o.width||8)*.38;ctx.stroke()}}
   else{if(o.shadow)sh(ctx,true,o.shadow,.45,4);if(o.casing){routePath(ctx,m);ctx.strokeStyle=o.casing;ctx.lineWidth=(o.width||8)+(o.casingW||8);ctx.stroke();sh(ctx,false)}routePath(ctx,m);ctx.strokeStyle=o.color||'#fff';ctx.lineWidth=o.width||8;ctx.stroke()}
   sh(ctx,false);
+  if(o._head){let r=Math.max(8,(o.width||8)*1.3);ctx.save();ctx.shadowColor=o.color||'#fff';ctx.shadowBlur=r*2.5;ctx.beginPath();ctx.arc(o._head[0],o._head[1],r,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.restore();ctx.beginPath();ctx.arc(o._start[0],o._start[1],r*.8,0,Math.PI*2);ctx.fillStyle='#16a34a';ctx.fill()}
   if(o.markers){let r=Math.max(7,(o.width||8)*1.25),a=m[0],z=m[m.length-1];[[z,'#111'],[a,'#16a34a']].forEach(q=>{ctx.beginPath();ctx.arc(q[0][0],q[0][1],r+4,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();ctx.beginPath();ctx.arc(q[0][0],q[0][1],r,0,Math.PI*2);ctx.fillStyle=q[1];ctx.fill()})}
   ctx.restore();return true;
 }

@@ -19,6 +19,8 @@ const ACX_SPORT_COLOR={Cycling:'#fc4c02',Running:'#ff2d78',Other:'#14b8a6'};
 function acxMapStyleKey(){let k='';try{k=localStorage.getItem('acx_map_style')||''}catch(e){}return ACX_MAP_STYLES[k]&&!ACX_MAP_STYLES[k].hidden?k:'standard'}
 function acxSetMapStyleKey(k){try{localStorage.setItem('acx_map_style',k)}catch(e){}}
 const ACX_MAPS=new Set();
+/* Leaflet: cegah redraw kanvas setelah peta dihapus (bug 'reading save') */
+if(window.L&&L.Canvas&&!L.Canvas.__acxSafe){let rd=L.Canvas.prototype._redraw;L.Canvas.prototype._redraw=function(){if(!this._ctx||!this._map)return;return rd.apply(this,arguments)};L.Canvas.__acxSafe=true}
 function acxAlive(m){try{return !!(m&&!m.__acxDead&&m._loaded&&m.getContainer()&&m.getContainer().isConnected)}catch(e){return false}}
 
 /* Lapisan dasar dengan cadangan: jika tile gagal terus dan belum ada yang berhasil → pindah gaya cadangan. */

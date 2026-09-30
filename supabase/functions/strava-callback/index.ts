@@ -95,15 +95,88 @@ async function takeHandoff(code: string) {
   return row.payload;
 }
 
+
+/* ---------- Webhook Strava: aktivitas baru & pencabutan izin ---------- */
+async function verifyToken() {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(env('STRAVA_CLIENT_SECRET') + ':active-coach-webhook'));
+  return Array.from(new Uint8Array(d)).slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+async function upsertMeta(userId: string, key: string, value: unknown) {
+  await fetch(BASE + '/rest/v1/ac_meta?on_conflict=user_id,key', { method: 'POST', headers: { ...adminHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify([{ user_id: userId, key, value }]) });
+}
+async function linkAthlete(userId: string, athleteId: string | number) {
+  if (userId && athleteId) await upsertMeta(userId, 'strava_link', { id: String(athleteId) });
+}
+async function userForAthlete(athleteId: string | number) {
+  const r = await fetch(BASE + '/rest/v1/ac_meta?select=user_id&key=eq.strava_link&value->>id=eq.' + encodeURIComponent(String(athleteId)), { headers: adminHeaders(false) });
+  const rows = await readJson(r);
+  return Array.isArray(rows) && rows[0] ? String(rows[0].user_id) : '';
+}
+async function ensureSubscription() {
+  const id = env('STRAVA_CLIENT_ID'), secret = env('STRAVA_CLIENT_SECRET');
+  if (!id || !secret) return { ok: false, error: 'STRAVA_CLIENT_ID/SECRET kosong' };
+  const list = await readJson(await fetch(STRAVA + '/api/v3/push_subscriptions?client_id=' + id + '&client_secret=' + encodeURIComponent(secret)));
+  if (Array.isArray(list) && list.length) {
+    const mine = list.find((x: { callback_url?: string }) => String(x.callback_url || '').replace(/\/+$/, '') === SELF);
+    if (mine) return { ok: true, id: mine.id, existing: true };
+    const old = list[0];
+    // Webhook lama dari versi web (Apps Script) sudah tidak dipakai sejak callback pindah ke Supabase → ganti.
+    if (!/script\.google(usercontent)?\.com/.test(String(old.callback_url || ''))) return { ok: false, error: 'Aplikasi Strava sudah punya webhook ke alamat lain: ' + old.callback_url };
+    await fetch(STRAVA + '/api/v3/push_subscriptions/' + old.id + '?client_id=' + id + '&client_secret=' + encodeURIComponent(secret), { method: 'DELETE' });
+  }
+  const body = new URLSearchParams({ client_id: id, client_secret: secret, callback_url: SELF, verify_token: await verifyToken() });
+  const res = await fetch(STRAVA + '/api/v3/push_subscriptions', { method: 'POST', body, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  const j = await readJson(res);
+  return res.ok && j.id ? { ok: true, id: j.id, created: true } : { ok: false, error: 'Strava menolak webhook (' + res.status + '): ' + JSON.stringify(j).slice(0, 200) };
+}
+async function userFromToken(req: Request) {
+  const token = (req.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  const who = await fetch(BASE + '/auth/v1/user', { headers: { apikey: ANON || SERVICE, Authorization: 'Bearer ' + token } });
+  const user = await readJson(who);
+  return who.ok && user.id ? user : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const u = new URL(req.url), q = u.searchParams;
+
+  // Strava memverifikasi alamat webhook
+  if (req.method === 'GET' && q.get('hub.mode') === 'subscribe') {
+    if (q.get('hub.verify_token') !== await verifyToken()) return json({ error: 'verify_token salah' }, 403);
+    return json({ 'hub.challenge': q.get('hub.challenge') || '' });
+  }
+  // Event webhook dari Strava (aktivitas dibuat/diubah/dihapus, atau izin dicabut)
+  if (req.method === 'POST' && ![...q.keys()].length) {
+    let ev: { object_type?: string; aspect_type?: string; object_id?: number; owner_id?: number; updates?: Record<string, string>; event_time?: number } = {};
+    try { ev = await req.json(); } catch { /* bukan JSON */ }
+    if (ev && ev.owner_id && ev.object_type && SERVICE) {
+      try {
+        const userId = await userForAthlete(ev.owner_id);
+        if (userId) {
+          if (ev.object_type === 'athlete' && ev.updates && String(ev.updates.authorized) === 'false') await upsertMeta(userId, 'strava_revoked', { at: Date.now() });
+          else if (ev.object_type === 'activity') await upsertMeta(userId, 'strava_inbox', { at: Date.now(), id: ev.object_id, aspect: ev.aspect_type });
+        }
+      } catch { /* jangan gagal: Strava butuh 200 */ }
+    }
+    return json({ ok: true });
+  }
+  // Aplikasi mendaftarkan webhook (sekali) & menautkan akun Strava ke akun aplikasi
+  if (req.method === 'POST' && q.has('subscribe')) {
+    const user = await userFromToken(req);
+    if (!user || !SERVICE) return json({ error: 'Belum login' }, 401);
+    const sid = (user.user_metadata && user.user_metadata.strava_id) || (String(user.email || '').match(/^strava-(\d+)@/) || [])[1];
+    if (sid) await linkAthlete(user.id, sid);
+    let sub: Record<string, unknown> = { ok: false };
+    try { sub = await ensureSubscription(); } catch (e) { sub = { ok: false, error: String((e as Error).message || e) }; }
+    return json({ ok: true, linked: !!sid, webhook: sub });
+  }
 
   // Cek dari aplikasi: fungsi ada & versi terbaru
   if (q.has('ping')) {
     let table = false;
     if (SERVICE) { try { const t = await fetch(BASE + '/rest/v1/ac_handoff?select=code&limit=1', { headers: adminHeaders(false) }); table = t.ok; } catch { /* abaikan */ } }
-    return json({ ok: true, v: 2, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table });
+    return json({ ok: true, v: 3, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table });
   }
 
   // Cabut izin Strava (Putuskan Strava) & hapus akun beserta semua data
@@ -153,6 +226,7 @@ Deno.serve(async (req) => {
       if (!SERVICE) throw new Error('SUPABASE_SERVICE_ROLE_KEY tidak tersedia di Edge Function');
       const tok = await stravaToken(q.get('code') || '');
       const session = await sessionFor(tok.athlete || {});
+      try { if (session.user && session.user.id && tok.athlete && tok.athlete.id) await linkAthlete(session.user.id, tok.athlete.id); } catch { /* abaikan */ }
       const code = randomCode();
       await saveHandoff(code, {
         nonce,
