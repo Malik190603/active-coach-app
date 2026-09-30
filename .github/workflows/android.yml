@@ -1,0 +1,67 @@
+# Membangun APK Android Active Coach otomatis di GitHub (gratis).
+# Hasil: tab "Actions" → artefak APK, dan halaman "Releases" (bisa langsung diunduh dari HP).
+name: Build APK Android
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Pasang dependensi
+        run: npm ci
+
+      - name: Susun aplikasi web (www/)
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: npm run build
+
+      - name: Siapkan proyek Android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: npm run android:prepare
+
+      - name: Kunci tanda tangan (tetap sama tiap build, supaya update bisa dipasang di atas versi lama)
+        run: mkdir -p ~/.android && cp signing/debug.keystore ~/.android/debug.keystore
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Beri nama file
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "ActiveCoach-v1.0.${{ github.run_number }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ActiveCoach-APK
+          path: ActiveCoach-*.apk
+
+      - name: Terbitkan di Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Active Coach v1.0.${{ github.run_number }}
+          body: APK Android Active Coach. Unduh file .apk di bawah dari HP lalu pasang.
+          files: ActiveCoach-*.apk
