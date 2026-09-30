@@ -1,0 +1,73 @@
+<script>
+'use strict';
+/* =====================================================================
+   Tutorial singkat per fitur: sorotan (spotlight) + kartu tip yang muncul
+   sekali saat pertama membuka fitur. Bisa diulang dari Profil.
+   ===================================================================== */
+const TOURS={
+  dashboard:[
+    ['#dashReadyCard','Kesiapan tubuh','Ring ini membaca beban latihanmu dari Strava: hijau = siap gas, oranye/merah = waktunya lebih santai. Ketuk untuk detail.'],
+    ['[data-page-view="dashboard"] .acx-syncbtn','Sinkron Strava','Aktivitas baru masuk otomatis. Ketuk di sini kalau ingin menarik manual — atau tarik layar ke bawah.'],
+    ['#dashExtras .ev-dash, #dashExtras .ev-next','Target & event','Pilih lomba di Kalender event lalu jadikan target — coach menyesuaikan fase latihan dan mengingatkanmu.'],
+    ['#bottomNav','Menu utama','Latihan, Performa, Gear, dan Berbagi (Studio kartu story) ada di sini.']
+  ],
+  'training/activities':[
+    ['#activitySearch','Cari aktivitas','Ketik nama aktivitas, atau pakai filter olahraga & tanggal di bawahnya.'],
+    ['#activityRows .activity-card','Kartu aktivitas','Ketuk untuk grafik, zona detak & segmen. Centang kotak kanan atas di dua kartu untuk membandingkan.']
+  ],
+  'training/routes':[['#heatmapMap','Heatmap pribadi','Semua rute yang pernah kamu lalui. Ketuk garis untuk membuka aktivitasnya, tombol lapis untuk ganti gaya peta.']],
+  'training/plan':[['[data-page-view="training"] [data-sub-view="plan"] .acx-card','Rencana mingguan','Coach menyusun sesi tiap hari berdasarkan kondisi tubuh & target. Ketuk sesi untuk struktur latihannya.']],
+  performance:[['[data-page-view="performance"] .acx-subnav','Performa','Geser tab untuk Fitness, Intensitas, Kecepatan, dan Rekor pribadi.']],
+  garage:[['[data-page-view="garage"] .acx-subnav','Gear','Pantau sepeda & sepatu: jarak tempuh, servis berikutnya, dan umur komponen.']],
+  'overlay-editor':[
+    ['#stTpls','Pilih template','28 gaya kartu — geser untuk melihat semua. Kategori di atasnya membantu memfilter.'],
+    ['#stStage','Atur posisi','Geser untuk memindahkan, cubit untuk memperbesar, ketuk dua kali untuk reset.'],
+    ['.st-tabs','Latar, data & teks','Ganti latar (foto, warna, peta), pilih data yang tampil, dan ubah judul.'],
+    ['#stSave','Simpan & bagikan','Simpan ke Galeri, buat video 5 detik, atau bagikan langsung ke Instagram/WhatsApp.']
+  ],
+  profile:[['#evRow','Fitur baru','Kalender event, pengumuman, dan rekap bulanan ada di sini.']]
+};
+const TOUR={on:false,t:0};
+function tourDone(){return admLS('acx_tour_done',{})}
+function tourKey(){let v=currentPageView();return TAB_SUBS[v]&&TOURS[v+'/'+SUB_STATE[v]]?v+'/'+SUB_STATE[v]:v}
+function tourVisible(el){if(!el)return false;let r=el.getBoundingClientRect();return r.width>8&&r.height>8&&!el.closest('[hidden]')}
+function tourMaybe(delay){
+  clearTimeout(TOUR.t);TOUR.t=setTimeout(()=>{
+    if(TOUR.on||document.getElementById('app').hidden||document.querySelector('.st-sheet,.ob,.upd-gate,.modal.show,.popup-overlay:not([hidden]),.acx-pick'))return;
+    let k=tourKey(),steps=TOURS[k];if(!steps||tourDone()[k])return;
+    let list=steps.map(s=>({el:[...document.querySelectorAll(s[0])].find(tourVisible),t:s[1],d:s[2]})).filter(s=>s.el);
+    if(!list.length)return;tourRun(k,list);
+  },delay==null?900:delay);
+}
+function tourRun(key,list){
+  TOUR.on=true;let i=0;
+  let ov=document.createElement('div');ov.className='tour';ov.innerHTML='<div class="tour-hole"></div><div class="tour-card" role="dialog" aria-live="polite"><div class="tour-top"><span class="tour-step"></span><button type="button" class="tour-skip">Lewati</button></div><b class="tour-t"></b><p class="tour-d"></p><div class="tour-acts"><span class="tour-dots"></span><button type="button" class="acx-btn tour-next">Lanjut</button></div></div>';
+  document.body.appendChild(ov);
+  let hole=ov.querySelector('.tour-hole'),card=ov.querySelector('.tour-card');
+  let place=()=>{
+    let s=list[i],r=s.el.getBoundingClientRect(),pad=8,vh=window.innerHeight,vw=window.innerWidth;
+    if(r.top<70||r.bottom>vh-90){s.el.scrollIntoView({block:'center',behavior:'instant'});r=s.el.getBoundingClientRect()}
+    let top=Math.max(6,r.top-pad),h=Math.min(vh-12,r.height+pad*2);
+    Object.assign(hole.style,{left:Math.max(6,r.left-pad)+'px',top:top+'px',width:Math.min(vw-12,r.width+pad*2)+'px',height:h+'px',borderRadius:Math.min(26,Math.max(12,h/5))+'px'});
+    card.querySelector('.tour-step').textContent=(i+1)+' / '+list.length;card.querySelector('.tour-t').textContent=s.t;card.querySelector('.tour-d').textContent=s.d;
+    card.querySelector('.tour-dots').innerHTML=list.map((_,j)=>`<i class="${j===i?'on':''}"></i>`).join('');
+    card.querySelector('.tour-next').textContent=i<list.length-1?'Lanjut':'Mengerti';
+    let below=top+h+14,cardH=card.offsetHeight||180;
+    card.style.top=(below+cardH<vh-12?below:Math.max(12,top-cardH-14))+'px';
+    card.classList.remove('in');void card.offsetWidth;card.classList.add('in');
+  };
+  let end=done=>{let d=tourDone();d[key]=Date.now();admSet('acx_tour_done',d);ov.classList.add('out');setTimeout(()=>{ov.remove();TOUR.on=false},220);if(done)usgTrack('tour:done');window.removeEventListener('resize',place)};
+  card.querySelector('.tour-next').onclick=()=>{if(window.acxHaptic)acxHaptic('light');if(i<list.length-1){i++;place()}else end(true)};
+  card.querySelector('.tour-skip').onclick=()=>end(false);
+  ov.onclick=e=>{if(e.target===ov||e.target===hole)card.querySelector('.tour-next').click()};
+  ov.__end=()=>end(false);window.addEventListener('resize',place);
+  requestAnimationFrame(place);
+}
+window.ACX_BACK=window.ACX_BACK||[];ACX_BACK.push(()=>{let t=document.querySelector('.tour');if(t&&t.__end){t.__end();return true}return false});
+(function(){['switchPage','setSub'].forEach(n=>{try{let o=window[n];if(typeof o!=='function')return;window[n]=function(){let r=o.apply(this,arguments);tourMaybe();return r}}catch(e){}})})();
+function tourReset(){admSet('acx_tour_done',{});toast('Tutorial akan muncul lagi di setiap fitur');switchPage('dashboard');tourMaybe(700)}
+document.addEventListener('DOMContentLoaded',()=>{
+  setTimeout(()=>{let pr=document.querySelector('[data-page-view="profile"] #acxPrivacyRow');if(pr&&!document.getElementById('tourRow')){pr.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="tourRow"><span class="acx-row-ic tone-violet icon"><svg><use href="#i-info"/></svg></span><span class="acx-row-text"><b>Lihat tutorial lagi</b><small>Tip singkat di setiap fitur</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');document.getElementById('tourRow').onclick=tourReset}},40);
+  let tries=0,iv=setInterval(()=>{tries++;let a=document.getElementById('app');if(a&&!a.hidden&&typeof DATA!=='undefined'&&DATA&&DATA.logs){clearInterval(iv);tourMaybe(3500)}else if(tries>300)clearInterval(iv)},500);
+});
+</script>

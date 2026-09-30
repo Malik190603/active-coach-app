@@ -1,0 +1,248 @@
+<script>
+'use strict';
+/* =====================================================================
+   Pengumuman, Kalender event, Statistik pemakaian anonim & Panel admin.
+   Data di Supabase (ac_announcements, ac_events, ac_usage). Kalau SQL-nya
+   belum dijalankan, semua fitur ini diam-diam tidak tampil (tanpa error).
+   ===================================================================== */
+const ADM={missing:{},ann:[],events:[],annAt:0,evAt:0};
+function admOk(){return !!(window.ACX&&ACX.rest&&ACX.session)}
+async function admRest(table,method,path,body,prefer){
+  if(ADM.missing[table])throw Object.assign(new Error('Tabel '+table+' belum ada'),{status:404});
+  try{return await ACX.rest(method,path,body,prefer)}catch(e){if(e.status===404||e.code==='42P01'||e.code==='PGRST205'||e.code==='PGRST202')ADM.missing[table]=true;throw e}
+}
+function admDate(d){try{return new Date(d).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}catch(e){return d}}
+function admDays(dateStr){let t=new Date();t.setHours(0,0,0,0);let d=new Date(String(dateStr).slice(0,10)+'T00:00:00');return Math.round((d-t)/864e5)}
+function admLS(k,def){try{let v=JSON.parse(localStorage.getItem(k)||'null');return v==null?def:v}catch(e){return def}}
+function admSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+function admSheet(id,title,inner,opts){
+  opts=opts||{};let old=document.getElementById(id);if(old)old.remove();
+  let box=document.createElement('div');box.className='st-sheet adm-sheet'+(opts.tall?' is-tall':'');box.id=id;
+  box.innerHTML=`<div class="st-sheet-box"><div class="sheet-handle"><i></i></div><div class="st-sheet-head"><h3>${title}</h3><button type="button" class="sheet-close" data-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button></div><div class="adm-body">${inner}</div></div>`;
+  document.body.appendChild(box);
+  box.__close=()=>{box.classList.add('out');setTimeout(()=>box.remove(),220);if(opts.onClose)opts.onClose()};
+  box.addEventListener('click',e=>{if(e.target===box||e.target.closest('[data-x]'))box.__close()});
+  return box;
+}
+window.ACX_BACK=window.ACX_BACK||[];
+ACX_BACK.push(()=>{let s=document.querySelector('.adm-sheet');if(s){s.__close?s.__close():s.remove();return true}return false});
+
+/* ============================ STATISTIK ANONIM ============================ */
+const USG={key:'acx_usage',off:()=>!!admLS('acx_usage_off',false),t:0,dead:false};
+function usgToday(){let d=new Date();return dateKey(d)}
+function usgState(){let s=admLS(USG.key,null);if(!s||s.day!==usgToday())s={day:usgToday(),opens:0,features:{},errors:[]};return s}
+function usgTrack(name,n){
+  if(USG.off()||!name)return;let s=usgState();name=String(name).slice(0,40);
+  if(!(name in s.features)&&Object.keys(s.features).length>=45)return;
+  s.features[name]=(s.features[name]||0)+(n||1);admSet(USG.key,s);usgSoon();
+}
+function usgOpen(){if(USG.off())return;let s=usgState();s.opens++;admSet(USG.key,s);usgSoon(8000)}
+function usgError(msg){
+  if(USG.off())return;msg=String(msg||'').replace(/https?:\/\/\S+/g,'').replace(/\s+/g,' ').trim().slice(0,160);if(!msg||/ResizeObserver|Script error\.?$/i.test(msg))return;
+  let s=usgState(),e=s.errors.find(x=>x.m===msg);if(e)e.n++;else if(s.errors.length<15)s.errors.push({m:msg,n:1});admSet(USG.key,s);usgSoon(15000);
+}
+function usgSoon(ms){clearTimeout(USG.t);USG.t=setTimeout(usgFlush,ms||60000)}
+async function usgFlush(){
+  if(USG.off()||USG.dead||!admOk()||navigator.onLine===false)return;
+  let uid=ACX.session&&ACX.session.user&&ACX.session.user.id;if(!uid)return;
+  let s=usgState(),plat=(window.Capacitor&&Capacitor.getPlatform&&Capacitor.getPlatform())||'web';
+  try{await admRest('ac_usage','POST','ac_usage?on_conflict=user_id,day',[{user_id:uid,day:s.day,app_version:String(window.AC_BUILD||'').slice(0,20),platform:String(plat).slice(0,20),opens:Math.min(s.opens,100000),features:s.features,errors:s.errors}],'resolution=merge-duplicates,return=minimal')}
+  catch(e){if(e.status===404||ADM.missing.ac_usage)USG.dead=true}
+}
+window.addEventListener('error',e=>usgError((e&&e.message)||(e&&e.error&&e.error.message)));
+window.addEventListener('unhandledrejection',e=>{let r=e&&e.reason;usgError('Promise: '+((r&&r.message)||r))});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')usgFlush();else usgOpen()});
+(function(){try{let orig=window.switchPage;if(typeof orig!=='function')return;window.switchPage=function(page,opts){let r=orig.apply(this,arguments);try{let v=currentPageView();usgTrack('page:'+v+(TAB_SUBS[v]&&SUB_STATE[v]?'/'+SUB_STATE[v]:''))}catch(e){}return r}}catch(e){}})();
+(function(){try{let o=window.setSub;if(typeof o!=='function')return;window.setSub=function(tab,sub){let r=o.apply(this,arguments);usgTrack('page:'+tab+'/'+sub);return r}}catch(e){}})();
+function usgPaintToggle(){
+  let host=document.querySelector('[data-page-view="profile"] #acxPrivacyRow');if(!host||document.getElementById('usgRow'))return;
+  host.insertAdjacentHTML('beforebegin','<label class="acx-row usg-row" id="usgRow"><span class="acx-row-ic tone-teal icon"><svg><use href="#i-chart"/></svg></span><span class="acx-row-text"><b>Bantu kembangkan aplikasi</b><small>Kirim statistik pemakaian & error secara anonim</small></span><span class="st-toggle mini"><input type="checkbox" id="usgToggle"'+(USG.off()?'':' checked')+'><i></i></span></label>');
+  document.getElementById('usgToggle').onchange=e=>{admSet('acx_usage_off',!e.target.checked);toast(e.target.checked?'Terima kasih! Statistik anonim aktif':'Statistik anonim dimatikan');if(e.target.checked)usgOpen()};
+}
+
+/* ================================ PENGUMUMAN ================================ */
+const ANN_META={info:{ic:'i-bell',tone:'blue',lb:'Info'},penting:{ic:'i-info',tone:'red',lb:'Penting'},update:{ic:'i-sparkles',tone:'violet',lb:'Pembaruan'},event:{ic:'i-calendar',tone:'amber',lb:'Event'}};
+function annLive(a){let now=Date.now();return a.active&&new Date(a.starts_at).getTime()<=now&&(!a.ends_at||new Date(a.ends_at).getTime()>now)}
+async function annFetch(force){
+  if(!admOk()||ADM.missing.ac_announcements)return ADM.ann;
+  if(!force&&Date.now()-ADM.annAt<15*60000)return ADM.ann;
+  try{ADM.ann=(await admRest('ac_announcements','GET','ac_announcements?select=*&order=starts_at.desc&limit=30')||[]).filter(annLive);ADM.annAt=Date.now();admSet('acx_ann_cache',ADM.ann)}catch(e){ADM.ann=admLS('acx_ann_cache',[])}
+  annPaint();annPopup();return ADM.ann;
+}
+function annSeen(){return admLS('acx_ann_seen',[])}
+function annDismiss(id){let s=annSeen();if(s.indexOf(id)<0){s.push(id);admSet('acx_ann_seen',s.slice(-60))}annPaint()}
+function annCard(a,closable){let m=ANN_META[a.level]||ANN_META.info;return `<article class="acx-card ann-card tone-${m.tone}" data-ann="${a.id}"><span class="ann-ic icon"><svg><use href="#${m.ic}"/></svg></span><div class="ann-txt"><span class="ann-lb">${m.lb} · ${esc(admDate(a.starts_at))}</span><b>${esc(a.title)}</b>${a.body?`<p>${esc(a.body)}</p>`:''}${a.link?`<a class="ann-link" href="${esc(a.link)}" target="_blank" rel="noopener">Buka tautan ›</a>`:''}</div>${closable?'<button type="button" class="ann-x" data-ann-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button>':''}</article>`}
+function annPaint(){
+  let host=document.getElementById('annHost');if(!host)return;let seen=annSeen(),list=ADM.ann.filter(a=>seen.indexOf(a.id)<0).slice(0,2);
+  host.innerHTML=list.map(a=>annCard(a,true)).join('');
+  host.querySelectorAll('[data-ann-x]').forEach(b=>b.onclick=e=>{e.stopPropagation();let c=b.closest('[data-ann]');c.classList.add('out');setTimeout(()=>annDismiss(+c.dataset.ann),220)});
+  let row=document.getElementById('annRowBadge');if(row){let n=ADM.ann.filter(a=>seen.indexOf(a.id)<0).length;row.hidden=!n;row.textContent=n}
+}
+function annPopup(){
+  let shown=admLS('acx_ann_pop',[]),a=ADM.ann.find(x=>x.level==='penting'&&shown.indexOf(x.id)<0);if(!a||document.querySelector('.adm-sheet,.upd-gate,#obSheet'))return;
+  shown.push(a.id);admSet('acx_ann_pop',shown.slice(-40));
+  let b=admSheet('annPop','Pengumuman',annCard(a,false)+'<button type="button" class="acx-btn adm-wide" data-x>Mengerti</button>');b.classList.add('adm-center');
+}
+function annOpenList(){
+  let seen=annSeen();ADM.ann.forEach(a=>{if(seen.indexOf(a.id)<0)seen.push(a.id)});admSet('acx_ann_seen',seen.slice(-60));
+  admSheet('annList','Pengumuman',ADM.ann.length?ADM.ann.map(a=>annCard(a,false)).join(''):'<div class="adm-empty"><span class="icon"><svg><use href="#i-bell"/></svg></span><b>Belum ada pengumuman</b><p>Info penting dari pengembang akan muncul di sini.</p></div>');annPaint();
+}
+
+/* =============================== KALENDER EVENT =============================== */
+const EV_SPORTS=['Semua','Lari','Sepeda','Trail','Triathlon','Renang','Lainnya'];let EV_FILTER='Semua';
+async function evFetch(force){
+  if(!admOk()||ADM.missing.ac_events)return ADM.events;
+  if(!force&&Date.now()-ADM.evAt<30*60000&&ADM.events.length)return ADM.events;
+  let from=dateKey(new Date(Date.now()-86400000));
+  try{ADM.events=await admRest('ac_events','GET','ac_events?select=*&event_date=gte.'+from+'&order=event_date.asc&limit=200')||[];ADM.evAt=Date.now();admSet('acx_ev_cache',ADM.events)}catch(e){ADM.events=admLS('acx_ev_cache',[])}
+  return ADM.events;
+}
+function evTarget(){try{let t=DATA&&DATA.profile&&DATA.profile.targetEvent;return t?JSON.parse(t):null}catch(e){return null}}
+function evSportDefault(){try{let d=dominantSport();return d==='Running'?'Lari':d==='Cycling'?'Sepeda':'Semua'}catch(e){return 'Semua'}}
+function evItem(e,tgt){
+  let d=new Date(e.event_date+'T00:00:00'),n=admDays(e.event_date),isT=tgt&&String(tgt.id)===String(e.id);
+  return `<article class="ev-item${isT?' is-target':''}" data-ev="${e.id}"><div class="ev-date"><b>${d.getDate()}</b><span>${hMonth(d).slice(0,3)}</span></div><div class="ev-txt"><span class="ev-sport">${esc(e.sport)}${e.city?' · '+esc(e.city):''}</span><b>${esc(e.title)}</b>${e.distances?`<small>${esc(e.distances)}</small>`:''}${e.location?`<small class="muted">${esc(e.location)}</small>`:''}
+    <div class="ev-actions"><span class="ev-count">${n<=0?(n===0?'Hari ini':'Selesai'):'H-'+n}</span>${n>=0?`<button type="button" class="ev-btn${isT?' on':''}" data-ev-target>${isT?'✓ Target':'Jadikan target'}</button>`:''}${e.url?`<a class="ev-btn ghost" href="${esc(e.url)}" target="_blank" rel="noopener">Info</a>`:''}</div></div></article>`;
+}
+async function evOpen(){
+  let box=admSheet('evSheet','Kalender event','<div class="st-seg ev-seg" id="evSeg"></div><div id="evList">'+inlineSpinner('Memuat event…')+'</div>',{tall:true});
+  if(!EV_FILTER||EV_FILTER==='Semua')EV_FILTER=evSportDefault();
+  let paint=()=>{
+    let seg=box.querySelector('#evSeg');seg.innerHTML=EV_SPORTS.map(s=>`<button type="button" data-v="${s}" class="${s===EV_FILTER?'on':''}">${s}</button>`).join('');
+    seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{EV_FILTER=b.dataset.v;usgTrack('event:filter');paint()});
+    let tgt=evTarget(),list=ADM.events.filter(e=>EV_FILTER==='Semua'||e.sport===EV_FILTER),host=box.querySelector('#evList');
+    if(ADM.missing.ac_events){host.innerHTML='<div class="adm-empty"><span class="icon"><svg><use href="#i-calendar"/></svg></span><b>Kalender event belum aktif</b><p>'+(FB_ADMIN?'Jalankan SQL 20261001180000_admin_suite.sql di Supabase.':'Segera hadir.')+'</p></div>';return}
+    if(!list.length){host.innerHTML='<div class="adm-empty"><span class="icon"><svg><use href="#i-calendar"/></svg></span><b>Belum ada event '+(EV_FILTER==='Semua'?'':EV_FILTER.toLowerCase()+' ')+'mendatang</b><p>Tahu event seru di kotamu? Usulkan lewat Saran & kritik.</p><button type="button" class="acx-btn st-btn-ghost" data-ev-suggest>Usulkan event</button></div>';let sg=host.querySelector('[data-ev-suggest]');if(sg)sg.onclick=()=>{box.__close();let o=document.getElementById('openFeedback');if(o)setTimeout(()=>o.click(),250)};return}
+    let groups={};list.forEach(e=>{let k=e.event_date.slice(0,7);(groups[k]=groups[k]||[]).push(e)});
+    host.innerHTML=Object.keys(groups).map(k=>{let d=new Date(k+'-01T00:00:00');return `<div class="ev-month">${hMonth(d)} ${d.getFullYear()}</div>`+groups[k].map(e=>evItem(e,tgt)).join('')}).join('');
+    host.querySelectorAll('[data-ev-target]').forEach(b=>b.onclick=async()=>{let id=b.closest('[data-ev]').dataset.ev,e=ADM.events.find(x=>String(x.id)===id);if(!e)return;let cur=evTarget();await evSetTarget(cur&&String(cur.id)===id?null:e);paint()});
+  };
+  await evFetch(true);paint();usgTrack('event:open');
+}
+async function evSetTarget(e){
+  try{let r=await gs('appSetTargetEvent',e?{id:e.id,title:e.title,date:e.event_date,sport:e.sport,city:e.city,distances:e.distances,url:e.url}:null);
+    if(DATA&&DATA.profile)DATA.profile.targetEvent=(r&&r.targetEvent)||'';if(window.acxHaptic)acxHaptic('success');
+    toast(e?'🎯 '+e.title+' jadi target — coach menyesuaikan saran':'Target event dihapus');usgTrack(e?'event:target':'event:untarget');
+    if(currentPageView()==='dashboard')admPaintDash();if(typeof nfSchedule==='function')setTimeout(()=>nfSchedule({skipGarage:true}),800);
+  }catch(x){toast('Gagal menyimpan target: '+(x.message||x))}
+}
+function evPhase(n){if(n<=7)return ['Race week','Istirahat cukup, sesi pendek & ringan, siapkan perlengkapan dan nutrisi hari-H.'];if(n<=14)return ['Taper','Turunkan volume 30–40%, pertahankan sedikit intensitas agar kaki tetap tajam.'];if(n<=42)return ['Peak','Latihan paling spesifik: simulasi pace/jarak lomba, 1–2 sesi berat per minggu.'];if(n<=84)return ['Build','Tambah interval & tempo bertahap, jaga long session tetap rutin.'];return ['Base','Bangun daya tahan di zona 2, konsisten dulu sebelum menambah intensitas.']}
+function evDashCard(){
+  let t=evTarget();if(!t)return '';let n=admDays(t.date);if(n<-1)return '';
+  let ph=evPhase(Math.max(0,n)),total=Math.max(n,1),pct=Math.max(4,Math.min(100,100-n/120*100));
+  return `<article class="acx-card ev-dash" role="button" data-ev-open><div class="ev-ring" style="--p:${pct}"><b>${n<=0?(n===0?'Hari-H':'✓'):n}</b><span>${n>0?'hari lagi':''}</span></div><div class="ev-dash-txt"><span class="acx-eyebrow">🎯 Target · ${esc(t.sport||'Event')}</span><b>${esc(t.title)}</b><small>${esc(admDate(t.date))}${t.city?' · '+esc(t.city):''}${t.distances?' · '+esc(t.distances):''}</small><p><b>Fase ${ph[0]}.</b> ${ph[1]}</p></div></article>`;
+}
+function evNextCard(){
+  let tgt=evTarget(),list=ADM.events.filter(e=>admDays(e.event_date)>=0&&!(tgt&&String(tgt.id)===String(e.id)));
+  let pref=evSportDefault(),pick=list.filter(e=>pref==='Semua'||e.sport===pref);if(!pick.length)pick=list;pick=pick.slice(0,2);
+  if(!pick.length)return '';
+  return `<div class="acx-sec"><h2>Event mendatang</h2><button type="button" class="acx-link" data-ev-open>Semua <span class="icon"><svg><use href="#i-chevron"/></svg></span></button></div><article class="acx-card ev-next">${pick.map(e=>evItem(e,tgt)).join('')}</article>`;
+}
+
+/* ============================ DASHBOARD (tambahan) ============================ */
+function admPaintDash(){
+  let host=document.getElementById('dashExtras');if(!host)return;
+  let html=(typeof rcDashCard==='function'?rcDashCard():'')+evDashCard()+evNextCard();
+  host.innerHTML=html;
+  host.querySelectorAll('[data-ev-open]').forEach(b=>b.onclick=e=>{if(e.target.closest('a,button[data-ev-target]'))return;evOpen()});
+  host.querySelectorAll('[data-ev-target]').forEach(b=>b.onclick=async e=>{e.stopPropagation();let id=b.closest('[data-ev]').dataset.ev,ev=ADM.events.find(x=>String(x.id)===id);if(ev)await evSetTarget(ev)});
+  if(typeof rcBindDash==='function')rcBindDash(host);
+  annPaint();
+}
+(function(){try{let o=window.renderDashboard;if(typeof o!=='function')return;window.renderDashboard=function(){let r=o.apply(this,arguments);try{admPaintDash()}catch(e){}return r}}catch(e){}})();
+
+/* ================================ PANEL ADMIN ================================ */
+const ADM_FEAT={'page:dashboard':'Hari Ini','page:training/plan':'Latihan › Rencana','page:training/calendar':'Latihan › Kalender','page:training/activities':'Latihan › Riwayat','page:training/routes':'Latihan › Peta','page:performance/fitness':'Performa › Fitness','page:performance/intensity':'Performa › Intensitas','page:performance/speed':'Performa › Kecepatan','page:performance/records':'Performa › Rekor','page:garage/bikes':'Gear › Sepeda','page:garage/shoes':'Gear › Sepatu','page:garage/commute':'Gear › Komuter','page:sharing':'Berbagi','page:overlay-editor':'Studio','page:profile':'Profil','page:detail':'Detail','studio:save':'Studio › simpan gambar','studio:video':'Studio › video','studio:share':'Studio › bagikan','event:open':'Kalender event','event:filter':'Kalender event › filter','event:untarget':'Hapus target event','event:target':'Jadikan target event','recap:open':'Rekap bulanan','tour:done':'Tutorial selesai'};
+function admFeatName(k){if(ADM_FEAT[k])return ADM_FEAT[k];if(/^tpl:/.test(k))return 'Template › '+k.slice(4);return k.replace(/^page:/,'').replace('/',' › ')}
+function admPaintRow(){
+  let fb=document.getElementById('fbInboxRow');if(!FB_ADMIN||!fb){let r=document.getElementById('admPanelRow');if(r&&!FB_ADMIN)r.remove();return}
+  if(document.getElementById('admPanelRow'))return;
+  fb.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="admPanelRow"><span class="acx-row-ic tone-coral icon"><svg><use href="#i-chart"/></svg></span><span class="acx-row-text"><b>Panel admin</b><small>Dasbor pengguna · kirim pengumuman · kelola event</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');
+  document.getElementById('admPanelRow').onclick=()=>admOpen('dash');
+}
+let ADM_TAB='dash';
+function admOpen(tab){
+  ADM_TAB=tab||ADM_TAB;
+  let box=admSheet('admSheet','Panel admin','<div class="st-seg adm-tabs" id="admTabs">'+[['dash','Dasbor'],['ann','Pengumuman'],['ev','Event'],['fb','Masukan']].map(t=>`<button type="button" data-t="${t[0]}" class="${t[0]===ADM_TAB?'on':''}">${t[1]}</button>`).join('')+'</div><div id="admPane"></div>',{tall:true});
+  box.querySelectorAll('#admTabs button').forEach(b=>b.onclick=()=>{if(b.dataset.t==='fb'){box.__close();setTimeout(()=>fbOpenInbox(),240);return}ADM_TAB=b.dataset.t;box.querySelectorAll('#admTabs button').forEach(x=>x.classList.toggle('on',x===b));admPane()});
+  admPane();
+}
+function admSqlHint(e){return '<div class="adm-empty"><span class="icon"><svg><use href="#i-info"/></svg></span><b>Fitur admin belum aktif</b><p>'+(e&&(e.status===404||/ac_admin_stats|does not exist|schema cache/i.test(e.message))?'Jalankan SQL <code>20261001180000_admin_suite.sql</code> di Supabase › SQL Editor, lalu buka lagi.':esc((e&&e.message)||'Gagal memuat'))+'</p></div>'}
+async function admPane(){
+  let host=document.getElementById('admPane');if(!host)return;host.innerHTML=inlineSpinner('Memuat…');
+  if(ADM_TAB==='dash')return admDash(host);if(ADM_TAB==='ann')return admAnn(host);if(ADM_TAB==='ev')return admEv(host);
+}
+function admBars(rows,valKey,labelFn,opts){opts=opts||{};let mx=Math.max(1,...rows.map(r=>+r[valKey]||0));return '<div class="adm-bars">'+rows.map(r=>`<div class="adm-bar"><span class="adm-bar-lb">${labelFn(r)}</span><span class="adm-bar-track"><i style="width:${Math.max(3,(+r[valKey]||0)/mx*100)}%"></i></span><b>${(+r[valKey]||0).toLocaleString('id-ID')}${opts.suffix||''}</b></div>`).join('')+'</div>'}
+async function admDash(host){
+  let s;try{s=await admRest('ac_admin_stats','POST','rpc/ac_admin_stats',{p_days:30})}catch(e){host.innerHTML=admSqlHint(e);return}
+  if(!s){host.innerHTML=admSqlHint();return}
+  let latest=String(window.AC_BUILD||''),daily=s.daily||[],mx=Math.max(1,...daily.map(d=>d.users));
+  let kpi=[['Pengguna',s.users_total,'+'+s.users_new_7d+' minggu ini'],['Aktif hari ini',s.dau,'DAU'],['Aktif 7 hari',s.wau,'WAU'],['Aktif 30 hari',s.mau,'MAU'],['Dibuka 7 hari',s.opens_7d,'kali'],['Masukan',(s.feedback||{}).baru||0,'baru · '+((s.feedback||{}).minggu_ini||0)+' minggu ini']];
+  let outdated=(s.versions||[]).filter(v=>v.version!==latest).reduce((a,v)=>a+v.users,0);
+  host.innerHTML=`<div class="adm-kpis">${kpi.map(k=>`<div class="adm-kpi"><small>${k[0]}</small><b>${(+k[1]||0).toLocaleString('id-ID')}</b><span>${esc(String(k[2]))}</span></div>`).join('')}</div>
+    <div class="adm-card"><div class="adm-h">Pengguna aktif per hari <small>30 hari</small></div><div class="adm-spark">${daily.map(d=>`<i title="${esc(d.day)}: ${d.users}" style="height:${Math.max(3,d.users/mx*100)}%"${d.day===dateKey(new Date())?' class="today"':''}></i>`).join('')}</div><div class="adm-axis"><span>${esc(admDate(daily[0]&&daily[0].day))}</span><span>Hari ini</span></div></div>
+    <div class="adm-card"><div class="adm-h">Versi aplikasi <small>${outdated?outdated+' pengguna belum update':'semua versi terbaru'}</small></div>${(s.versions||[]).length?admBars(s.versions,'users',v=>'v'+esc(v.version)+(v.version===latest?' <em>terbaru</em>':'')):'<p class="adm-note">Belum ada data.</p>'}</div>
+    <div class="adm-card"><div class="adm-h">Fitur paling sering dibuka <small>30 hari</small></div>${(s.features||[]).length?admBars(s.features,'count',f=>esc(admFeatName(f.name))):'<p class="adm-note">Belum ada data. Statistik mulai terkumpul setelah pengguna memakai versi ini.</p>'}</div>
+    <div class="adm-card"><div class="adm-h">Error terbanyak <small>7 hari</small></div>${(s.errors||[]).length?'<div class="adm-errs">'+s.errors.map(e=>`<div class="adm-err"><code>${esc(e.message)}</code><span>${e.count}× · ${e.users} pengguna · terakhir ${esc(admDate(e.last))}</span></div>`).join('')+'</div>':'<p class="adm-note">Tidak ada error tercatat 🎉</p>'}</div>
+    <div class="adm-card adm-mini"><span>📣 ${s.announcements_live||0} pengumuman aktif</span><span>📅 ${s.events_upcoming||0} event mendatang</span><span>💬 ${(s.feedback||{}).selesai||0} masukan selesai</span></div>
+    <p class="adm-note">Semua angka anonim & gabungan — tidak ada data per pengguna. Diperbarui ${esc(new Date(s.generated_at).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}))}.</p>`;
+}
+async function admAnn(host){
+  let rows;try{rows=await admRest('ac_announcements','GET','ac_announcements?select=*&order=created_at.desc&limit=50')||[]}catch(e){host.innerHTML=admSqlHint(e);return}
+  host.innerHTML=`<form class="adm-form" id="annForm"><label>Judul<input name="title" maxlength="120" required placeholder="cth. Fitur baru: Kalender event"></label><label>Isi pesan<textarea name="body" rows="3" maxlength="2000" placeholder="Tulis pesan singkat untuk semua pengguna…"></textarea></label>
+    <div class="adm-row2"><label>Jenis<select name="level"><option value="info">Info</option><option value="update">Pembaruan</option><option value="event">Event</option><option value="penting">Penting (muncul sebagai pop-up)</option></select></label><label>Tampil selama<select name="dur"><option value="0">Sampai dinonaktifkan</option><option value="1">1 hari</option><option value="3">3 hari</option><option value="7" selected>7 hari</option><option value="30">30 hari</option></select></label></div>
+    <label>Tautan (opsional)<input name="link" type="url" maxlength="500" placeholder="https://…"></label><button type="submit" class="acx-btn adm-wide">Kirim ke semua pengguna</button></form>
+    <div class="adm-h adm-h2">Riwayat pengumuman</div><div id="annAdmList">${rows.length?'':'<p class="adm-note">Belum ada pengumuman.</p>'}</div>`;
+  let list=host.querySelector('#annAdmList'),now=Date.now();
+  list.insertAdjacentHTML('beforeend',rows.map(a=>{let st=!a.active?'Nonaktif':new Date(a.starts_at).getTime()>now?'Terjadwal':a.ends_at&&new Date(a.ends_at).getTime()<=now?'Berakhir':'Aktif';return `<div class="adm-item" data-id="${a.id}"><div><span class="adm-pill s-${st.toLowerCase()}">${st}</span><span class="adm-pill">${esc((ANN_META[a.level]||ANN_META.info).lb)}</span><b>${esc(a.title)}</b>${a.body?`<p>${esc(a.body)}</p>`:''}<small>${esc(admDate(a.created_at))}${a.ends_at?' · sampai '+esc(admDate(a.ends_at)):''}</small></div><div class="adm-acts"><button type="button" data-a="toggle">${a.active?'Nonaktifkan':'Aktifkan'}</button><button type="button" data-a="del" class="del">Hapus</button></div></div>`}).join(''));
+  host.querySelector('#annForm').onsubmit=async e=>{e.preventDefault();let f=e.target,btn=f.querySelector('button[type=submit]'),dur=+f.dur.value;
+    let row={title:f.title.value.trim(),body:f.body.value.trim(),level:f.level.value,link:f.link.value.trim(),active:true,starts_at:new Date().toISOString(),ends_at:dur?new Date(Date.now()+dur*864e5).toISOString():null};
+    if(!row.title)return;if(row.level==='penting'&&!confirm('Pengumuman "Penting" muncul sebagai pop-up di HP semua pengguna. Kirim?'))return;
+    btn.disabled=true;btn.classList.add('is-busy');
+    try{await admRest('ac_announcements','POST','ac_announcements',[row],'return=minimal');toast('📣 Pengumuman terkirim');if(window.acxHaptic)acxHaptic('success');annFetch(true);admAnn(host)}catch(x){toast('Gagal: '+x.message);btn.disabled=false;btn.classList.remove('is-busy')}};
+  list.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{let id=b.closest('[data-id]').dataset.id,a=rows.find(r=>String(r.id)===id);
+    try{if(b.dataset.a==='del'){if(!confirm('Hapus pengumuman ini?'))return;await admRest('ac_announcements','DELETE','ac_announcements?id=eq.'+id)}else await admRest('ac_announcements','PATCH','ac_announcements?id=eq.'+id,{active:!a.active},'return=minimal');annFetch(true);admAnn(host)}catch(x){toast('Gagal: '+x.message)}});
+}
+async function admEv(host){
+  let rows;try{rows=await admRest('ac_events','GET','ac_events?select=*&order=event_date.desc&limit=200')||[]}catch(e){host.innerHTML=admSqlHint(e);return}
+  let today=dateKey(new Date());
+  host.innerHTML=`<form class="adm-form" id="evForm"><label>Nama event<input name="title" maxlength="140" required placeholder="cth. Makassar Half Marathon 2026"></label>
+    <div class="adm-row2"><label>Olahraga<select name="sport">${EV_SPORTS.slice(1).map(s=>`<option>${s}</option>`).join('')}</select></label><label>Tanggal<input name="event_date" type="date" required min="${today}"></label></div>
+    <div class="adm-row2"><label>Kota<input name="city" maxlength="80" placeholder="Makassar"></label><label>Jarak / kategori<input name="distances" maxlength="120" placeholder="5K · 10K · 21K"></label></div>
+    <label>Lokasi start (opsional)<input name="location" maxlength="160" placeholder="Pantai Losari"></label><label>Tautan pendaftaran (opsional)<input name="url" type="url" maxlength="500" placeholder="https://…"></label>
+    <label>Keterangan (opsional)<textarea name="description" rows="2" maxlength="1500"></textarea></label><button type="submit" class="acx-btn adm-wide">Tambah event</button></form>
+    <div class="adm-h adm-h2">Daftar event <small>${rows.filter(r=>r.event_date>=today).length} mendatang</small></div><div id="evAdmList">${rows.length?'':'<p class="adm-note">Belum ada event.</p>'}</div>`;
+  let list=host.querySelector('#evAdmList');
+  list.insertAdjacentHTML('beforeend',rows.map(e=>`<div class="adm-item${e.event_date<today?' past':''}" data-id="${e.id}"><div><span class="adm-pill">${esc(e.sport)}</span>${e.active?'':'<span class="adm-pill s-nonaktif">Disembunyikan</span>'}<b>${esc(e.title)}</b><small>${esc(admDate(e.event_date))}${e.city?' · '+esc(e.city):''}${e.distances?' · '+esc(e.distances):''}</small></div><div class="adm-acts"><button type="button" data-a="toggle">${e.active?'Sembunyikan':'Tampilkan'}</button><button type="button" data-a="del" class="del">Hapus</button></div></div>`).join(''));
+  host.querySelector('#evForm').onsubmit=async ev=>{ev.preventDefault();let f=ev.target,btn=f.querySelector('button[type=submit]'),row={};['title','sport','event_date','city','distances','location','url','description'].forEach(k=>row[k]=String(f[k].value||'').trim());row.active=true;
+    btn.disabled=true;btn.classList.add('is-busy');
+    try{await admRest('ac_events','POST','ac_events',[row],'return=minimal');toast('📅 Event ditambahkan');if(window.acxHaptic)acxHaptic('success');ADM.evAt=0;evFetch(true);admEv(host)}catch(x){toast('Gagal: '+x.message);btn.disabled=false;btn.classList.remove('is-busy')}};
+  list.querySelectorAll('[data-a]').forEach(b=>b.onclick=async()=>{let id=b.closest('[data-id]').dataset.id,e=rows.find(r=>String(r.id)===id);
+    try{if(b.dataset.a==='del'){if(!confirm('Hapus event ini?'))return;await admRest('ac_events','DELETE','ac_events?id=eq.'+id)}else await admRest('ac_events','PATCH','ac_events?id=eq.'+id,{active:!e.active},'return=minimal');ADM.evAt=0;evFetch(true);admEv(host)}catch(x){toast('Gagal: '+x.message)}});
+}
+
+/* statistik pemakaian Studio (nama template, simpan, video, bagikan) */
+(function(){[['stSetTpl',a=>'tpl:'+a[0]],['stSaveImage',()=>'studio:save'],['stExportVideo',()=>'studio:video'],['stExport',()=>'studio:share']].forEach(p=>{try{let o=window[p[0]];if(typeof o!=='function')return;window[p[0]]=function(){try{usgTrack(p[1](arguments))}catch(e){}return o.apply(this,arguments)}}catch(e){}})})();
+
+/* ================================ BARIS PROFIL ================================ */
+function admProfileRows(){
+  let notif=document.querySelector('[data-page-view="profile"] #acxNotifRow');if(!notif||document.getElementById('evRow'))return;
+  notif.insertAdjacentHTML('afterend','<button type="button" class="acx-row" id="evRow"><span class="acx-row-ic tone-amber icon"><svg><use href="#i-calendar"/></svg></span><span class="acx-row-text"><b>Kalender event</b><small>Lomba lari, gowes & trail — jadikan target latihan</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button><button type="button" class="acx-row" id="annRow"><span class="acx-row-ic tone-blue icon"><svg><use href="#i-bell"/></svg></span><span class="acx-row-text"><b>Pengumuman</b><small>Info & pembaruan dari pengembang</small></span><span class="fb-badge" id="annRowBadge" hidden></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');
+  document.getElementById('evRow').onclick=evOpen;document.getElementById('annRow').onclick=annOpenList;
+  usgPaintToggle();annPaint();
+}
+(function(){try{let o=window.fbPaintRow;if(typeof o!=='function')return;window.fbPaintRow=function(){let r=o.apply(this,arguments);try{admPaintRow()}catch(e){}return r}}catch(e){}})();
+
+/* ================================ SIKLUS HIDUP ================================ */
+async function admAfterLogin(){
+  if(!admOk())return;
+  usgOpen();
+  await Promise.all([annFetch(true),evFetch(true)]);
+  if(currentPageView()==='dashboard')admPaintDash();
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  setTimeout(admProfileRows,0);
+  let tries=0,iv=setInterval(()=>{tries++;if(admOk()&&typeof SESSION!=='undefined'&&SESSION&&SESSION.athleteId){clearInterval(iv);setTimeout(admAfterLogin,2500)}else if(tries>240)clearInterval(iv)},500);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&admOk()){annFetch(false);evFetch(false)}});
+});
+</script>

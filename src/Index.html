@@ -183,6 +183,7 @@
           <small class="sync-badge acx-hidden" id="dashboardSyncState"></small>
           <div class="hidden-filters"><input type="date" id="dashFrom"><input type="date" id="dashTo"><select id="dashSport"><option value="All">Semua olahraga</option><option value="Cycling">Sepeda</option><option value="Running">Lari</option><option value="Other">Lainnya (jalan, renang, gym…)</option></select><button id="applyDash"></button></div>
 
+          <div id="annHost" class="ann-host"></div>
           <div class="acx-today">
             <div class="acx-col-main">
               <article class="acx-card acx-ready" id="dashReadyCard" data-go="performance" data-sub="fitness" role="button" tabindex="0">
@@ -200,6 +201,7 @@
               </article>
 
               <div id="dashBriefing"></div>
+              <div id="dashExtras" class="dash-extras"></div>
 
               <div class="acx-sec"><h2>Aktivitas terakhir</h2><button type="button" class="acx-link" data-go="training" data-sub="activities">Riwayat <span class="icon"><svg><use href="#i-chevron"/></svg></span></button></div>
               <div id="dashLastActivity"></div>
@@ -712,6 +714,9 @@
   <?!= include('JSImport') ?>
   <?!= include('JSOnboard') ?>
   <?!= include('JSFeedback') ?>
+  <?!= include('JSAdmin') ?>
+  <?!= include('JSRecap') ?>
+  <?!= include('JSTour') ?>
   <?!= include('JSApp') ?>
   <script>
   (function(){

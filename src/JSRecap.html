@@ -1,0 +1,86 @@
+<script>
+'use strict';
+/* =====================================================================
+   Rekap bulanan & tahunan otomatis: kartu di Hari Ini tiap awal bulan
+   (dan akhir tahun), lembar rekap lengkap, template Studio "Rekap Bulanan".
+   ===================================================================== */
+let RC_VIEW=null,ST_RECAP=null;
+const RC_MON=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function rcRange(p){if(p.type==='year')return {from:p.y+'-01-01',to:p.y+'-12-31',label:'Tahun '+p.y,short:String(p.y)};let last=new Date(p.y,p.m+1,0).getDate(),mm=String(p.m+1).padStart(2,'0');return {from:p.y+'-'+mm+'-01',to:p.y+'-'+mm+'-'+String(last).padStart(2,'0'),label:RC_MON[p.m]+' '+p.y,short:RC_MON[p.m]}}
+function rcPrev(p){return p.type==='year'?{type:'year',y:p.y-1}:(p.m?{type:'month',y:p.y,m:p.m-1}:{type:'month',y:p.y-1,m:11})}
+function rcNext(p){return p.type==='year'?{type:'year',y:p.y+1}:(p.m<11?{type:'month',y:p.y,m:p.m+1}:{type:'month',y:p.y+1,m:0})}
+function rcStats(p){
+  let r=rcRange(p),logs=(DATA.logs||[]).filter(x=>x.date>=r.from&&x.date<=r.to);
+  let s={p,range:r,n:logs.length,km:0,min:0,elev:0,kcal:0,days:0,streak:0,sports:{},longest:null,climb:null,fastestRun:null,daysMap:{},weekday:[0,0,0,0,0,0,0]};
+  logs.forEach(x=>{s.km+=x.distance||0;s.min+=x.minutes||0;s.elev+=x.elevation||0;s.kcal+=x.calories||0;let k=x.date.slice(0,10);s.daysMap[k]=(s.daysMap[k]||0)+(x.minutes||0);
+    let lb=sportInfo(x).label,c=sportInfo(x).color;s.sports[lb]=s.sports[lb]||{n:0,km:0,min:0,color:c};s.sports[lb].n++;s.sports[lb].km+=x.distance||0;s.sports[lb].min+=x.minutes||0;
+    if(!s.longest||(x.distance||0)>(s.longest.distance||0))s.longest=x;if(!s.climb||(x.elevation||0)>(s.climb.elevation||0))s.climb=x;
+    if(x.sport==='Running'&&x.avgPace>0&&(x.distance||0)>=3&&(!s.fastestRun||x.avgPace<s.fastestRun.avgPace))s.fastestRun=x;
+    let wd=new Date(k+'T00:00:00').getDay();s.weekday[wd]+=x.minutes||0});
+  let keys=Object.keys(s.daysMap).sort();s.days=keys.length;let run=0,prev=null;keys.forEach(k=>{let d=new Date(k+'T00:00:00');run=prev&&(d-prev)/864e5===1?run+1:1;if(run>s.streak)s.streak=run;prev=d});
+  s.sportList=Object.keys(s.sports).map(k=>Object.assign({label:k},s.sports[k])).sort((a,b)=>b.min-a.min);
+  let wdN=['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'],bi=s.weekday.indexOf(Math.max(...s.weekday));s.bestDay=s.n?wdN[bi]:'';
+  return s;
+}
+function rcDelta(a,b){if(!b)return a?'baru':'';let d=Math.round((a-b)/b*100);return (d>0?'+':'')+d+'%'}
+function rcDue(){
+  let now=new Date(),y=now.getFullYear(),m=now.getMonth(),d=now.getDate();
+  if((m===11&&d>=20)||(m===0&&d<=10)){let yy=m===11?y:y-1,p={type:'year',y:yy};if(admLS('acx_rc_seen','')!=='Y'+yy&&rcStats(p).n)return p}
+  if(d<=7){let p=m?{type:'month',y,m:m-1}:{type:'month',y:y-1,m:11},k=p.y+'-'+p.m;if(admLS('acx_rc_seen','')!==k&&rcStats(p).n)return p}
+  return null;
+}
+function rcKey(p){return p.type==='year'?'Y'+p.y:p.y+'-'+p.m}
+function rcDashCard(){
+  let p=rcDue();if(!p)return '';let s=rcStats(p);
+  return `<article class="acx-card rc-dash" data-rc-open='${JSON.stringify(p)}' role="button"><button type="button" class="ann-x" data-rc-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button><span class="rc-kick">✨ Rekap ${p.type==='year'?'tahunan':'bulanan'} siap</span><b>${esc(s.range.label)}</b><div class="rc-dash-stats"><span><b>${stDist(s.km)}</b> km</span><span><b>${s.n}</b> aktivitas</span><span><b>${durationShort(s.min)}</b></span></div><span class="rc-cta">Lihat rekapmu ›</span></article>`;
+}
+function rcBindDash(host){
+  host.querySelectorAll('[data-rc-open]').forEach(c=>c.onclick=e=>{let p=JSON.parse(c.dataset.rcOpen);if(e.target.closest('[data-rc-x]')){e.stopPropagation();admSet('acx_rc_seen',rcKey(p));c.classList.add('out');setTimeout(()=>admPaintDash(),220);return}admSet('acx_rc_seen',rcKey(p));rcOpen(p)});
+}
+function rcDefault(){let now=new Date();return now.getDate()<=7?rcPrev({type:'month',y:now.getFullYear(),m:now.getMonth()}):{type:'month',y:now.getFullYear(),m:now.getMonth()}}
+function rcOpen(p){
+  RC_VIEW=p||RC_VIEW||rcDefault();usgTrack('recap:open');
+  let box=admSheet('rcSheet','Rekap','<div class="rc-top"><div class="st-seg rc-type"><button type="button" data-t="month">Bulanan</button><button type="button" data-t="year">Tahunan</button></div><div class="rc-nav"><button type="button" class="cal-nav-btn" data-nav="-1" aria-label="Sebelumnya"><span class="icon"><svg><use href="#i-back"/></svg></span></button><b id="rcLabel"></b><button type="button" class="cal-nav-btn" data-nav="1" aria-label="Berikutnya"><span class="icon"><svg><use href="#i-chevron"/></svg></span></button></div></div><div id="rcBody"></div>',{tall:true});
+  let paint=()=>{
+    let p=RC_VIEW,s=rcStats(p),prev=rcStats(rcPrev(p)),now=new Date(),isFuture=p.type==='year'?p.y>now.getFullYear():(p.y>now.getFullYear()||(p.y===now.getFullYear()&&p.m>now.getMonth()));
+    box.querySelectorAll('.rc-type button').forEach(b=>b.classList.toggle('on',b.dataset.t===p.type));
+    box.querySelector('#rcLabel').textContent=s.range.label;box.querySelector('[data-nav="1"]').disabled=isFuture||rcRange(rcNext(p)).from>dateKey(now);
+    let body=box.querySelector('#rcBody');
+    if(!s.n){body.innerHTML='<div class="adm-empty"><span class="icon"><svg><use href="#i-calendar"/></svg></span><b>Belum ada aktivitas di '+esc(s.range.label)+'</b><p>Geser ke periode lain, atau sinkronkan Strava.</p></div>';return}
+    let tiles=[['Jarak',stDist(s.km)+' km',rcDelta(s.km,prev.km)],['Waktu',durationShort(s.min),rcDelta(s.min,prev.min)],['Aktivitas',s.n,rcDelta(s.n,prev.n)],['Elevasi',Math.round(s.elev).toLocaleString('id-ID')+' m',rcDelta(s.elev,prev.elev)],['Hari aktif',s.days+' hari',''],['Streak terpanjang',s.streak+' hari','']];
+    let hl=[];if(s.longest&&s.longest.distance)hl.push(['🏅','Terjauh',s.longest.title,stDist(s.longest.distance)+' km · '+fmtDateShort(s.longest.date),s.longest.id]);if(s.climb&&s.climb.elevation>50)hl.push(['⛰️','Tanjakan terbanyak',s.climb.title,Math.round(s.climb.elevation)+' m · '+fmtDateShort(s.climb.date),s.climb.id]);if(s.fastestRun)hl.push(['⚡','Lari tercepat',s.fastestRun.title,stPace(s.fastestRun.avgPace)+'/km · '+fmtDateShort(s.fastestRun.date),s.fastestRun.id]);if(s.bestDay)hl.push(['📅','Hari favorit',s.bestDay,'paling sering latihan','']);
+    let cal='';if(p.type==='month'){let first=new Date(p.y,p.m,1),off=(first.getDay()+6)%7,last=new Date(p.y,p.m+1,0).getDate(),mx=Math.max(1,...Object.values(s.daysMap));cal='<div class="rc-cal">'+['S','S','R','K','J','S','M'].map(d=>`<span class="rc-dow">${d}</span>`).join('')+'<i></i>'.repeat(off)+Array.from({length:last},(_,i)=>{let k=p.y+'-'+String(p.m+1).padStart(2,'0')+'-'+String(i+1).padStart(2,'0'),v=s.daysMap[k]||0,l=v?Math.min(4,1+Math.floor(v/mx*3.99)):0;return `<i class="h${l}" title="${k}">${i+1}</i>`}).join('')+'</div>'}
+    else{let months=Array.from({length:12},(_,i)=>{let st=rcStats({type:'month',y:p.y,m:i});return st.km}),mx=Math.max(1,...months);cal='<div class="rc-year">'+months.map((v,i)=>`<div><i style="height:${Math.max(4,v/mx*100)}%"></i><span>${RC_MON[i].slice(0,1)}</span></div>`).join('')+'</div>'}
+    body.innerHTML=`<div class="rc-hero"><span>${p.type==='year'?'Tahun ini kamu':'Bulan ini kamu'}</span><b>${stDist(s.km)}<small> km</small></b><p>${s.n} aktivitas · ${durationShort(s.min)} bergerak${prev.n?' · '+rcDelta(s.km,prev.km)+' dari '+(p.type==='year'?p.y-1:RC_MON[rcPrev(p).m]):''}</p></div>
+      <div class="rc-tiles">${tiles.map(t=>`<div><small>${t[0]}</small><b>${t[1]}</b>${t[2]?`<em class="${/^-/.test(t[2])?'down':'up'}">${t[2]}</em>`:''}</div>`).join('')}</div>
+      <div class="adm-card"><div class="adm-h">${p.type==='year'?'Jarak per bulan':'Kalender latihan'}</div>${cal}</div>
+      <div class="adm-card"><div class="adm-h">Per olahraga</div>${s.sportList.map(x=>`<div class="rc-sport"><span class="rc-dot" style="background:${x.color}"></span><b>${esc(x.label)}</b><span>${x.n}× · ${x.km?stDist(x.km)+' km · ':''}${durationShort(x.min)}</span><i style="--w:${Math.max(4,x.min/s.min*100)}%;--c:${x.color}"></i></div>`).join('')}</div>
+      <div class="adm-card"><div class="adm-h">Sorotan</div>${hl.map(h=>`<div class="rc-hl"${h[4]?` data-id="${esc(h[4])}"`:''}><span>${h[0]}</span><div><small>${h[1]}</small><b>${esc(h[2])}</b><em>${esc(h[3])}</em></div></div>`).join('')}</div>
+      <button type="button" class="acx-btn adm-wide" id="rcShare"><span class="icon"><svg><use href="#i-share"/></svg></span> Buat kartu rekap di Studio</button>`;
+    body.querySelectorAll('.rc-hl[data-id]').forEach(el=>el.onclick=()=>{box.__close();setTimeout(()=>showDetail(el.dataset.id),250)});
+    body.querySelector('#rcShare').onclick=()=>{let pick=s.longest||(DATA.logs||[]).find(x=>x.date>=s.range.from&&x.date<=s.range.to);if(!pick){toast('Tidak ada aktivitas');return}ST_RECAP=Object.assign({},p);box.__close();setTimeout(()=>{studioOpen(pick.id);setTimeout(()=>{if(typeof stSetTpl==='function'){if(ST&&ST.tpl==='monthly'){ST_DCACHE.k='';stRenderThumbs(true);stDraw()}else stSetTpl('monthly')}},450)},250)};
+  };
+  box.querySelectorAll('.rc-type button').forEach(b=>b.onclick=()=>{let now=new Date();RC_VIEW=b.dataset.t==='year'?{type:'year',y:RC_VIEW.y}:{type:'month',y:RC_VIEW.y,m:RC_VIEW.y===now.getFullYear()?now.getMonth():11};paint()});
+  box.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{RC_VIEW=b.dataset.nav==='1'?rcNext(RC_VIEW):rcPrev(RC_VIEW);paint()});
+  paint();
+}
+/* template Studio: Rekap Bulanan/Tahunan */
+if(typeof ST_TPLS!=='undefined')ST_TPLS.push({k:'monthly',n:'Rekap Bulanan',cat:['data','trend'],bg:'sunset',
+ draw(ctx,W,H,D,S){
+  let dt=D.date,p=ST_RECAP||{type:'month',y:dt.getFullYear(),m:dt.getMonth()},s=rcStats(p),x=S.sz.l,r=W-S.sz.r,y=ST.fmt==='story'?S.sz.t-20:70,fg=S.fg,acc=S.acc;
+  T(ctx,(p.type==='year'?'REKAP TAHUN':'REKAP BULAN').split('').join(''),x,y+10,{font:F(800,28,'ui'),color:acc,spacing:7});
+  T(ctx,p.type==='year'?String(p.y):RC_MON[p.m].toUpperCase(),x-4,y+130,{font:F(400,fitPx(ctx,p.type==='year'?String(p.y):RC_MON[p.m].toUpperCase(),r-x,400,'disp',140,70),'disp'),color:fg});
+  let big=stDist(s.km),px=fitPx(ctx,big,r-x-170,900,'ui',260,100),by=y+160+px*.9;T(ctx,big,x-8,by,{font:F(900,px,'ui'),color:fg});T(ctx,'km',x+TW(ctx,big,F(900,px,'ui'))+12,by,{font:F(800,px*.32,'ui'),color:S.fg2});
+  let ty=by+80,stats=[['Aktivitas',String(s.n)],['Waktu',durationShort(s.min)],['Elevasi',Math.round(s.elev).toLocaleString('id-ID')+' m'],['Hari aktif',String(s.days)]],cw=(r-x)/4;
+  stats.forEach((q,i)=>metricBlock(ctx,{label:q[0],value:q[1],unit:''},x+cw*i,ty,S,{vpx:50,lpx:22}));
+  let gy=ty+120,bot=ST.fmt==='story'?H-S.sz.b-40:H-190;
+  if(p.type==='month'){let first=new Date(p.y,p.m,1),off=(first.getDay()+6)%7,last=new Date(p.y,p.m+1,0).getDate(),rows=Math.ceil((off+last)/7),mx=Math.max(1,...Object.values(s.daysMap)),cs=Math.min((r-x)/7,(bot-gy-60)/rows),gap=cs*.14;
+    for(let i=0;i<last;i++){let c=(off+i)%7,rw=Math.floor((off+i)/7),k=p.y+'-'+String(p.m+1).padStart(2,'0')+'-'+String(i+1).padStart(2,'0'),v=s.daysMap[k]||0;rr(ctx,x+c*cs+gap/2,gy+rw*cs+gap/2,cs-gap,cs-gap,cs*.24);ctx.fillStyle=v?hexA(acc==='#ffffff'?'#ffffff':acc,.35+.65*Math.min(1,v/mx)):hexA(fg,.1);ctx.fill();T(ctx,String(i+1),x+c*cs+cs/2,gy+rw*cs+cs/2+cs*.12,{font:F(700,cs*.3,'ui'),color:v?(lum(acc)>.6?'#131318':'#fff'):S.fg3,align:'center'})}
+    gy+=rows*cs+20}
+  else{let months=Array.from({length:12},(_,i)=>rcStats({type:'month',y:p.y,m:i}).km),mx=Math.max(1,...months),bw=(r-x)/12,ch=Math.min(420,bot-gy-80);months.forEach((v,i)=>{let h=Math.max(8,v/mx*ch);rr(ctx,x+i*bw+bw*.15,gy+ch-h,bw*.7,h,bw*.2);ctx.fillStyle=v?acc:hexA(fg,.14);ctx.fill();T(ctx,RC_MON[i].slice(0,1),x+i*bw+bw/2,gy+ch+36,{font:F(700,24,'ui'),color:S.fg2,align:'center'})});gy+=ch+60}
+  let top3=s.sportList.slice(0,3).map(q=>q.label+' '+q.n+'×').join('  ·  ');if(top3&&gy<bot)T(ctx,top3,x,Math.min(gy+20,bot),{font:F(700,30,'ui'),color:S.fg2,max:r-x});
+  brand(ctx,W/2,Math.min(H-26,(ST.fmt==='story'?H-S.sz.b+60:H-50)),S,{px:20});
+ }});
+/* baris profil */
+document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{let ev=document.getElementById('evRow');if(!ev||document.getElementById('rcRow'))return;ev.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="rcRow"><span class="acx-row-ic tone-pink icon"><svg><use href="#i-sparkles"/></svg></span><span class="acx-row-text"><b>Rekap bulanan & tahunan</b><small>Ringkasan otomatis siap dibagikan</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');document.getElementById('rcRow').onclick=()=>rcOpen(rcDefault())},30));
+</script>

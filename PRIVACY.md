@@ -1,6 +1,6 @@
 # Privacy Policy — Active Coach
 
-_Last updated: 30 September 2026_ · [Bahasa Indonesia di bawah](#kebijakan-privasi--active-coach)
+_Last updated: 1 October 2026_ · [Bahasa Indonesia di bawah](#kebijakan-privasi--active-coach)
 
 Active Coach is a personal training-analysis app for Android. It is an independent project and is **not affiliated with, endorsed by, or sponsored by Strava**. Activity data is **Powered by Strava**.
 
@@ -17,6 +17,9 @@ Your data is used **only to show you your own training analysis**: readiness, tr
 - Your data is **not used to train any AI or machine-learning model**.
 - Active Coach never posts, edits, or deletes anything on your Strava account (read-only access).
 - Share images are created on your phone and only leave the device when you tap **Share**.
+
+## Anonymous usage statistics
+To find bugs and improve the app, Active Coach sends a small **daily usage summary**: app version, platform, how many times the app was opened, which screens/features were used (counts only), and error messages. It contains **no activity data, no location, no name**. The developer only sees totals across all users (for example "35 users opened Studio this week"), never per-person data. You can turn this off anytime in Profile → *Bantu kembangkan aplikasi*. Announcements and the event calendar are read-only lists published by the developer.
 
 ## Where it is stored
 - Your data is stored in a private workspace in our Supabase database (cloud Postgres). Row-Level Security ensures each account can only read its own data. A cached copy is kept on your phone so the app works offline.
@@ -45,6 +48,8 @@ Active Coach adalah aplikasi analisis latihan pribadi untuk Android. Proyek inde
 **Yang diakses:** saat kamu memilih *Connect with Strava*, aplikasi mendapat izin baca (`read`, `activity:read_all`, `profile:read_all`) untuk profil dan aktivitasmu (ringkasan, rute GPS, detak jantung, power, cadence, elevasi, lap). Data yang kamu isi sendiri (plan, catatan, garasi, foto) juga disimpan.
 
 **Penggunaan:** hanya untuk menampilkan analisis latihanmu sendiri. Data **tidak pernah ditampilkan ke pengguna lain**, tidak dijual, tidak untuk iklan, dan **tidak dipakai melatih AI**. Aplikasi tidak pernah memposting atau mengubah apa pun di Strava. Kartu story dibuat di HP dan hanya keluar dari HP saat kamu menekan *Bagikan*.
+
+**Statistik pemakaian anonim:** untuk menemukan bug dan memperbaiki aplikasi, dikirim ringkasan harian kecil: versi aplikasi, platform, berapa kali aplikasi dibuka, fitur yang dipakai (hanya jumlah), dan pesan error. **Tanpa data aktivitas, tanpa lokasi, tanpa nama.** Pengembang hanya melihat angka gabungan semua pengguna, bukan data per orang. Bisa dimatikan kapan saja di Profil → *Bantu kembangkan aplikasi*.
 
 **Penyimpanan:** di workspace pribadi pada database Supabase dengan Row-Level Security (tiap akun hanya bisa membaca datanya sendiri), plus salinan cache di HP. Client secret Strava hanya ada di server.
 

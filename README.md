@@ -102,6 +102,16 @@ Pesan commit menjadi catatan rilis. Pisahkan dengan baris `Untuk pengguna:` dan 
 
 Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Saat dibuka atau kembali aktif, aplikasi (mulai v1.1.15) memeriksa rilis terbaru. Kalau ada versi lebih baru, aplikasi **terkunci** di layar *Pembaruan wajib* sampai versi terbaru dipasang: APK diunduh di dalam aplikasi (dengan progres), lalu penginstal Android terbuka — pasang menimpa, data tetap ada. Pertama kali, Android meminta izin *Instal aplikasi tidak dikenal* untuk Active Coach. Jika offline, kunci tetap berlaku bila versi baru sudah pernah terdeteksi.
 
+## Panel admin (khusus pemilik aplikasi)
+
+Jalankan SQL `supabase/migrations/20261001180000_admin_suite.sql` sekali di Supabase › SQL Editor. Setelah itu di **Profil › Panel admin** (hanya muncul untuk akun admin):
+- **Dasbor** — jumlah pengguna, aktif harian/mingguan/bulanan, versi aplikasi yang dipakai, fitur paling sering dibuka, error terbanyak, dan jumlah masukan. Semua angka anonim & gabungan.
+- **Pengumuman** — kirim pesan ke semua pengguna (Info, Pembaruan, Event, atau Penting = pop-up), dengan masa tampil.
+- **Event** — kelola Kalender event (lari, sepeda, trail, triathlon, renang). Pengguna melihatnya di Profil › Kalender event dan bisa menjadikannya target latihan (hitung mundur di Hari Ini + pengingat H-7 & H-1).
+- **Masukan** — kotak masuk kritik & saran.
+
+Fitur lain di versi ini: **Rekap bulanan & tahunan** otomatis (kartu di Hari Ini tiap awal bulan + template Studio "Rekap Bulanan") dan **tutorial singkat** per fitur (bisa diulang dari Profil).
+
 ## Tanda tangan APK
 
 Semua APK sejak v1.1.18 ditandatangani dengan kunci yang sama (`signing/debug.keystore`). Kunci ini ditulis langsung di `android/app/build.gradle` oleh `scripts/prepare-android.mjs`, dan workflow GitHub memeriksa sidik jari SHA-256 setiap APK (`350be897…c6d3`) — kalau berbeda, rilis dibatalkan. Jadi setiap versi baru selalu bisa dipasang **menimpa** versi lama tanpa uninstall. Jangan ganti atau hapus file kunci ini.

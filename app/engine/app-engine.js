@@ -104,6 +104,18 @@ function appSyncStravaProfile() {
   return { ok: true, changed: changed, photo: String(prof.profilePhoto || '') };
 }
 
+/* Event target (dari Kalender event): disimpan di profil sebagai JSON, ikut tersinkron ke server. */
+function appSetTargetEvent(ev) {
+  var id = PropertiesService.getScriptProperties().getProperty('APP_ATHLETE_ID');
+  if (!id) return { ok: false };
+  var v = '';
+  if (ev && ev.title && /^\d{4}-\d{2}-\d{2}$/.test(String(ev.date || ''))) {
+    v = JSON.stringify({ id: String(ev.id || ''), title: String(ev.title).slice(0, 140), date: String(ev.date), sport: String(ev.sport || '').slice(0, 20), city: String(ev.city || '').slice(0, 80), distances: String(ev.distances || '').slice(0, 120), url: String(ev.url || '').slice(0, 500) });
+  }
+  appSetProfileKey_(id, 'targetEvent', v);
+  return { ok: true, targetEvent: v };
+}
+
 /* Pilih profil atlet yang tertaut ke akun Strava ini (kalau data berisi beberapa atlet). */
 function appSelectStravaAthlete(stravaId) {
   ensureRuntimeDatabase();

@@ -4,7 +4,7 @@
    Notifikasi pintar (lokal, tanpa server): pengingat latihan harian sesuai
    plan, rekap mingguan, dan pengingat servis sepeda.
    ===================================================================== */
-const NF_IDS={daily:1000,weekly:1100,service:1200};
+const NF_IDS={daily:1000,weekly:1100,service:1200,recap:1250,event:1260};
 function nfPlugin(){let c=window.Capacitor;return c&&c.isNativePlatform&&c.isNativePlatform()&&c.Plugins&&c.Plugins.LocalNotifications||null}
 function nfPrefs(){let d={daily:true,time:'06:00',weekly:true,service:true,asked:false};try{return Object.assign(d,JSON.parse(localStorage.getItem('acx_notif')||'{}'))}catch(e){return d}}
 function nfSavePrefs(p){try{localStorage.setItem('acx_notif',JSON.stringify(p))}catch(e){}}
@@ -43,12 +43,17 @@ async function nfSchedule(opts){
     let alerts=(await nfGarageAlerts()).filter(a=>!seen[a.key]||now-seen[a.key]>7*864e5).slice(0,3);
     alerts.forEach((a,i)=>{seen[a.key]=now;list.push({id:NF_IDS.service+i,title:'Waktunya servis 🔧',body:a.part+' di '+a.bike+' sudah melewati batas pemakaian.',schedule:{at:new Date(now+4000+i*1500),allowWhileIdle:true},extra:{go:'garage'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})});
     try{localStorage.setItem('acx_notif_service',JSON.stringify(seen))}catch(e){}}
+  if(prefs.weekly){let n=new Date(),m1=new Date(n.getFullYear(),n.getMonth()+1,1),at=nfAt(m1,'08:00'),mn=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][n.getMonth()];
+    list.push({id:NF_IDS.recap,title:'Rekap '+mn+' kamu siap ✨',body:'Lihat total jarak, hari aktif & sorotan bulan ini — siap dibagikan.',schedule:{at,allowWhileIdle:true},extra:{go:'recap'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'});
+    let ye=nfAt(new Date(n.getFullYear(),11,31),'19:00');if(ye.getTime()>now+60000)list.push({id:NF_IDS.recap+1,title:'Rekap tahun '+n.getFullYear()+' siap 🎉',body:'Setahun bergerak dalam satu kartu. Yuk lihat & bagikan!',schedule:{at:ye,allowWhileIdle:true},extra:{go:'recap',year:n.getFullYear()},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})}
+  try{let t=DATA.profile&&DATA.profile.targetEvent?JSON.parse(DATA.profile.targetEvent):null;if(t&&t.date){[[7,'Seminggu lagi: '+t.title+' 🎯','Masuk fase race week — kurangi volume, tidur cukup, cek perlengkapan.'],[1,'Besok: '+t.title+' 🏁','Siapkan nomor dada/perlengkapan, makan karbo, tidur lebih awal. Semangat!']].forEach((q,i)=>{let d=new Date(t.date+'T00:00:00');d.setDate(d.getDate()-q[0]);let at=nfAt(d,'19:00');if(at.getTime()>now+60000)list.push({id:NF_IDS.event+i,title:q[1],body:q[2],schedule:{at,allowWhileIdle:true},extra:{go:'dashboard'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})})}}catch(e){}
   if(list.length){try{await L.schedule({notifications:list})}catch(e){console.warn('Notifikasi gagal dijadwalkan',e)}}
 }
 function nfHandleTap(extra){
   extra=extra||{};try{
     if(extra.go==='studio'){if(typeof studioOpen==='function'){studioOpen();setTimeout(()=>{if(extra.tpl&&typeof stSetTpl==='function')stSetTpl(extra.tpl)},400)}}
     else if(extra.go==='garage')switchPage('garage');
+    else if(extra.go==='recap'){switchPage('dashboard');if(typeof rcOpen==='function'){let n=new Date();setTimeout(()=>rcOpen(extra.year?{type:'year',y:+extra.year}:rcPrev({type:'month',y:n.getFullYear(),m:n.getMonth()})),400)}}
     else switchPage('dashboard');
   }catch(e){}
 }
