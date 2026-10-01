@@ -95,6 +95,20 @@ Jalankan SQL `supabase/migrations/20261001180000_admin_suite.sql` sekali di Supa
 
 Fitur lain di versi ini: **Rekap bulanan & tahunan** otomatis (kartu di Hari Ini tiap awal bulan + template Studio "Rekap Bulanan") dan **tutorial singkat** per fitur (bisa diulang dari Profil).
 
+## Notifikasi HP (Firebase) — sekali setup
+
+Supaya pengumuman (maintenance, versi baru, dll.) masuk ke bilah notifikasi HP pengguna walau aplikasi tertutup:
+
+1. **Firebase:** buka <https://console.firebase.google.com> → *Add project* (nama bebas, Google Analytics boleh dimatikan).
+2. **Aplikasi Android:** di proyek itu → ikon Android → *Package name* `com.activecoach.app` → *Register app* → unduh **google-services.json**.
+3. **GitHub:** repo → *Settings › Secrets and variables › Actions › New repository secret* → nama `GOOGLE_SERVICES_JSON`, isi = seluruh isi file google-services.json.
+4. **Kunci server:** Firebase → ⚙️ *Project settings › Service accounts › Generate new private key* → file JSON terunduh. Di Supabase → *Edge Functions › Secrets* → tambah `FCM_SERVICE_ACCOUNT`, isi = seluruh isi file JSON itu. (Jangan pernah taruh file ini di repo.)
+5. **SQL:** jalankan `supabase/migrations/20261001200000_push.sql` di SQL Editor.
+6. **Fungsi:** perbarui kode `strava-callback` (Edge Functions › strava-callback › Code) dengan versi terbaru, lalu *Deploy*.
+7. **Build ulang:** GitHub → *Actions › Build APK Android › Run workflow* (atau commit apa saja). APK baru otomatis memakai Firebase.
+
+Cek semuanya di aplikasi: **Profil › Menu developer › Server** (bagian *Notifikasi HP*) dan **Uji › Kirim ke HP ini**. Setelah itu, setiap pengumuman dari Panel admin punya pilihan **Kirim juga ke notifikasi HP** (aktif bawaan), dan riwayat pengumuman punya tombol **🔔 Kirim notif** untuk mengirim ulang.
+
 ## Tanda tangan APK
 
 Semua APK sejak v1.1.18 ditandatangani dengan kunci yang sama (`signing/debug.keystore`). Kunci ini ditulis langsung di `android/app/build.gradle` oleh `scripts/prepare-android.mjs`, dan workflow GitHub memeriksa sidik jari SHA-256 setiap APK (`350be897…c6d3`) — kalau berbeda, rilis dibatalkan. Jadi setiap versi baru selalu bisa dipasang **menimpa** versi lama tanpa uninstall. Jangan ganti atau hapus file kunci ini.

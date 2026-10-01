@@ -52,12 +52,13 @@ async function devInfo(host){
 /* ---------------- 2. Cek kesehatan server ---------------- */
 async function devHealthPane(host){
   host.innerHTML='<p class="adm-note">Menguji koneksi ke Supabase, fungsi server, tabel, dan Strava…</p>'+inlineSpinner('Mengecek…');
-  let h=await ACX.devHealth(),cb=h.callback.v||{},t=h.tables,st=h.strava.v||{};
-  let tl={ac_chunks:'Data latihan',ac_feedback:'Kotak masuk masukan',ac_admins:'Admin',ac_announcements:'Pengumuman',ac_events:'Kalender event',ac_usage:'Statistik anonim',ac_meta:'Meta & webhook'};
+  let h=await ACX.devHealth(),cb=h.callback.v||{},t=h.tables,st=h.strava.v||{},ps=await ACX.pushStatus();
+  let tl={ac_chunks:'Data latihan',ac_feedback:'Kotak masuk masukan',ac_admins:'Admin',ac_announcements:'Pengumuman',ac_events:'Kalender event',ac_usage:'Statistik anonim',ac_push_tokens:'Token notifikasi HP',ac_meta:'Meta & webhook'};
   let exp=st.expiresAt?new Date(st.expiresAt*1000):null;
   host.innerHTML=`<div class="adm-card"><div class="adm-h">Supabase</div>${devStat(h.auth.ok,'Auth online',h.auth.ok?h.auth.ms+' ms':h.auth.error)}${devStat(h.callback.ok,'Fungsi strava-callback',h.callback.ok?('versi '+(cb.v||'?')+' · '+h.callback.ms+' ms'):h.callback.error)}
     ${h.callback.ok?devStat(!!cb.strava,'Secret Strava',cb.strava?'terisi':'STRAVA_CLIENT_ID/SECRET belum diisi')+devStat(!!cb.service,'Service key fungsi',cb.service?'tersedia':'tidak tersedia')+devStat(cb.table!==false,'Tabel login (ac_handoff)',cb.table===false?'belum dibuat':'ada'):''}
     ${devStat(h.proxy.ok,'Fungsi proxy',h.proxy.ok?h.proxy.ms+' ms':h.proxy.error)}</div>
+    <div class="adm-card"><div class="adm-h">Notifikasi HP (Firebase)</div>${devStat(ps.configured,'Aplikasi dibangun dengan Firebase',ps.configured?'google-services.json terpasang':'belum — isi GitHub Secret GOOGLE_SERVICES_JSON lalu build ulang')}${devStat(h.callback.ok?!!cb.push:null,'Kunci server FCM',cb.push?'FCM_SERVICE_ACCOUNT terisi':'belum diisi di Supabase › Edge Functions › Secrets')}${devStat(ps.permission==='granted'?true:ps.native?false:null,'Izin notifikasi',ps.permission)}${devStat(ps.token?true:(ps.enabled?false:null),'Token HP ini',ps.token?ps.token.slice(0,14)+'… · '+devAgo(ps.at):'belum terdaftar')}</div>
     <div class="adm-card"><div class="adm-h">Tabel</div>${Object.keys(t).map(k=>devStat(t[k].ok,tl[k]||k,t[k].ok?k+' · '+t[k].ms+' ms':(/schema cache|does not exist|404/i.test(t[k].error)?'belum dibuat — jalankan SQL migrasi':t[k].error))).join('')}</div>
     <div class="adm-card"><div class="adm-h">Strava</div>${devStat(h.strava.ok&&st.connected,'Akun Strava',h.strava.ok?(st.connected?'tersambung · '+(st.athlete||''):'belum tersambung'):h.strava.error)}${exp?devStat(exp>new Date(),'Token akses',(exp>new Date()?'berlaku sampai ':'kedaluwarsa ')+exp.toLocaleString('id-ID')+' (diperbarui otomatis)'):''}${devStat(h.webhookOk?true:null,'Webhook',h.webhookOk?'tertaut '+devAgo(h.webhookOk):'belum tertaut')}${devStat(null,'Notifikasi webhook terakhir',h.inboxSeen?devAgo(h.inboxSeen):'belum ada')}</div>
     <div class="dev-acts">${devBtn('again','Cek ulang')}${devBtn('wh','Daftarkan ulang webhook')}</div>`;
@@ -97,6 +98,7 @@ async function devLog(host){
 async function devNotif(title,body,extra){let L=nfPlugin();if(!L){toast('Notifikasi hanya bisa diuji di HP (aplikasi Android)');return}let p=await nfPermission(true);if(p!=='granted'){toast('Izin notifikasi belum diberikan');return}await L.schedule({notifications:[{id:1290+Math.floor(Math.random()*9),title,body,schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},extra:extra||{go:'dashboard'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'}]});toast('Notifikasi muncul dalam 3 detik')}
 async function devTest(host){
   host.innerHTML=`<div class="adm-card"><div class="adm-h">Notifikasi uji</div><div class="dev-acts">${devBtn('n1','Pengingat harian')}${devBtn('n2','Rekap bulanan')}${devBtn('n3','Event H-7')}${devBtn('n4','Kenangan')}</div></div>
+    <div class="adm-card"><div class="adm-h">Notifikasi server (Firebase)</div><div class="dev-acts">${devBtn('push','Kirim ke HP ini')}${devBtn('pushreg','Daftar ulang token')}</div></div>
     <div class="adm-card"><div class="adm-h">Tampilkan ulang</div><div class="dev-acts">${devBtn('ob','Onboarding')}${devBtn('tour','Tutorial')}${devBtn('rc','Kartu rekap')}${devBtn('wn','Layar "Yang baru"')}${devBtn('splash','Animasi pembuka')}${devBtn('mem','Kartu kenangan')}</div></div>
     <div class="adm-card"><div class="adm-h">Simulasi</div><div class="dev-acts">${devBtn('upd','Layar update wajib')}${devBtn('ann','Pop-up pengumuman')}${devBtn('err','Picu error uji')}</div></div>
     <div class="adm-card"><div class="adm-h">Peta & Studio</div><div class="dev-acts">${devBtn('map','Buka heatmap')}${devBtn('studio','Uji simpan gambar')}${devBtn('video','Uji video 5 dtk')}</div></div>`;
@@ -106,6 +108,8 @@ async function devTest(host){
     n2:()=>devNotif('Rekap bulan ini siap ✨','Uji notifikasi rekap bulanan.',{go:'recap'}),
     n3:()=>devNotif('Seminggu lagi: Event uji 🎯','Uji notifikasi event H-7.'),
     n4:()=>devNotif('Setahun lalu hari ini 📸','Uji notifikasi kenangan.',{go:'memory'}),
+    push:async()=>{let r=await ACX.pushSend({target:'self',title:'Uji notifikasi server 🔔',body:'Kalau ini muncul di bilah notifikasi, Firebase sudah bekerja ✓',data:{go:'ann'}});toast(r.total?'Terkirim ke '+r.sent+' dari '+r.total+' HP milikmu':'HP ini belum punya token — ketuk "Daftar ulang token"')},
+    pushreg:async()=>{let st=await ACX.pushStatus();if(!st.enabled){toast(st.configured?'Hanya di aplikasi Android':'Aplikasi belum dibangun dengan Firebase');return}await ACX.pushInit();setTimeout(async()=>{let s2=await ACX.pushStatus();toast(s2.token?'Token terdaftar ✓':'Belum ada token — cek tab Log')},2500)},
     ob:()=>{close();setTimeout(()=>obOpen({}),300)},
     tour:()=>{close();admSet('acx_tour_done',{});admSet('acx_tour_force',Date.now());setTimeout(()=>{switchPage('dashboard');tourMaybe(300)},300)},
     rc:()=>{localStorage.removeItem('acx_rc_seen');close();setTimeout(()=>{switchPage('dashboard');let n=new Date();rcOpen(rcPrev({type:'month',y:n.getFullYear(),m:n.getMonth()}))},300)},

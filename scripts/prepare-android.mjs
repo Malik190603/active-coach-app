@@ -91,11 +91,27 @@ if (fs.existsSync(path.join(ROOT, 'assets', 'icon-only.png'))) {
   catch (e) { console.warn('Ikon gagal dibuat (lanjut dengan ikon bawaan):', e.message); }
 }
 
+// Firebase (notifikasi HP): google-services.json dari GitHub Secret GOOGLE_SERVICES_JSON atau file firebase/google-services.json
+const gsDest = path.join(ROOT, 'android/app/google-services.json');
+const gsEnv = (process.env.GOOGLE_SERVICES_JSON || '').trim(), gsFile = path.join(ROOT, 'firebase', 'google-services.json');
+if (gsEnv) { JSON.parse(gsEnv); fs.writeFileSync(gsDest, gsEnv); console.log('Firebase aktif (dari secret GOOGLE_SERVICES_JSON)'); }
+else if (fs.existsSync(gsFile)) { fs.copyFileSync(gsFile, gsDest); console.log('Firebase aktif (firebase/google-services.json)'); }
+else { if (fs.existsSync(gsDest)) fs.unlinkSync(gsDest); console.log('Firebase belum diatur — notifikasi server dinonaktifkan'); }
+manifest = fs.readFileSync(manifestPath, 'utf8');
+if (!manifest.includes('default_notification_icon')) {
+  manifest = manifest.replace(/<application([^>]*)>/, `<application$1>
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_ac" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/ac_notif" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="announcements" />`);
+  fs.writeFileSync(manifestPath, manifest);
+}
+
 // Layar pembuka: latar gelap seragam (Android 12+ splash sistem & versi lama) agar menyambung mulus ke animasi logo
 const valDir = path.join(ROOT, 'android/app/src/main/res/values');
 fs.writeFileSync(path.join(valDir, 'ac_splash.xml'), `<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ac_splash_bg">#0E0E14</color>
+    <color name="ac_notif">#FC4C02</color>
 </resources>
 `);
 const stylesPath = path.join(valDir, 'styles.xml');

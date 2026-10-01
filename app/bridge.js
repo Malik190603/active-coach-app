@@ -766,6 +766,7 @@
     setTimeout(autoSync, 6000);
     setTimeout(function () { ensureWebhook(); checkInbox(); try { if (typeof fbCheckAdmin === 'function') fbCheckAdmin(); } catch (e) {} }, 4000);
     setTimeout(function () { try { if (typeof nfSchedule === 'function') nfSchedule(); } catch (e) {} }, 12000);
+    setTimeout(function () { if (!document.querySelector('#obSheet')) pushInit(); else setTimeout(pushInit, 30000); }, 9000);
     if (pendingLink) { var l = pendingLink; pendingLink = null; setTimeout(function () { handleDeepLink(l); }, 1500); }
   }
 
@@ -811,6 +812,7 @@
       __origLogout = logoutAthlete;
       window.logoutAthlete = async function () {
         try { if (engineReady) { loader('Menyimpan & keluar…'); await Promise.race([send({ type: 'flush' }), new Promise(function (ok) { setTimeout(ok, 8000); })]); } } catch (e) {}
+        await pushUnregister();
         var s = currentSession || LS.get('acx_session');
         if (s && s.access_token) authLogout(s.access_token);
         unloader();
@@ -879,6 +881,63 @@
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
+  /* ---------- notifikasi HP dari server (Firebase Cloud Messaging) ---------- */
+  var pushBound = false;
+  function pushOn() { var c = window.ACX_CONFIG || {}; return !!(NATIVE && c.fcm && P.PushNotifications); }
+  async function pushPermission(ask) {
+    var PN = P.PushNotifications; if (!PN) return 'unavailable';
+    try { var st = await PN.checkPermissions(); if (st.receive === 'prompt' && ask) st = await PN.requestPermissions(); return st.receive; } catch (e) { return 'error'; }
+  }
+  function pushHandle(data) {
+    data = data || {};
+    try {
+      if (data.go === 'update') { checkForUpdate(true); return; }
+      if (typeof switchPage === 'function') switchPage('dashboard');
+      if (typeof annFetch === 'function') annFetch(true).then(function () { if (data.go === 'ann' && typeof annOpenList === 'function') annOpenList(); });
+    } catch (e) {}
+  }
+  async function pushInit() {
+    if (!pushOn() || !engineReady) return;
+    var PN = P.PushNotifications;
+    if (!pushBound) {
+      pushBound = true;
+      try { await PN.createChannel({ id: 'announcements', name: 'Pengumuman', description: 'Info, maintenance & versi baru Active Coach', importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#FC4C02' }); } catch (e) {}
+      PN.addListener('registration', async function (t) {
+        var tok = t && t.value; if (!tok) return;
+        try { await acxRest('POST', 'rpc/ac_register_push', { p_token: tok, p_platform: 'android', p_version: String(window.AC_BUILD || '') }); LS.set('acx_push_token', tok); LS.set('acx_push_at', Date.now()); dlog('sync', 'Notifikasi HP terdaftar'); }
+        catch (e) { dlog('error', 'Gagal mendaftarkan notifikasi HP: ' + e.message); }
+      });
+      PN.addListener('registrationError', function (e) { dlog('error', 'Firebase: ' + ((e && e.error) || JSON.stringify(e))); });
+      PN.addListener('pushNotificationReceived', function (n) {
+        dlog('sync', 'Notifikasi masuk: ' + (n && n.title));
+        note((n && n.title) || 'Pengumuman baru');
+        if (typeof annFetch === 'function') annFetch(true);
+      });
+      PN.addListener('pushNotificationActionPerformed', function (a) {
+        var data = (a && a.notification && a.notification.data) || {};
+        var go = function () { if ($('#appShell').hidden) { setTimeout(go, 800); return; } pushHandle(data); }; go();
+      });
+    }
+    var perm = await pushPermission(true);
+    if (perm !== 'granted') { dlog('dev', 'Izin notifikasi HP: ' + perm); return; }
+    try { await PN.register(); } catch (e) { dlog('error', 'Firebase register: ' + e.message); }
+  }
+  async function pushUnregister() {
+    var tok = LS.get('acx_push_token'); if (!tok) return;
+    try { await Promise.race([acxRest('POST', 'rpc/ac_unregister_push', { p_token: tok }), new Promise(function (ok) { setTimeout(ok, 4000); })]); } catch (e) {}
+    LS.del('acx_push_token');
+  }
+  async function pushSend(msg) {
+    var s = await freshSession(); if (!s || !s.access_token) throw new Error('Belum masuk');
+    var c = cfg(), h = redeemHeaders(c); h.Authorization = 'Bearer ' + s.access_token;
+    var r = await fetch(c.url + '/functions/v1/strava-callback?push=1', { method: 'POST', headers: h, body: JSON.stringify(msg || {}) });
+    var j = {}; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(j.error || ('Server ' + r.status + (r.status === 404 ? ' — perbarui fungsi strava-callback' : '')));
+    dlog('sync', 'Push: ' + (j.sent || 0) + '/' + (j.total || 0) + ' HP' + (j.removed ? ', ' + j.removed + ' token usang dihapus' : ''));
+    return j;
+  }
+  async function pushStatus() { return { enabled: pushOn(), configured: !!(window.ACX_CONFIG || {}).fcm, plugin: !!P.PushNotifications, native: NATIVE, token: LS.get('acx_push_token') || '', at: LS.get('acx_push_at') || 0, permission: P.PushNotifications ? await pushPermission(false) : 'unavailable' }; }
+
   /* ---------- alat developer ---------- */
   async function timed(fn) { var t0 = Date.now(); try { var v = await fn(); return { ok: true, ms: Date.now() - t0, v: v }; } catch (e) { return { ok: false, ms: Date.now() - t0, error: (e && e.message) || String(e) }; } }
   async function devHealth() {
@@ -887,7 +946,7 @@
     out.callback = await timed(async function () { var r = await fetch(c.url + '/functions/v1/strava-callback?ping=1', { headers: h, redirect: 'manual', cache: 'no-store' }); if (r.status === 404) throw new Error('Fungsi tidak ditemukan'); if (r.status === 401) throw new Error('Verify JWT masih aktif'); if (r.type === 'opaqueredirect') throw new Error('Versi lama'); var j = await r.json(); if (!j.ok) throw new Error('Respons tidak valid'); return j; });
     out.proxy = await timed(async function () { var r = await fetch(c.url + '/functions/v1/proxy?config=1', { headers: h, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.status; });
     out.tables = {};
-    for (var t of ['ac_chunks', 'ac_feedback', 'ac_admins', 'ac_announcements', 'ac_events', 'ac_usage', 'ac_meta']) { out.tables[t] = await timed(function () { return acxRest('GET', t + '?select=*&limit=1'); }); }
+    for (var t of ['ac_chunks', 'ac_feedback', 'ac_admins', 'ac_announcements', 'ac_events', 'ac_usage', 'ac_push_tokens', 'ac_meta']) { out.tables[t] = await timed(function () { return acxRest('GET', t + '?select=*&limit=1'); }); }
     out.strava = await timed(async function () { var st = await callEngine('getStravaStatus', [SESSION.athleteId]); var cur = await callEngine('appCurrentStrava', []); return { connected: !!(st && st.connected), athlete: st && st.athlete, expiresAt: cur && cur.expires_at || 0 }; });
     out.webhookOk = LS.get('acx_wh_ok') || 0; out.inboxSeen = LS.get('acx_inbox_seen') || 0;
     dlog('dev', 'Cek kesehatan server selesai');
@@ -898,5 +957,5 @@
     var card = document.querySelector('#updSheet .upd-card') || document.querySelector('#updSheet');
     if (card && !document.getElementById('updSimClose')) { card.insertAdjacentHTML('beforeend', '<button type="button" class="acx-btn st-btn-ghost" id="updSimClose" style="margin-top:10px;width:100%">Tutup simulasi</button>'); document.getElementById('updSimClose').onclick = function () { var g = $('#updSheet'); if (g) g.remove(); }; }
   }
-  window.ACX = { devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

@@ -7,8 +7,11 @@
 //   POST ?redeem=1 {code, nonce}      → aplikasi mengambil sesi + token Strava (sekali pakai, 10 menit)
 //   GET  ?code=...&state=<lainnya>    → (hubungkan ulang Strava dari dalam aplikasi) diteruskan ke
 //                                       activecoach://strava?... seperti sebelumnya
+//   POST ?push=1 {title, body, data, target}  → kirim notifikasi HP lewat Firebase (admin: semua
+//                                       pengguna; siapa pun: target "self" = HP sendiri untuk uji)
 //
-// Secret yang dipakai: STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (wajib),
+// Secret yang dipakai: STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (wajib), FCM_SERVICE_ACCOUNT (opsional, JSON
+// kunci akun layanan Firebase untuk notifikasi HP),
 // SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY (otomatis tersedia di Supabase).
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +27,8 @@ function firstKey(name: string) { try { const o = JSON.parse(env(name) || '{}');
 const SERVICE = env('SERVICE_ROLE_KEY') || env('SUPABASE_SERVICE_ROLE_KEY') || firstKey('SUPABASE_SECRET_KEYS');
 const ANON = env('SUPABASE_ANON_KEY') || env('ANON_KEY') || firstKey('SUPABASE_PUBLISHABLE_KEYS');
 const STRAVA = env('STRAVA_BASE_URL') || 'https://www.strava.com';
+const GOOGLE_OAUTH = env('FCM_OAUTH_URL') || 'https://oauth2.googleapis.com/token';
+const FCM_BASE = env('FCM_BASE_URL') || 'https://fcm.googleapis.com';
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
@@ -137,6 +142,53 @@ async function userFromToken(req: Request) {
   return who.ok && user.id ? user : null;
 }
 
+/* ---------------- Firebase Cloud Messaging (HTTP v1) ---------------- */
+let FCM_TOKEN: { token: string; exp: number } | null = null;
+function fcmAccount(): { client_email: string; private_key: string; project_id: string } | null {
+  try { const a = JSON.parse(env('FCM_SERVICE_ACCOUNT') || 'null'); return a && a.client_email && a.private_key && a.project_id ? a : null; } catch { return null; }
+}
+function b64url(data: Uint8Array | string) {
+  const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : data;
+  let s = ''; bytes.forEach((b) => { s += String.fromCharCode(b); });
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function fcmAccessToken() {
+  if (FCM_TOKEN && FCM_TOKEN.exp > Date.now() + 60000) return FCM_TOKEN.token;
+  const sa = fcmAccount(); if (!sa) throw new Error('FCM_SERVICE_ACCOUNT belum diisi');
+  const now = Math.floor(Date.now() / 1000);
+  const unsigned = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' })) + '.' + b64url(JSON.stringify({ iss: sa.client_email, scope: 'https://www.googleapis.com/auth/firebase.messaging', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const pem = sa.private_key.replace(/-----[^-]+-----/g, '').replace(/\\n/g, '').replace(/\s+/g, '');
+  const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey('pkcs8', der, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned)));
+  const res = await fetch(GOOGLE_OAUTH, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + unsigned + '.' + b64url(sig) });
+  const j = await readJson(res);
+  if (!res.ok || !j.access_token) throw new Error('Google menolak kunci Firebase (' + res.status + '): ' + JSON.stringify(j).slice(0, 160));
+  FCM_TOKEN = { token: j.access_token, exp: Date.now() + (Number(j.expires_in) || 3600) * 1000 };
+  return FCM_TOKEN.token;
+}
+async function fcmSend(tokens: string[], title: string, body: string, data: Record<string, string>) {
+  const sa = fcmAccount(); if (!sa) throw new Error('FCM_SERVICE_ACCOUNT belum diisi');
+  const access = await fcmAccessToken(), url = FCM_BASE + '/v1/projects/' + sa.project_id + '/messages:send';
+  let sent = 0, failed = 0; const dead: string[] = [], errors: string[] = [];
+  const queue = tokens.slice();
+  async function worker() {
+    while (queue.length) {
+      const token = queue.shift() as string;
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + access, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { token, notification: { title, body }, data, android: { priority: 'HIGH', notification: { channel_id: 'announcements', icon: 'ic_stat_ac', color: '#FC4C02', default_sound: true } } } }) });
+        if (r.ok) { sent++; continue; }
+        failed++; const j = await readJson(r), code = JSON.stringify(j);
+        if (r.status === 404 || /UNREGISTERED|registration-token-not-registered|INVALID_ARGUMENT/.test(code)) dead.push(token);
+        else if (errors.length < 3) errors.push(r.status + ' ' + code.slice(0, 140));
+      } catch (e) { failed++; if (errors.length < 3) errors.push(String((e as Error).message || e)); }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(10, tokens.length) }, worker));
+  for (const t of dead) { try { await fetch(BASE + '/rest/v1/ac_push_tokens?token=eq.' + encodeURIComponent(t), { method: 'DELETE', headers: adminHeaders(false) }); } catch { /* abaikan */ } }
+  return { sent, failed, removed: dead.length, errors };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const u = new URL(req.url), q = u.searchParams;
@@ -172,11 +224,37 @@ Deno.serve(async (req) => {
     return json({ ok: true, linked: !!sid, webhook: sub });
   }
 
+  // Kirim notifikasi HP (pengumuman dari admin, atau uji ke HP sendiri)
+  if (req.method === 'POST' && q.has('push')) {
+    const user = await userFromToken(req);
+    if (!user || !SERVICE) return json({ error: 'Belum login' }, 401);
+    let b: { title?: string; body?: string; data?: Record<string, unknown>; target?: string } = {};
+    try { b = await req.json(); } catch { /* kosong */ }
+    const self = b.target === 'self';
+    if (!self) {
+      const ad = await fetch(BASE + '/rest/v1/ac_admins?select=user_id&user_id=eq.' + user.id, { headers: adminHeaders(false) });
+      const rows = await readJson(ad);
+      if (!ad.ok || !Array.isArray(rows) || !rows.length) return json({ error: 'Hanya admin yang bisa mengirim ke semua pengguna' }, 403);
+    }
+    if (!fcmAccount()) return json({ error: 'Secret FCM_SERVICE_ACCOUNT belum diisi di Supabase › Edge Functions › Secrets' }, 400);
+    const tr = await fetch(BASE + '/rest/v1/ac_push_tokens?select=token' + (self ? '&user_id=eq.' + user.id : ''), { headers: adminHeaders(false) });
+    if (tr.status === 404) return json({ error: 'Tabel ac_push_tokens belum ada — jalankan SQL 20261001200000_push.sql' }, 400);
+    const list = (await readJson(tr)) as { token: string }[];
+    const tokens = Array.isArray(list) ? [...new Set(list.map((r) => r.token))] : [];
+    if (!tokens.length) return json({ ok: true, total: 0, sent: 0, failed: 0, removed: 0 });
+    const data: Record<string, string> = {};
+    Object.entries(b.data || {}).forEach(([k, v]) => { data[k] = String(v ?? '').slice(0, 300); });
+    try {
+      const r = await fcmSend(tokens, String(b.title || 'Active Coach').slice(0, 120), String(b.body || '').slice(0, 300), data);
+      return json({ ok: true, total: tokens.length, ...r });
+    } catch (e) { return json({ error: String((e as Error).message || e) }, 500); }
+  }
+
   // Cek dari aplikasi: fungsi ada & versi terbaru
   if (q.has('ping')) {
     let table = false;
     if (SERVICE) { try { const t = await fetch(BASE + '/rest/v1/ac_handoff?select=code&limit=1', { headers: adminHeaders(false) }); table = t.ok; } catch { /* abaikan */ } }
-    return json({ ok: true, v: 3, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table });
+    return json({ ok: true, v: 4, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table, push: !!fcmAccount() });
   }
 
   // Cabut izin Strava (Putuskan Strava) & hapus akun beserta semua data

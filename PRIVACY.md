@@ -30,6 +30,7 @@ To find bugs and improve the app, Active Coach sends a small **daily usage summa
 - **Supabase** – authentication, database and server functions.
 - **Open-Meteo** – weather for your activities (the activity's approximate location and time are sent to fetch weather).
 - **CARTO / Esri** – map tiles (the map area you view is requested from these tile servers).
+- **Google Firebase Cloud Messaging** – delivers announcement notifications (maintenance, new versions) to your phone. Only an anonymous device token is stored; no activity data is sent to Firebase. You can turn notifications off in Android settings.
 
 ## Retention and deletion
 - **Disconnect Strava** (Profile → Strava): revokes Active Coach's access via Strava's deauthorization endpoint and deletes the stored tokens. Synchronisation stops immediately.
@@ -53,7 +54,7 @@ Active Coach adalah aplikasi analisis latihan pribadi untuk Android. Proyek inde
 
 **Penyimpanan:** di workspace pribadi pada database Supabase dengan Row-Level Security (tiap akun hanya bisa membaca datanya sendiri), plus salinan cache di HP. Client secret Strava hanya ada di server.
 
-**Layanan pihak ketiga:** Strava (sumber data), Supabase (akun & database), Open-Meteo (cuaca; lokasi & waktu perkiraan aktivitas dikirim), CARTO/Esri (tile peta).
+**Layanan pihak ketiga:** Strava (sumber data), Supabase (akun & database), Open-Meteo (cuaca; lokasi & waktu perkiraan aktivitas dikirim), CARTO/Esri (tile peta), Google Firebase Cloud Messaging (notifikasi pengumuman ke HP; hanya token perangkat yang disimpan, tanpa data aktivitas).
 
 **Penghapusan:** *Putuskan Strava* mencabut izin di Strava dan menghapus token. *Hapus akun & data* menghapus akun dan seluruh data secara permanen dari server dan HP, sekaligus mencabut izin Strava.
 

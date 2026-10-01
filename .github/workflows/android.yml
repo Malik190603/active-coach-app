@@ -45,12 +45,14 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: npm run build
 
       - name: Siapkan proyek Android
         # prepare-android menulis signingConfig tetap (signing/debug.keystore) ke build.gradle
         env:
           VERSION_CODE: ${{ github.run_number }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: npm run android:prepare
 
       - name: Build APK

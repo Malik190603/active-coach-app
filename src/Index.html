@@ -43,7 +43,7 @@
 <body>
     <style>
       #acSplash{position:fixed;inset:0;z-index:2147483000;background:#0e0e14;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity .42s ease,visibility .42s}
-      #acSplash.out{opacity:0;visibility:hidden}
+      #acSplash.out{opacity:0;visibility:hidden;pointer-events:none}
       #acSplash .acs-logo{width:112px;height:112px;border-radius:50%;position:relative;overflow:hidden;background:conic-gradient(from 200deg at 50% 50%,#3b7bff 0deg,#ff6a3d 120deg,#ec4fa0 200deg,#8b5cf6 270deg,#3b7bff 360deg);box-shadow:0 0 0 0 rgba(255,90,54,.0);animation:acsShape .7s cubic-bezier(.22,1,.36,1) .05s forwards,acsGlow 1.6s ease-in-out .7s infinite}
       #acSplash .acs-logo svg{position:absolute;inset:0;width:100%;height:100%}
       #acSplash .acs-logo path{fill:none;stroke:#fff;stroke-width:7.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:120;stroke-dashoffset:120;animation:acsDraw .75s cubic-bezier(.65,0,.35,1) .3s forwards}
