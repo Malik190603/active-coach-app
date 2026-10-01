@@ -62,7 +62,9 @@ function usgPaintToggle(){
 
 /* ================================ PENGUMUMAN ================================ */
 const ANN_META={info:{ic:'i-bell',tone:'blue',lb:'Info'},penting:{ic:'i-info',tone:'red',lb:'Penting'},update:{ic:'i-sparkles',tone:'violet',lb:'Pembaruan'},event:{ic:'i-calendar',tone:'amber',lb:'Event'}};
-function annLive(a){let now=Date.now();return a.active&&new Date(a.starts_at).getTime()<=now&&(!a.ends_at||new Date(a.ends_at).getTime()>now)}
+function annVerNewer(a,b){let x=String(a).split('.').map(Number),y=String(b).split('.').map(Number);for(let i=0;i<3;i++){if((x[i]||0)!==(y[i]||0))return (x[i]||0)>(y[i]||0)}return false}
+function annLive(a){let now=Date.now();if(!(a.active&&new Date(a.starts_at).getTime()<=now&&(!a.ends_at||new Date(a.ends_at).getTime()>now)))return false;if(annIsUpdate(a)&&annVer(a)){let cur=(window.ACX&&ACX.currentVersion&&ACX.currentVersion())||'';if(cur&&/^\d+\.\d+\.\d+$/.test(cur)&&!annVerNewer(annVer(a),cur))return false}return true}
+document.addEventListener('click',e=>{let b=e.target.closest('[data-ann-upd]');if(!b)return;e.preventDefault();e.stopPropagation();let s=b.closest('.adm-sheet');if(s&&s.__close)s.__close();if(window.ACX&&ACX.checkForUpdate)ACX.checkForUpdate(true)},true);
 async function annFetch(force){
   if(!admOk()||ADM.missing.ac_announcements)return ADM.ann;
   if(!force&&Date.now()-ADM.annAt<15*60000)return ADM.ann;
@@ -71,7 +73,10 @@ async function annFetch(force){
 }
 function annSeen(){return admLS('acx_ann_seen',[])}
 function annDismiss(id){let s=annSeen();if(s.indexOf(id)<0){s.push(id);admSet('acx_ann_seen',s.slice(-60))}annPaint()}
-function annCard(a,closable){let m=ANN_META[a.level]||ANN_META.info;return `<article class="acx-card ann-card tone-${m.tone}" data-ann="${a.id}"><span class="ann-ic icon"><svg><use href="#${m.ic}"/></svg></span><div class="ann-txt"><span class="ann-lb">${m.lb} · ${esc(admDate(a.starts_at))}</span><b>${esc(a.title)}</b>${a.body?`<p>${esc(a.body)}</p>`:''}${a.link?`<a class="ann-link" href="${esc(a.link)}" target="_blank" rel="noopener">Buka tautan ›</a>`:''}</div>${closable?'<button type="button" class="ann-x" data-ann-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button>':''}</article>`}
+function annVer(a){let m=String(a.title||'').match(/(\d+\.\d+\.\d+)/);return m?m[1]:''}
+function annIsUpdate(a){return a.level==='update'&&(!!annVer(a)||/\/releases/.test(a.link||''))}
+function annKind(a){let t=String(a.title||'');if(/^🛠/.test(t))return {ic:'i-wrench',tone:'amber',lb:'Maintenance'};if(/^⚠️/.test(t))return {ic:'i-warn',tone:'red',lb:'Gangguan'};if(/^✅/.test(t))return {ic:'i-check',tone:'green',lb:'Normal kembali'};if(annIsUpdate(a))return {ic:'i-download',tone:'violet',lb:'Versi baru'};return ANN_META[a.level]||ANN_META.info}
+function annCard(a,closable){let m=annKind(a),upd=annIsUpdate(a);return `<article class="acx-card ann-card tone-${m.tone}" data-ann="${a.id}"><span class="ann-ic icon"><svg><use href="#${m.ic}"/></svg></span><div class="ann-txt"><span class="ann-lb">${m.lb} · ${esc(admDate(a.starts_at))}</span><b>${esc(a.title)}</b>${a.body?`<p>${esc(a.body)}</p>`:''}${upd?`<button type="button" class="ann-upd" data-ann-upd>Perbarui sekarang</button>`:a.link?`<a class="ann-link" href="${esc(a.link)}" target="_blank" rel="noopener">Buka tautan ›</a>`:''}</div>${closable?'<button type="button" class="ann-x" data-ann-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button>':''}</article>`}
 function annPaint(){
   let host=document.getElementById('annHost');if(!host)return;let seen=annSeen(),list=ADM.ann.filter(a=>seen.indexOf(a.id)<0).slice(0,2);
   host.innerHTML=list.map(a=>annCard(a,true)).join('');
@@ -162,6 +167,14 @@ function admPaintRow(){
   fb.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="admPanelRow"><span class="acx-row-ic tone-coral icon"><svg><use href="#i-chart"/></svg></span><span class="acx-row-text"><b>Panel admin</b><small>Dasbor pengguna · kirim pengumuman · kelola event</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');
   document.getElementById('admPanelRow').onclick=()=>admOpen('dash');
 }
+const ANN_TPLS=[
+  {k:'maint',e:'🛠',n:'Maintenance terjadwal',level:'penting',dur:1},
+  {k:'down',e:'⚠️',n:'Gangguan sementara',level:'penting',dur:1,title:'⚠️ Sinkron Strava sedang terganggu',body:'Kami sedang memperbaiki gangguan pada sinkronisasi. Aktivitas barumu tidak hilang — akan masuk otomatis setelah normal kembali. Mohon maaf atas ketidaknyamanannya 🙏'},
+  {k:'done',e:'✅',n:'Maintenance selesai',level:'info',dur:3,title:'✅ Server sudah normal kembali',body:'Maintenance selesai. Tarik layar ke bawah di Hari Ini untuk menyinkronkan aktivitas terbaru. Terima kasih sudah menunggu!'},
+  {k:'update',e:'🚀',n:'Update APK baru',level:'update',dur:7},
+  {k:'feature',e:'✨',n:'Fitur baru',level:'update',dur:7,title:'✨ Fitur baru: ',body:'Ceritakan fitur barunya dan cara memakainya…'},
+  {k:'event',e:'📅',n:'Event baru',level:'event',dur:7,title:'📅 Event baru di Kalender event',body:'Ada event seru yang bisa kamu jadikan target latihan. Cek di Profil › Kalender event.'}
+];
 let ADM_TAB='dash';
 function admOpen(tab){
   ADM_TAB=tab||ADM_TAB;
@@ -191,14 +204,32 @@ async function admDash(host){
 }
 async function admAnn(host){
   let rows;try{rows=await admRest('ac_announcements','GET','ac_announcements?select=*&order=created_at.desc&limit=50')||[]}catch(e){host.innerHTML=admSqlHint(e);return}
-  host.innerHTML=`<form class="adm-form" id="annForm"><label>Judul<input name="title" maxlength="120" required placeholder="cth. Fitur baru: Kalender event"></label><label>Isi pesan<textarea name="body" rows="3" maxlength="2000" placeholder="Tulis pesan singkat untuk semua pengguna…"></textarea></label>
+  host.innerHTML=`<div class="adm-h">Template cepat <small>ketuk, cek, lalu kirim</small></div><div class="ann-tpls" id="annTpls">${ANN_TPLS.map(t=>`<button type="button" data-tpl="${t.k}"><span>${t.e}</span>${t.n}</button>`).join('')}</div>
+    <div class="adm-form ann-maint" id="annMaint" hidden><div class="adm-h" style="margin:0">Jadwal maintenance</div><div class="adm-row2"><label>Tanggal<input type="date" id="mtDate"></label><label>Zona<input id="mtTz" disabled></label></div><div class="adm-row2"><label>Mulai<input type="time" id="mtStart" value="22:00"></label><label>Selesai<input type="time" id="mtEnd" value="23:00"></label></div></div>
+    <form class="adm-form" id="annForm"><label>Judul<input name="title" maxlength="120" required placeholder="cth. Fitur baru: Kalender event"></label><label>Isi pesan<textarea name="body" rows="3" maxlength="2000" placeholder="Tulis pesan singkat untuk semua pengguna…"></textarea></label>
     <div class="adm-row2"><label>Jenis<select name="level"><option value="info">Info</option><option value="update">Pembaruan</option><option value="event">Event</option><option value="penting">Penting (muncul sebagai pop-up)</option></select></label><label>Tampil selama<select name="dur"><option value="0">Sampai dinonaktifkan</option><option value="1">1 hari</option><option value="3">3 hari</option><option value="7" selected>7 hari</option><option value="30">30 hari</option></select></label></div>
-    <label>Tautan (opsional)<input name="link" type="url" maxlength="500" placeholder="https://…"></label><button type="submit" class="acx-btn adm-wide">Kirim ke semua pengguna</button></form>
+    <label>Tautan (opsional)<input name="link" type="url" maxlength="500" placeholder="https://…"></label><div class="adm-h" style="margin:4px 0 0">Pratinjau di HP pengguna</div><div id="annPreview" class="ann-preview"></div><button type="submit" class="acx-btn adm-wide">Kirim ke semua pengguna</button></form>
     <div class="adm-h adm-h2">Riwayat pengumuman</div><div id="annAdmList">${rows.length?'':'<p class="adm-note">Belum ada pengumuman.</p>'}</div>`;
   let list=host.querySelector('#annAdmList'),now=Date.now();
   list.insertAdjacentHTML('beforeend',rows.map(a=>{let st=!a.active?'Nonaktif':new Date(a.starts_at).getTime()>now?'Terjadwal':a.ends_at&&new Date(a.ends_at).getTime()<=now?'Berakhir':'Aktif';return `<div class="adm-item" data-id="${a.id}"><div><span class="adm-pill s-${st.toLowerCase()}">${st}</span><span class="adm-pill">${esc((ANN_META[a.level]||ANN_META.info).lb)}</span><b>${esc(a.title)}</b>${a.body?`<p>${esc(a.body)}</p>`:''}<small>${esc(admDate(a.created_at))}${a.ends_at?' · sampai '+esc(admDate(a.ends_at)):''}</small></div><div class="adm-acts"><button type="button" data-a="toggle">${a.active?'Nonaktifkan':'Aktifkan'}</button><button type="button" data-a="del" class="del">Hapus</button></div></div>`}).join(''));
-  host.querySelector('#annForm').onsubmit=async e=>{e.preventDefault();let f=e.target,btn=f.querySelector('button[type=submit]'),dur=+f.dur.value;
-    let row={title:f.title.value.trim(),body:f.body.value.trim(),level:f.level.value,link:f.link.value.trim(),active:true,starts_at:new Date().toISOString(),ends_at:dur?new Date(Date.now()+dur*864e5).toISOString():null};
+  let form=host.querySelector('#annForm'),mt=host.querySelector('#annMaint'),endsAt=null,curTpl='';
+  let tz=-new Date().getTimezoneOffset()/60;host.querySelector('#mtTz').value=tz===7?'WIB':tz===8?'WITA':tz===9?'WIT':'GMT'+(tz>=0?'+':'')+tz;
+  let tmr=new Date(Date.now()+864e5);host.querySelector('#mtDate').value=dateKey(tmr);
+  let preview=()=>{let r={id:0,title:form.title.value.trim()||'Judul pengumuman',body:form.body.value.trim(),level:form.level.value,link:form.link.value.trim(),starts_at:new Date().toISOString()};host.querySelector('#annPreview').innerHTML=annCard(r,false)};
+  let maintFill=()=>{let d=host.querySelector('#mtDate').value,a=host.querySelector('#mtStart').value,b=host.querySelector('#mtEnd').value,z=host.querySelector('#mtTz').value;if(!d)return;let dt=new Date(d+'T00:00:00'),day=dt.toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long'}),fmt=t=>t.replace(':','.');
+    form.title.value='🛠 Maintenance terjadwal · '+dt.toLocaleDateString('id-ID',{weekday:'short',day:'numeric',month:'short'});
+    form.body.value='Server Active Coach akan maintenance pada '+day+' pukul '+fmt(a)+'–'+fmt(b)+' '+z+'. Selama itu sinkron Strava dan penyimpanan data bisa tertunda — data di HP-mu tetap aman dan otomatis tersinkron setelah selesai. Terima kasih atas pengertiannya 🙏';
+    let end=new Date(d+'T'+b+':00');if(b<=a)end=new Date(end.getTime()+864e5);endsAt=new Date(end.getTime()+3600e3).toISOString();preview()};
+  ['#mtDate','#mtStart','#mtEnd'].forEach(q=>host.querySelector(q).onchange=maintFill);
+  host.querySelectorAll('#annTpls [data-tpl]').forEach(b=>b.onclick=async()=>{let t=ANN_TPLS.find(x=>x.k===b.dataset.tpl);curTpl=t.k;endsAt=null;host.querySelectorAll('#annTpls [data-tpl]').forEach(x=>x.classList.toggle('on',x===b));mt.hidden=t.k!=='maint';
+    form.title.value=t.title||'';form.body.value=t.body||'';form.level.value=t.level;form.dur.value=String(t.dur);form.link.value='';
+    if(t.k==='maint')maintFill();
+    if(t.k==='update'){b.classList.add('is-busy');try{let rel=await ACX.latestRelease(),n=ACX.splitNotes(rel.notes).user.split('\n').map(l=>l.trim()).filter(l=>/^[-*•] /.test(l)).slice(0,4).map(l=>'• '+l.replace(/^[-*•] /,''));form.title.value='🚀 Versi '+rel.version+' sudah tersedia';form.body.value=(n.length?'Yang baru:\n'+n.join('\n')+'\n\n':'')+'Perbarui langsung dari aplikasi — tanpa uninstall, data tetap aman.';form.link.value=rel.page||''}catch(x){toast('Tidak bisa membaca rilis GitHub: '+x.message);form.title.value='🚀 Versi baru sudah tersedia'}b.classList.remove('is-busy')}
+    preview();form.title.focus()});
+  form.addEventListener('input',preview);form.addEventListener('change',preview);
+  preview();
+  form.onsubmit=async e=>{e.preventDefault();let f=e.target,btn=f.querySelector('button[type=submit]'),dur=+f.dur.value;
+    let row={title:f.title.value.trim(),body:f.body.value.trim(),level:f.level.value,link:f.link.value.trim(),active:true,starts_at:new Date().toISOString(),ends_at:(curTpl==='maint'&&endsAt)?endsAt:(dur?new Date(Date.now()+dur*864e5).toISOString():null)};
     if(!row.title)return;if(row.level==='penting'&&!confirm('Pengumuman "Penting" muncul sebagai pop-up di HP semua pengguna. Kirim?'))return;
     btn.disabled=true;btn.classList.add('is-busy');
     try{await admRest('ac_announcements','POST','ac_announcements',[row],'return=minimal');toast('📣 Pengumuman terkirim');if(window.acxHaptic)acxHaptic('success');annFetch(true);admAnn(host)}catch(x){toast('Gagal: '+x.message);btn.disabled=false;btn.classList.remove('is-busy')}};

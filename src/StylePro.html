@@ -670,4 +670,15 @@ html.dev-noanim *,html.dev-noanim *:before,html.dev-noanim *:after{animation:non
 .yc-rec{display:grid;justify-items:center;gap:12px;padding:10px 0}.yc-rec canvas{width:min(62vw,300px);border-radius:16px;box-shadow:0 18px 40px -18px rgba(0,0,0,.6)}
 .yc-rec-bar{width:min(80vw,360px);height:8px;border-radius:99px;background:var(--acx-line);overflow:hidden}.yc-rec-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ff6a3d,#ec4899);transition:width .2s linear}
 .yc-rec p{margin:0;font:700 13px Inter,system-ui;color:var(--acx-text-2)}
+
+/* template pengumuman */
+.ann-tpls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.ann-tpls button{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;border:1px solid var(--acx-line-2,var(--acx-line));background:var(--acx-surface);color:var(--acx-text);font:700 12.5px Inter,system-ui;text-align:left;position:relative}
+.ann-tpls button span{font-size:18px}.ann-tpls button.on{border-color:var(--acx-coral,#fc4c02);box-shadow:inset 0 0 0 1px var(--acx-coral,#fc4c02);background:color-mix(in srgb,var(--acx-coral,#fc4c02) 8%,var(--acx-surface))}
+.ann-tpls button.is-busy{opacity:.6}
+.ann-maint{margin-bottom:12px}
+.ann-preview .ann-card{margin:0;box-shadow:0 10px 26px -16px rgba(0,0,0,.35);background:var(--acx-surface)}
+.ann-upd{margin-top:10px;height:36px;padding:0 14px;border-radius:99px;border:0;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;font:800 13px Inter,system-ui}
+.ann-card.tone-green .ann-ic{background:rgba(34,197,94,.15);color:#16a34a}
+.ann-card.tone-amber{box-shadow:inset 0 0 0 1.5px rgba(245,158,11,.4)}
 </style>

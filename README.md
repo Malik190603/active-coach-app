@@ -85,7 +85,7 @@ Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan com
 
 Jalankan SQL `supabase/migrations/20261001180000_admin_suite.sql` sekali di Supabase › SQL Editor. Setelah itu di **Profil › Panel admin** (hanya muncul untuk akun admin):
 - **Dasbor** — jumlah pengguna, aktif harian/mingguan/bulanan, versi aplikasi yang dipakai, fitur paling sering dibuka, error terbanyak, dan jumlah masukan. Semua angka anonim & gabungan.
-- **Pengumuman** — kirim pesan ke semua pengguna (Info, Pembaruan, Event, atau Penting = pop-up), dengan masa tampil.
+- **Pengumuman** — kirim pesan ke semua pengguna (Info, Pembaruan, Event, atau Penting = pop-up), dengan masa tampil. Ada **template cepat**: Maintenance terjadwal (isi tanggal & jam, otomatis hilang 1 jam setelah selesai), Gangguan sementara, Maintenance selesai, Update APK baru (judul & isi diambil otomatis dari rilis GitHub + tombol *Perbarui sekarang*, tersembunyi bagi yang sudah update), Fitur baru, dan Event baru — lengkap dengan pratinjau tampilan di HP pengguna.
 - **Event** — kelola Kalender event (lari, sepeda, trail, triathlon, renang). Pengguna melihatnya di Profil › Kalender event dan bisa menjadikannya target latihan (hitung mundur di Hari Ini + pengingat H-7 & H-1).
 - **Masukan** — kotak masuk kritik & saran.
 
