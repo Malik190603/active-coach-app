@@ -11,7 +11,8 @@ const SRC = path.join(ROOT, 'src'), APP = path.join(ROOT, 'app'), OUT = path.joi
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 // Versi tampil = major.minor dari package.json + nomor build GitHub (mis. 1.1.9), sama dengan nama file APK
 const RUN = process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER || '';
-const VERSION = RUN ? pkg.version.split('.').slice(0, 2).join('.') + '.' + RUN : pkg.version;
+// APP_VERSION (dari scripts/version.mjs di CI) = versi semver resmi; cadangan lama: major.minor + nomor build
+const VERSION = process.env.APP_VERSION || (RUN ? pkg.version.split('.').slice(0, 2).join('.') + '.' + RUN : pkg.version);
 
 function read(p) { return fs.readFileSync(p, 'utf8'); }
 function write(p, s) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, s); }
@@ -59,7 +60,7 @@ copy(path.join(APP, 'bridge.js'), path.join(OUT, 'bridge.js'));
 
 // ---------- konfigurasi server (opsional, bisa juga diisi dari layar login aplikasi) ----------
 const FCM = !!(process.env.GOOGLE_SERVICES_JSON || '').trim() || fs.existsSync(path.join(ROOT, 'firebase', 'google-services.json'));
-const conf = { supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '', updateRepo: process.env.GITHUB_REPOSITORY || 'Malik190603/active-coach-app', version: VERSION, fcm: FCM };
+const conf = { supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '', updateRepo: process.env.GITHUB_REPOSITORY || 'Malik190603/active-coach-app', version: VERSION, build: Number(RUN) || 0, fcm: FCM };
 const confFile = path.join(ROOT, 'app', 'config.local.json');
 if (fs.existsSync(confFile)) Object.assign(conf, JSON.parse(read(confFile)));
 write(path.join(OUT, 'config.js'), 'window.ACX_CONFIG = ' + JSON.stringify(conf, null, 2) + ';\n');

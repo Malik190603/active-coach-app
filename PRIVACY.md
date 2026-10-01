@@ -21,6 +21,12 @@ Your data is used **only to show you your own training analysis**: readiness, tr
 ## Anonymous usage statistics
 To find bugs and improve the app, Active Coach sends a small **daily usage summary**: app version, platform, how many times the app was opened, which screens/features were used (counts only), and error messages. It contains **no activity data, no location, no name**. Feature and error statistics are shown to the developer only as totals across all users (for example "35 users opened Studio this week"). You can turn this off anytime in Profile → *Bantu kembangkan aplikasi*.
 
+## Automatic error reports
+When the app hits a code error, it may send a short report to the developer's inbox: the error message, app version, phone model & Android version, the screen you were on, and a few lines of technical trace. It contains **no activity data, routes or location**, is linked to your account so the developer can follow up, is limited to 3 reports per day, and is turned off together with *Bantu kembangkan aplikasi* in Profile.
+
+## On your phone
+Your login session is stored encrypted with the Android Keystore. App data is excluded from Android cloud backup and device-to-device transfer; on a new phone you simply sign in with Strava again and your data is restored from the server.
+
 ## What the app owner can see
 To run the service (support, update reminders, maintenance notices), the app owner has an admin list of registered accounts showing only: Strava display name and profile photo, Strava athlete ID, join date, last sign-in, the last day the app was opened and its version, how many times it was opened in the last 30 days, whether phone notifications are enabled, and the **number** of stored activities. The owner does **not** see your email, tokens, routes, or the content of your activities through this list, and it is never shown to other users. The owner can send a notification to a specific account (for example a reminder to update). Announcements and the event calendar are read-only lists published by the developer.
 
@@ -54,6 +60,10 @@ Active Coach adalah aplikasi analisis latihan pribadi untuk Android. Proyek inde
 **Penggunaan:** hanya untuk menampilkan analisis latihanmu sendiri. Data **tidak pernah ditampilkan ke pengguna lain**, tidak dijual, tidak untuk iklan, dan **tidak dipakai melatih AI**. Aplikasi tidak pernah memposting atau mengubah apa pun di Strava. Kartu story dibuat di HP dan hanya keluar dari HP saat kamu menekan *Bagikan*.
 
 **Statistik pemakaian anonim:** untuk menemukan bug dan memperbaiki aplikasi, dikirim ringkasan harian kecil: versi aplikasi, platform, berapa kali aplikasi dibuka, fitur yang dipakai (hanya jumlah), dan pesan error. **Tanpa data aktivitas, tanpa lokasi, tanpa nama.** Statistik fitur & error hanya dilihat pengembang sebagai angka gabungan semua pengguna. Bisa dimatikan kapan saja di Profil → *Bantu kembangkan aplikasi*.
+
+**Laporan error otomatis:** bila terjadi error pada kode aplikasi, laporan singkat bisa dikirim ke kotak masuk pengembang: pesan error, versi aplikasi, model HP & versi Android, halaman yang sedang dibuka, dan beberapa baris jejak teknis. **Tanpa data aktivitas, rute, atau lokasi**, terkait akunmu agar bisa ditindaklanjuti, maks. 3 laporan per hari, dan ikut mati bila *Bantu kembangkan aplikasi* dimatikan.
+
+**Di HP-mu:** sesi login disimpan terenkripsi dengan Android Keystore. Data aplikasi tidak ikut cadangan cloud Android maupun pemindahan ke HP lain — di HP baru cukup masuk lagi dengan Strava dan datamu dipulihkan dari server.
 
 **Yang bisa dilihat pemilik aplikasi:** untuk menjalankan layanan (bantuan, pengingat update, kabar maintenance), pemilik aplikasi punya daftar akun terdaftar yang hanya berisi: nama & foto profil Strava, ID atlet Strava, tanggal bergabung, login terakhir, hari terakhir membuka aplikasi beserta versinya, berapa kali dibuka 30 hari terakhir, status notifikasi HP, dan **jumlah** aktivitas tersimpan. Pemilik **tidak** melihat email, token, rute, atau isi aktivitasmu lewat daftar ini, dan daftar ini tidak pernah ditampilkan ke pengguna lain. Pemilik bisa mengirim notifikasi ke akun tertentu (mis. pengingat update).
 

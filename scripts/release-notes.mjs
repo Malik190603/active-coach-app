@@ -9,7 +9,7 @@
 //   - catatan teknis (hanya terlihat oleh admin di aplikasi)
 import { execSync } from 'node:child_process';
 import fs from 'node:fs';
-const msg = execSync('git log -1 --pretty=format:%B').toString().replace(/[ \t]*\[(no-)?maintenance\][ \t]*/gi, ' ').replace(/ +$/gm, '');
+const msg = execSync('git log -1 --pretty=format:%B').toString().replace(/[ \t]*\[(?:no-maintenance|maintenance|beta)\][ \t]*/gi, ' ').replace(/ +$/gm, '');
 const lines = msg.split('\n').filter((l) => !/^(Co-Authored-By|Claude-Session):/i.test(l.trim()));
 let title = (lines.shift() || '').trim(), mode = 'user';
 const user = [], dev = [];

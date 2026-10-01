@@ -1,13 +1,15 @@
 {
   "name": "active-coach-app",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Active Coach - aplikasi Android (Capacitor) dengan backend Supabase",
   "scripts": {
     "build": "node scripts/build-web.mjs",
     "android:prepare": "node scripts/prepare-android.mjs",
     "android:open": "npx cap open android",
-    "android:debug": "npm run build && npm run android:prepare && cd android && ./gradlew assembleDebug"
+    "android:debug": "npm run build && npm run android:prepare && cd android && ./gradlew assembleDebug",
+    "check": "node scripts/check.mjs",
+    "android:apk": "npm run build && npm run android:prepare && cd android && ./gradlew assembleRelease"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "8.0.1",
@@ -21,7 +23,8 @@
     "@capacitor/haptics": "8.0.2",
     "@capacitor/local-notifications": "8.3.1",
     "@capacitor/push-notifications": "8.1.2",
-    "@capacitor/share": "8.0.2"
+    "@capacitor/share": "8.0.2",
+    "capacitor-secure-storage-plugin": "0.13.0"
   },
   "devDependencies": {
     "@capacitor/assets": "3.0.5",

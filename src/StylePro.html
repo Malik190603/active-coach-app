@@ -853,4 +853,17 @@ html[data-view="desktop"] .ac-maint-owner{bottom:20px}
 .ac-maint-owner span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ac-maint-owner i{width:8px;height:8px;border-radius:50%;background:#111;flex:none;animation:ownPulse 1.4s infinite}
 .ac-maint-owner em{font-style:normal;font-weight:900}
+
+/* ============ Izin notifikasi & aksesibilitas ============ */
+.ac-ask{position:fixed;inset:0;z-index:2147481000;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.45);padding:12px 12px calc(12px + env(safe-area-inset-bottom,0px));animation:acMaintIn .25s ease-out both}
+.ac-ask.out{animation:acMaintOut .25s ease-in both}
+.ac-ask-box{width:min(440px,100%);background:var(--acx-surface,#fff);color:var(--acx-text,#111);border-radius:24px;padding:22px 20px 16px;display:grid;gap:8px;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.ac-ask-ic{font-size:34px;line-height:1}
+.ac-ask h3{margin:2px 0 0;font:800 20px Inter,system-ui}
+.ac-ask ul{margin:2px 0;padding-left:18px;display:grid;gap:4px;font:500 14px/1.45 Inter,system-ui;color:var(--acx-text-2,#555)}
+.ac-ask p{margin:0;font:500 12.5px Inter,system-ui;color:var(--acx-text-3,#888)}
+.ac-ask-yes{margin-top:8px;height:48px;border:0;border-radius:14px;background:var(--acx-strava,#fc4c02);color:#fff;font:800 15px Inter,system-ui}
+.ac-ask-no{height:44px;border:0;border-radius:14px;background:none;color:var(--acx-text-2,#555);font:700 14px Inter,system-ui}
+:focus-visible{outline:2.5px solid var(--acx-strava,#fc4c02);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
 </style>

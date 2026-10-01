@@ -39,11 +39,77 @@ if (!manifest.includes('REQUEST_INSTALL_PACKAGES')) {
   console.log('Izin REQUEST_INSTALL_PACKAGES ditambahkan');
 }
 
+// 1c) Privasi & sistem: tanpa cadangan otomatis (token login tidak ikut ke Google Drive / HP lain),
+//     gestur kembali prediktif Android 14+
+manifest = fs.readFileSync(manifestPath, 'utf8');
+if (!manifest.includes('ac_data_extraction')) {
+  manifest = manifest.replace(/android:allowBackup="true"/, 'android:allowBackup="false"');
+  manifest = manifest.replace(/<application/, '<application\n        android:fullBackupContent="false"\n        android:dataExtractionRules="@xml/ac_data_extraction"\n        android:enableOnBackInvokedCallback="true"');
+  fs.writeFileSync(manifestPath, manifest);
+  console.log('Cadangan otomatis dimatikan, gestur kembali prediktif aktif');
+}
+const xmlDir = path.join(ROOT, 'android/app/src/main/res/xml');
+fs.mkdirSync(xmlDir, { recursive: true });
+fs.writeFileSync(path.join(xmlDir, 'ac_data_extraction.xml'), `<?xml version="1.0" encoding="utf-8"?>
+<!-- Data login & cache tidak ikut dicadangkan ke cloud maupun dipindah ke HP lain; cukup masuk lagi dengan Strava. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+    </device-transfer>
+</data-extraction-rules>
+`);
+
+// 1d) Ukuran huruf mengikuti pengaturan HP (aksesibilitas), dibatasi 85–125% agar tata letak tetap rapi
+const javaDir = path.join(ROOT, 'android/app/src/main/java', ...pkgId().split('.'));
+function pkgId() { try { return JSON.parse(fs.readFileSync(path.join(ROOT, 'capacitor.config.json'), 'utf8')).appId; } catch { return 'com.activecoach.app'; } }
+const mainJava = path.join(javaDir, 'MainActivity.java');
+if (fs.existsSync(mainJava)) {
+  fs.writeFileSync(mainJava, `package ${pkgId()};
+
+import android.webkit.WebView;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onResume() {
+        super.onResume();
+        applySystemTextSize();
+    }
+
+    /* Ikuti ukuran huruf di Pengaturan Android (aksesibilitas), dibatasi 85–125%. */
+    private void applySystemTextSize() {
+        try {
+            if (bridge == null) return;
+            WebView web = bridge.getWebView();
+            if (web == null) return;
+            float scale = getResources().getConfiguration().fontScale;
+            int zoom = Math.round(Math.max(0.85f, Math.min(1.25f, scale)) * 100);
+            web.getSettings().setTextZoom(zoom);
+        } catch (Exception ignored) {
+            // biarkan ukuran bawaan
+        }
+    }
+}
+`);
+  console.log('MainActivity: ukuran huruf mengikuti pengaturan HP');
+} else console.warn('MainActivity.java tidak ditemukan di ' + javaDir);
+
 // 2) Versi aplikasi (versionCode dari nomor build CI bila ada)
 const gradlePath = path.join(ROOT, 'android/app/build.gradle');
 let gradle = fs.readFileSync(gradlePath, 'utf8');
 const code = Number(process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER || 1);
-const versionName = (process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER) ? pkg.version.split('.').slice(0, 2).join('.') + '.' + code : pkg.version;
+const versionName = process.env.APP_VERSION || ((process.env.VERSION_CODE || process.env.GITHUB_RUN_NUMBER) ? pkg.version.split('.').slice(0, 2).join('.') + '.' + code : pkg.version);
 gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode ' + code).replace(/versionName\s+"[^"]*"/, 'versionName "' + versionName + '"');
 console.log('Versi aplikasi: ' + versionName + ' (kode ' + code + ')');
 // Tanda tangan TETAP: semua APK (debug) ditandatangani kunci signing/debug.keystore di repo,
@@ -64,6 +130,14 @@ if (!gradle.includes('/* ac-fixed-signing */')) {
     }`);
   gradle = gradle.replace(/buildTypes \{/, 'buildTypes {\n        debug {\n            signingConfig signingConfigs.debug\n        }');
   console.log('Tanda tangan tetap: ' + keystore);
+}
+// Build RILIS (bukan debug): tidak bisa di-debug lewat USB, WebView tidak bisa diintip, tetap memakai kunci
+// yang SAMA supaya pengguna update menimpa tanpa uninstall. Lint dijalankan tapi tidak memblokir rilis.
+if (!process.env.RELEASE_KEYSTORE_PATH && !gradle.includes('/* ac-release-same-key */')) {
+  gradle = gradle.replace(/buildTypes \{([\s\S]*?)release \{/, (m, mid) => 'buildTypes {' + mid + 'release {\n            /* ac-release-same-key */\n            signingConfig signingConfigs.debug\n            debuggable false');
+  gradle = gradle.replace(/android \{/, 'android {\n    lint {\n        checkReleaseBuilds false\n        abortOnError false\n    }');
+  if (!gradle.includes('/* ac-release-same-key */')) throw new Error('buildTypes.release tidak ditemukan di build.gradle');
+  console.log('Build rilis memakai kunci tetap yang sama');
 }
 // Tanda tangan rilis: dipakai bila kunci rilis tersedia (GitHub Secrets → RELEASE_KEYSTORE_PATH dst.)
 if (process.env.RELEASE_KEYSTORE_PATH && !gradle.includes("signingConfig signingConfigs.release")) {
@@ -90,6 +164,20 @@ if (fs.existsSync(path.join(ROOT, 'assets', 'icon-only.png'))) {
   try { run('npx @capacitor/assets generate --android --iconBackgroundColor "#12121a" --iconBackgroundColorDark "#12121a" --splashBackgroundColor "#0e0e14" --splashBackgroundColorDark "#0e0e14"'); }
   catch (e) { console.warn('Ikon gagal dibuat (lanjut dengan ikon bawaan):', e.message); }
 }
+
+// Ikon tema Android 13+ (monokrom): garis denyut yang sama dengan ikon notifikasi
+const anyDpi = path.join(ROOT, 'android/app/src/main/res/mipmap-anydpi-v26');
+fs.mkdirSync(path.join(ROOT, 'android/app/src/main/res/drawable'), { recursive: true });
+fs.writeFileSync(path.join(ROOT, 'android/app/src/main/res/drawable/ic_launcher_mono.xml'), `<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF" android:strokeWidth="5.5" android:strokeLineCap="round" android:strokeLineJoin="round" android:pathData="M31,57h9l5.5,-13l9,24l5.5,-11h17"/>
+</vector>
+`);
+for (const f of ['ic_launcher.xml', 'ic_launcher_round.xml']) {
+  const fp = path.join(anyDpi, f); if (!fs.existsSync(fp)) continue;
+  let x = fs.readFileSync(fp, 'utf8');
+  if (!x.includes('<monochrome')) { x = x.replace('</adaptive-icon>', '    <monochrome android:drawable="@drawable/ic_launcher_mono"/>\n</adaptive-icon>'); fs.writeFileSync(fp, x); }
+}
+console.log('Ikon tema (monokrom) ditambahkan');
 
 // Firebase (notifikasi HP): google-services.json dari GitHub Secret GOOGLE_SERVICES_JSON atau file firebase/google-services.json
 const gsDest = path.join(ROOT, 'android/app/google-services.json');
@@ -135,4 +223,4 @@ fs.writeFileSync(path.join(drawDir, 'ic_stat_ac.xml'), `<vector xmlns:android="h
 `);
 
 run('npx cap sync android');
-console.log('Proyek Android siap. Build: cd android && ./gradlew assembleDebug');
+console.log('Proyek Android siap. Build: cd android && ./gradlew assembleRelease');

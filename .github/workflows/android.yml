@@ -22,6 +22,17 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Nomor versi & saluran rilis
+        id: ver
+        # Versi semver dari package.json (+ PATCH otomatis). Pesan commit berisi [beta] → rilis beta (prerelease):
+        # hanya HP yang mengaktifkan "Saluran beta" yang menerimanya, tanpa notifikasi & tanpa maintenance.
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          node scripts/version.mjs
+          beta=false; case "$MSG" in *"[beta]"*) beta=true;; esac
+          echo "beta=$beta" >> "$GITHUB_OUTPUT"; echo "Saluran: $([ $beta = true ] && echo beta || echo stabil)"
+
       - name: Mode maintenance — mulai (hanya bila update mengubah server)
         id: maint
         # Menyala bila commit mengubah folder supabase/ atau pesannya berisi [maintenance];
@@ -30,12 +41,14 @@ jobs:
           SB_URL: ${{ vars.SUPABASE_URL }}
           SB_ANON: ${{ vars.SUPABASE_ANON_KEY }}
           MSG: ${{ github.event.head_commit.message }}
-          VER: 1.1.${{ github.run_number }}
+          VER: ${{ steps.ver.outputs.version }}
+          BETA: ${{ steps.ver.outputs.beta }}
         run: |
           server=no; want=no
           if git diff --name-only HEAD~1 HEAD 2>/dev/null | grep -q '^supabase/'; then server=yes; want=yes; fi
           case "$MSG" in *"[maintenance]"*) want=yes;; esac
           case "$MSG" in *"[no-maintenance]"*) want=no;; esac
+          if [ "$BETA" = true ]; then want=no; server=no; echo "Rilis beta: tanpa maintenance & tanpa perubahan server"; fi
           echo "server=$server" >> "$GITHUB_OUTPUT"; echo "want=$want" >> "$GITHUB_OUTPUT"
           if [ "$want" != yes ] || [ -z "$SB_URL" ]; then echo "Tanpa maintenance (server=$server)"; exit 0; fi
           OIDC=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=active-coach-maint" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).value||"")}catch(e){}})' || true)
@@ -78,6 +91,17 @@ jobs:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: npm run build
 
+      - name: Pemeriksaan kode sebelum rilis
+        # Sintaks semua skrip aplikasi, engine, konfigurasi & fungsi server. Gagal = tidak ada rilis.
+        run: npm run check
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Pemeriksaan tipe fungsi server (Deno)
+        run: deno check supabase/functions/strava-callback/index.ts supabase/functions/proxy/index.ts
+
       - name: Siapkan proyek Android
         # prepare-android menulis signingConfig tetap (signing/debug.keystore) ke build.gradle
         env:
@@ -85,9 +109,9 @@ jobs:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: npm run android:prepare
 
-      - name: Build APK
+      - name: Build APK (rilis)
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Pastikan tanda tangan sama dengan versi sebelumnya
         # Gagal (dan tidak rilis) bila APK tidak ditandatangani kunci tetap,
@@ -95,10 +119,13 @@ jobs:
         run: |
           EXPECTED=350be8974a9244ca94f1528cc06b69a3485c5b1eea17139e8c921d4d6665c6d3
           SIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
-          "$SIGNER" verify --print-certs android/app/build/outputs/apk/debug/app-debug.apk | tee certs.txt
+          "$SIGNER" verify --print-certs android/app/build/outputs/apk/release/app-release.apk | tee certs.txt
           GOT=$(grep -m1 -i "certificate SHA-256 digest" certs.txt | awk '{print $NF}' | tr 'A-F' 'a-f')
           echo "SHA-256 APK: $GOT"
           if [ "$GOT" != "$EXPECTED" ]; then echo "::error::APK ditandatangani kunci lain ($GOT). Rilis dibatalkan."; exit 1; fi
+          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt
+          "$AAPT" dump badging android/app/build/outputs/apk/release/app-release.apk | grep -E "^package:|application-debuggable" | tee badging.txt
+          if grep -q "application-debuggable" badging.txt; then echo "::error::APK masih bisa di-debug. Rilis dibatalkan."; exit 1; fi
 
       - name: Perbarui server Supabase (SQL baru + Edge Functions)
         id: server
@@ -127,7 +154,7 @@ jobs:
 
       - name: Beri nama file
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk "ActiveCoach-v1.1.${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "ActiveCoach-v${{ steps.ver.outputs.version }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -140,16 +167,17 @@ jobs:
       - name: Terbitkan di Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.1.${{ github.run_number }}
-          name: Active Coach v1.1.${{ github.run_number }}
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Active Coach v${{ steps.ver.outputs.version }}${{ steps.ver.outputs.beta == 'true' && ' (beta)' || '' }}
           body_path: release-notes.md
-          make_latest: true
+          prerelease: ${{ steps.ver.outputs.beta == 'true' }}
+          make_latest: ${{ steps.ver.outputs.beta == 'true' && 'false' || 'true' }}
           files: ActiveCoach-*.apk
 
       - name: Kabari pengguna (pengumuman + notifikasi versi baru)
         # Server mengecek rilis terbaru di GitHub sendiri, jadi aman dipanggil berulang (sekali per versi).
         # Saat maintenance, kabar versi baru digabung ke notifikasi "maintenance selesai".
-        if: ${{ vars.SUPABASE_URL != '' && steps.maint.outputs.on != 'true' }}
+        if: ${{ vars.SUPABASE_URL != '' && steps.maint.outputs.on != 'true' && steps.ver.outputs.beta != 'true' }}
         continue-on-error: true
         run: |
           sleep 15

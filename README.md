@@ -132,6 +132,16 @@ Supaya pengumuman (maintenance, versi baru, dll.) masuk ke bilah notifikasi HP p
 
 Cek semuanya di aplikasi: **Profil › Developer › Notifikasi** dan **Kirim uji ke HP ini**. Setelah itu, setiap pengumuman dari Panel admin punya pilihan **Kirim juga ke notifikasi HP** (aktif bawaan), dan riwayat pengumuman punya tombol **🔔 Kirim notif** untuk mengirim ulang.
 
+## Standar rilis
+
+- **Build rilis** (bukan debug): APK tidak bisa di-debug lewat USB dan isi WebView tidak bisa diintip. Tetap ditandatangani kunci yang sama (`signing/debug.keystore`), jadi pengguna update menimpa tanpa uninstall. GitHub Actions membatalkan rilis bila kuncinya berbeda atau APK masih bisa di-debug.
+- **Nomor versi (semver):** versi dasar ada di `package.json` → `"version"`. Fitur besar: naikkan angka tengah (mis. `1.2.0` → `1.3.0`). Perbaikan kecil tidak perlu mengubah apa pun — angka terakhir naik otomatis (`1.2.1`, `1.2.2`, …) lewat `scripts/version.mjs`.
+- **Pemeriksaan sebelum rilis** (`npm run check` + `deno check`): sintaks semua skrip, library lokal lengkap (aplikasi bisa dibuka tanpa internet), dan pemindaian agar tidak ada kunci rahasia ikut ke APK. Gagal = tidak ada rilis.
+- **Saluran beta:** tulis tanda beta di pesan commit (kata `beta` dalam kurung siku) → dirilis sebagai *pre-release*, tanpa notifikasi & tanpa maintenance. Hanya HP yang menyalakan *Developer › Saklar › Saluran beta* yang menerimanya. Rilis berikutnya tanpa tanda beta = rilis untuk semua.
+- **Keamanan di HP:** sesi login disimpan terenkripsi (Android Keystore, plugin `capacitor-secure-storage-plugin`) dengan cadangan otomatis ke penyimpanan biasa bila brankas tidak tersedia; data aplikasi tidak ikut cadangan cloud/pemindahan HP; log konsol dibisukan di versi rilis (bisa dinyalakan di *Developer › Saklar*).
+- **Laporan error otomatis:** error kode di HP pengguna masuk ke Kotak masuk admin sebagai "Bug otomatis" (versi, model HP, halaman, jejak), maks. 3/hari per HP, mengikuti sakelar statistik.
+- **Standar Android:** ikon tema monokrom (Android 13+), gestur kembali prediktif (Android 14+), ukuran huruf mengikuti pengaturan HP (dibatasi 85–125%), penjelasan sebelum meminta izin notifikasi, label pembaca layar untuk tombol ikon, dan menghormati pengaturan "kurangi animasi".
+
 ## Tanda tangan APK
 
 Semua APK sejak v1.1.18 ditandatangani dengan kunci yang sama (`signing/debug.keystore`). Kunci ini ditulis langsung di `android/app/build.gradle` oleh `scripts/prepare-android.mjs`, dan workflow GitHub memeriksa sidik jari SHA-256 setiap APK (`350be897…c6d3`) — kalau berbeda, rilis dibatalkan. Jadi setiap versi baru selalu bisa dipasang **menimpa** versi lama tanpa uninstall. Jangan ganti atau hapus file kunci ini.
