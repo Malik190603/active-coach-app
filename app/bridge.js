@@ -3,7 +3,7 @@
  * Menggantikan google.script.run: semua panggilan "server" dijalankan oleh engine (Web Worker)
  * yang memuat Code.gs asli, dengan data tersimpan di Supabase. Juga menangani login dengan Strava,
  * koneksi Strava lewat deep link, tombol kembali Android, getaran (haptics), unduhan/berbagi file,
- * dan impor/cadangan data.
+ * dan pembaruan aplikasi.
  */
 (function () {
   'use strict';
@@ -58,6 +58,12 @@
 
   /* ------------------------------ engine worker ------------------------------ */
   var W = null, seq = 0, pending = new Map(), engineReady = false, currentSession = null, syncState = { state: 'idle' }, pendingLink = null;
+  /* ---------- log developer (200 baris terakhir, hanya di HP ini) ---------- */
+  var DEVLOG = [];
+  function dlog(kind, msg) { try { DEVLOG.push({ t: Date.now(), k: kind, m: String(msg == null ? '' : msg).replace(/(access_token|refresh_token|apikey|Bearer)[^,\s"]*/gi, '$1…').slice(0, 300) }); if (DEVLOG.length > 200) DEVLOG.shift(); } catch (e) {} }
+  function devPaused() { return !!LS.get('acx_dev_pause'); }
+  window.addEventListener('error', function (e) { if (e && e.message) dlog('error', e.message + (e.lineno ? ' @' + e.lineno : '')); });
+  window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; dlog('error', 'Promise: ' + ((r && r.message) || r)); });
   function worker() {
     if (!W) {
       W = new Worker('engine/worker.js');
@@ -81,11 +87,15 @@
       return;
     }
     if (m.type === 'session') { currentSession = m.session; if (!migrating) LS.set('acx_session', m.session); return; }
-    if (m.type === 'sync') { var prev = syncState.state; syncState = m; paintSyncState(); if (m.state === 'offline' && prev !== 'offline') note('Offline — perubahan disimpan di HP dan disinkronkan nanti'); return; }
+    if (m.type === 'sync') { if (m.state !== 'saving') dlog('sync', 'server: ' + m.state + (m.error ? ' — ' + m.error : '')); var prev = syncState.state; syncState = m; paintSyncState(); if (m.state === 'offline' && prev !== 'offline') note('Offline — perubahan disimpan di HP dan disinkronkan nanti'); return; }
     if (m.type === 'remoteUpdate') { try { if (typeof softRefresh === 'function' && !$('#appShell').hidden) { softRefresh(); note('Data diperbarui dari perangkat lain'); } } catch (e) {} return; }
     if (m.type === 'authExpired') { if (migrating) return; note('Sesi login berakhir, silakan masuk lagi dengan Strava'); forceLoggedOut(); }
   }
-  function callEngine(fn, args) { if (!engineReady) return Promise.reject(new Error('Belum masuk ke akun.')); return send({ type: 'call', fn: fn, args: args || [] }); }
+  function callEngine(fn, args) {
+    if (!engineReady) return Promise.reject(new Error('Belum masuk ke akun.'));
+    var t0 = Date.now();
+    return send({ type: 'call', fn: fn, args: args || [] }).then(function (v) { var ms = Date.now() - t0; if (ms > 40 || !/^(get|app(Session|Current))/.test(fn)) dlog('engine', fn + ' · ' + ms + ' ms'); return v; }, function (e) { dlog('error', fn + ' gagal: ' + (e && e.message)); throw e; });
+  }
   async function startEngine(session, quiet) {
     currentSession = session; if (!quiet) LS.set('acx_session', session);
     var t = quiet ? 0 : setTimeout(function () { loader('Mengunduh data dari server…'); }, 1500);
@@ -255,6 +265,7 @@
     if (moved) note(moved + ' aktivitas dari akun lama sudah dipindahkan');
     else note('Halo, ' + String(SESSION.nama || 'Atlet').split(' ')[0] + '! 👋');
     if (applied && applied.scopeOk === false) setTimeout(function () { note('Izin "lihat semua aktivitas" tidak dicentang — aktivitas privat tidak ikut. Masuk ulang untuk mengubah.'); }, 2600);
+    if (applied && applied.needsFirstSync && !moved) LS.set('acx_newacct_' + SESSION.athleteId, Date.now());
     if (applied && applied.needsFirstSync && !moved && typeof obOpen === 'function') { quietFirstSync(); setTimeout(function () { try { obOpen({ syncing: true }); } catch (e) {} }, 1400); }
     else if (applied && (applied.needsFirstSync || moved)) setTimeout(firstSync, moved ? 2200 : 900);
   }
@@ -460,20 +471,17 @@
   }
   function injectProfileRows() {
     var host = document.querySelector('[data-page-view="profile"] .acx-list');
-    if (!host || $('#acxImportRow')) return;
+    if (!host || $('#acxNotifRow')) return;
     var c = cfg(), hostName = c.url.replace(/^https?:\/\//, '');
     host.insertAdjacentHTML('beforeend',
       '<div class="acx-row as-static"><span class="acx-row-ic tone-strava icon"><svg viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M15.39 17.94 13.3 13.8h-3.07l5.16 10.2 5.15-10.2h-3.07M10.1 0 3.2 13.8h4.06l2.84-5.63 2.84 5.63h4.05z"/></svg></span><span class="acx-row-text"><b>Akun</b><small id="acxAccountName">Masuk dengan Strava</small></span></div>' +
-      '<button type="button" class="acx-row" id="acxImportRow"><span class="acx-row-ic tone-green icon"><svg><use href="#i-download"/></svg></span><span class="acx-row-text"><b>Pulihkan dari cadangan</b><small>File .json dari Cadangkan data / Google Sheets lama</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
-      '<button type="button" class="acx-row" id="acxExportRow"><span class="acx-row-ic tone-indigo icon"><svg><use href="#i-share"/></svg></span><span class="acx-row-text"><b>Cadangkan data</b><small>Simpan salinan lengkap (.json)</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxNotifRow"><span class="acx-row-ic tone-amber icon"><svg><use href="#i-bell"/></svg></span><span class="acx-row-text"><b>Notifikasi</b><small>Pengingat latihan, rekap mingguan, servis</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxImportActRow"><span class="acx-row-ic tone-blue icon"><svg><use href="#i-route"/></svg></span><span class="acx-row-text"><b>Impor aktivitas (GPX/TCX/FIT)</b><small>Dari Garmin, Coros, Wahoo, dll. di luar Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<input type="file" id="acxActFile" accept=".gpx,.tcx,.fit,application/gpx+xml,application/octet-stream" hidden>' +
       '<button type="button" class="acx-row" id="acxUpdateRow"><span class="acx-row-ic tone-green icon"><svg><use href="#i-sync"/></svg></span><span class="acx-row-text"><b>Periksa pembaruan</b><small>Versi terpasang ' + esc(window.AC_BUILD || '') + '</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxPrivacyRow"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-shield"/></svg></span><span class="acx-row-text"><b>Privasi & data</b><small>Kebijakan privasi · Powered by Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
       '<button type="button" class="acx-row" id="acxDeleteRow"><span class="acx-row-ic tone-red icon"><svg><use href="#i-trash"/></svg></span><span class="acx-row-text"><b style="color:var(--acx-red)">Hapus akun & data</b><small>Hapus permanen dari server & cabut izin Strava</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>' +
-      '<p class="acx-powered">Active Coach versi ' + esc(window.AC_BUILD || '') + '<br>Powered by Strava · Active Coach tidak berafiliasi dengan Strava.</p>' +
-      '<input type="file" id="acxImportFile" accept=".json,application/json,text/plain" hidden>');
+      '<p class="acx-powered">Active Coach versi ' + esc(window.AC_BUILD || '') + '<br>Powered by Strava · Active Coach tidak berafiliasi dengan Strava.</p>');
     $('#acxDeleteRow').onclick = deleteAccountFlow;
     $('#acxUpdateRow').onclick = function () { checkForUpdate(true); };
     $('#acxNotifRow').onclick = function () { if (typeof nfOpenSettings === 'function') nfOpenSettings(); };
@@ -481,44 +489,6 @@
     $('#acxActFile').onchange = function (e) { var f = e.target.files && e.target.files[0]; if (f && typeof impImportFile === 'function') impImportFile(f); };
     $('#acxPrivacyRow').onclick = function () { window.open(PRIVACY_URL, '_blank'); };
     paintSyncState();
-    $('#acxImportRow').onclick = function () { $('#acxImportFile').value = ''; $('#acxImportFile').click(); };
-    $('#acxImportFile').onchange = async function (e) {
-      var f = e.target.files && e.target.files[0]; if (!f) return;
-      var data;
-      try { data = JSON.parse(await f.text()); } catch (x) { note('File tidak bisa dibaca sebagai JSON'); return; }
-      if (!data || data.format !== 'active-coach-export') { note('Ini bukan file cadangan Active Coach'); return; }
-      var n = Object.keys(data.sheets || {}).length;
-      if (!confirm('Pulihkan akan MENGGANTI semua data di akun ini dengan isi file (' + n + ' tabel). Lanjutkan?')) return;
-      try {
-        loader('Memulihkan & mengunggah data…');
-        var keep = null; try { keep = await callEngine('appCurrentStrava', []); } catch (x) {}
-        var r = await send({ type: 'import', data: data });
-        try { await callEngine('appSelectStravaAthlete', [stravaIdOf(currentSession)]); } catch (x) {}
-        var s = await sessionFlow(), nama = s.nama;
-        if (keep && keep.refresh_token) {
-          var nm = displayNameOf(currentSession).split(' ');
-          keep.athlete = { id: keep.athlete && keep.athlete.id || stravaIdOf(currentSession), firstname: nm[0] || '', lastname: nm.slice(1).join(' ') };
-          keep.scope = 'activity:read_all';
-          try { var ap = await callEngine('appApplyStravaLogin', [keep]); if (ap && ap.nama) nama = ap.nama; } catch (x) {}
-        }
-        SESSION = { athleteId: s.athleteId, nama: nama };
-        unloader();
-        var rows = r.sheets || {}, logs = rows.LogAktivitas || 0;
-        note('Selesai: ' + logs + ' aktivitas, ' + (r.files || 0) + ' file dipulihkan'); haptic('success');
-        try { DATA.bikeGarage = null; DATA.pro = null; DATA.profileExtras = null; } catch (x) {}
-        await load(); await loadStrava();
-      } catch (x) { unloader(); note('Gagal memulihkan: ' + x.message); haptic('error'); }
-    };
-    $('#acxExportRow').onclick = async function () {
-      try {
-        loader('Menyiapkan cadangan…');
-        var json = await send({ type: 'export' });
-        unloader();
-        var name = 'active-coach-cadangan-' + new Date().toISOString().slice(0, 10) + '.json', blob = new Blob([json], { type: 'application/json' });
-        if (NATIVE && P.Filesystem && P.Share) await saveAndShare(blob, name);
-        else { var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; _click.call(a); }
-      } catch (x) { unloader(); note('Gagal membuat cadangan: ' + x.message); }
-    };
     var rl = $('#reloadBtn small'); if (rl) rl.textContent = 'Ambil ulang data terbaru dari server';
   }
   /* ---------- pembaruan aplikasi: cek rilis terbaru di GitHub ---------- */
@@ -546,11 +516,13 @@
     return html;
   }
   /* "Yang baru" — tampil sekali setelah aplikasi diperbarui */
-  async function showWhatsNew() {
+  async function showWhatsNew(force) {
     var cur = currentVersion(), seen = LS.get('acx_seen_version');
+    if (!force) {
     if (!NATIVE || !cur || cur === '0') return;
     if (!seen) { LS.set('acx_seen_version', cur); return; }
     if (seen === cur || !verNewer(cur, seen)) return;
+    }
     LS.set('acx_seen_version', cur);
     try {
       var repo = (window.ACX_CONFIG && window.ACX_CONFIG.updateRepo) || 'Malik190603/active-coach-app';
@@ -692,6 +664,7 @@
   function markSynced() { LS.set(lastSyncKey(), Date.now()); }
   async function autoSync(force) {
     if (autoBusy || !engineReady || typeof SESSION === 'undefined' || !SESSION.athleteId) return;
+    if (devPaused() && !force) return;
     if (!force && Date.now() - (LS.get(lastSyncKey()) || 0) < 20 * 60000) return;
     if (navigator.onLine === false) return;
     if (typeof LOAD_BUSY !== 'undefined' && LOAD_BUSY) { setTimeout(function () { autoSync(force); }, 3000); return; }
@@ -702,10 +675,10 @@
       if (st && st.connected) {
         var r = await callEngine('syncStravaAll', [SESSION.athleteId]);
         markSynced();
-        var n = (r && r.imported) || 0;
+        var n = (r && r.imported) || 0; dlog('sync', 'Strava otomatis: ' + n + ' aktivitas baru');
         if (n > 0) { if (typeof softRefresh === 'function') await softRefresh(); note(n + ' aktivitas baru dari Strava ✓'); haptic('success'); }
       }
-    } catch (e) { console.warn('Sinkron otomatis gagal', e && e.message); }
+    } catch (e) { dlog('error', 'Sinkron otomatis gagal: ' + (e && e.message)); console.warn('Sinkron otomatis gagal', e && e.message); }
     root.classList.remove('is-syncing'); autoBusy = false;
     syncStravaPhoto(false);
   }
@@ -745,6 +718,7 @@
     if (prefer) h.Prefer = prefer;
     var r = await fetch(c.url + '/rest/v1/' + path, { method: method, headers: h, body: body === undefined ? undefined : JSON.stringify(body) });
     var t = await r.text(), j = null; try { j = t ? JSON.parse(t) : null; } catch (e) {}
+    dlog(r.ok ? 'rest' : 'error', method + ' ' + path.split('?')[0] + ' → ' + r.status);
     if (!r.ok) { var err = new Error((j && (j.message || j.hint)) || ('Server ' + r.status)); err.status = r.status; err.code = j && j.code; throw err; }
     return j;
   }
@@ -752,20 +726,23 @@
     var s = currentSession || {}, dev = (navigator.userAgent.match(/Android [\d.]+[^;)]*;?\s*([^;)]*)/) || [])[0] || navigator.platform || '';
     await acxRest('POST', 'ac_feedback', [{ user_id: s.user && s.user.id, name: (typeof SESSION !== 'undefined' && SESSION.nama) || displayNameOf(s), kind: String(data.tipe || 'Saran fitur').slice(0, 40), message: String(data.pesan || '').trim().slice(0, 4000), app_version: String(window.AC_BUILD || ''), device: String(dev).slice(0, 80) }], 'return=minimal');
   }
-  async function ensureWebhook() {
-    var last = LS.get('acx_wh_ok') || 0; if (Date.now() - last < 24 * 3600000) return;
+  async function ensureWebhook(force) {
+    var last = LS.get('acx_wh_ok') || 0; if (!force && (devPaused() || Date.now() - last < 24 * 3600000)) return;
     try {
       var s = await freshSession(); if (!s || !s.access_token) return;
       var c = cfg(), h = redeemHeaders(c); h.Authorization = 'Bearer ' + s.access_token;
       var r = await fetch(c.url + '/functions/v1/strava-callback?subscribe=1', { method: 'POST', headers: h, body: '{}' });
       var j = {}; try { j = await r.json(); } catch (e) {}
       if (r.ok && j.linked) LS.set('acx_wh_ok', Date.now());
+      dlog(j.webhook && !j.webhook.ok ? 'error' : 'sync', 'Webhook: ' + (r.ok && j.linked ? 'tertaut' : 'gagal ' + r.status) + (j.webhook ? (j.webhook.ok ? ' · langganan aktif' : ' · ' + j.webhook.error) : ''));
       if (j.webhook && !j.webhook.ok) console.warn('Webhook Strava:', j.webhook.error);
+      return j;
     } catch (e) {}
   }
   var inboxBusy = false;
   async function checkInbox() {
     if (inboxBusy || !engineReady || navigator.onLine === false || typeof SESSION === 'undefined' || !SESSION.athleteId) return;
+    if (devPaused()) return;
     inboxBusy = true;
     try {
       var rows = await userRest('GET', 'ac_meta?select=key,value&key=in.(strava_inbox,strava_revoked)');
@@ -902,5 +879,24 @@
     P.App.getLaunchUrl && P.App.getLaunchUrl().then(function (r) { if (r && r.url) handleDeepLink(r.url); }).catch(function () {});
   }
 
-  window.ACX = { saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  /* ---------- alat developer ---------- */
+  async function timed(fn) { var t0 = Date.now(); try { var v = await fn(); return { ok: true, ms: Date.now() - t0, v: v }; } catch (e) { return { ok: false, ms: Date.now() - t0, error: (e && e.message) || String(e) }; } }
+  async function devHealth() {
+    var c = cfg(), h = { apikey: c.anonKey }, out = {};
+    out.auth = await timed(async function () { var r = await fetch(c.url + '/auth/v1/health', { headers: h, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.status; });
+    out.callback = await timed(async function () { var r = await fetch(c.url + '/functions/v1/strava-callback?ping=1', { headers: h, redirect: 'manual', cache: 'no-store' }); if (r.status === 404) throw new Error('Fungsi tidak ditemukan'); if (r.status === 401) throw new Error('Verify JWT masih aktif'); if (r.type === 'opaqueredirect') throw new Error('Versi lama'); var j = await r.json(); if (!j.ok) throw new Error('Respons tidak valid'); return j; });
+    out.proxy = await timed(async function () { var r = await fetch(c.url + '/functions/v1/proxy?config=1', { headers: h, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.status; });
+    out.tables = {};
+    for (var t of ['ac_chunks', 'ac_feedback', 'ac_admins', 'ac_announcements', 'ac_events', 'ac_usage', 'ac_meta']) { out.tables[t] = await timed(function () { return acxRest('GET', t + '?select=*&limit=1'); }); }
+    out.strava = await timed(async function () { var st = await callEngine('getStravaStatus', [SESSION.athleteId]); var cur = await callEngine('appCurrentStrava', []); return { connected: !!(st && st.connected), athlete: st && st.athlete, expiresAt: cur && cur.expires_at || 0 }; });
+    out.webhookOk = LS.get('acx_wh_ok') || 0; out.inboxSeen = LS.get('acx_inbox_seen') || 0;
+    dlog('dev', 'Cek kesehatan server selesai');
+    return out;
+  }
+  function devUpdateGate() {
+    showUpdateSheet({ version: '99.0.0', notes: '## Yang baru\nSimulasi layar update wajib (uji developer) — tidak ada yang diunduh.', url: '#', page: '#', size: 0 });
+    var card = document.querySelector('#updSheet .upd-card') || document.querySelector('#updSheet');
+    if (card && !document.getElementById('updSimClose')) { card.insertAdjacentHTML('beforeend', '<button type="button" class="acx-btn st-btn-ghost" id="updSimClose" style="margin-top:10px;width:100%">Tutup simulasi</button>'); document.getElementById('updSimClose').onclick = function () { var g = $('#updSheet'); if (g) g.remove(); }; }
+  }
+  window.ACX = { devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

@@ -1,0 +1,162 @@
+<script>
+'use strict';
+/* =====================================================================
+   Karya tahunan: Poster A3 (PNG/PDF), Kalender dinding (PDF 13 halaman),
+   dan Video "setahun dalam 30 detik". Semua dibuat di HP dari data sendiri.
+   ===================================================================== */
+const YC_MON=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function ycLogs(y){return (DATA.logs||[]).filter(x=>String(x.date).slice(0,4)===String(y)).sort((a,b)=>a.date<b.date?-1:1)}
+function ycRoutes(y,max){
+  let hide=DATA.privacy&&DATA.privacy.hideRoutes;
+  return ycLogs(y).filter(x=>x.polyline&&!hide).map(x=>{let pts=decodePolyline(x.polyline);if(pts.length<2)return null;if(typeof stTrimRoute==='function')pts=stTrimRoute(pts,200);if(typeof acxDecimate==='function')pts=acxDecimate(pts,max||140);return {x,pts,m:+String(x.date).slice(5,7)-1,color:sportInfo(x).color}}).filter(Boolean);
+}
+function ycTotals(y){let l=ycLogs(y),t={n:l.length,km:0,min:0,elev:0,days:new Set(),sports:{}};l.forEach(x=>{t.km+=x.distance||0;t.min+=x.minutes||0;t.elev+=x.elevation||0;t.days.add(String(x.date).slice(0,10));let s=sportInfo(x);t.sports[s.label]=t.sports[s.label]||{n:0,color:s.color,min:0};t.sports[s.label].n++;t.sports[s.label].min+=x.minutes||0});t.daysN=t.days.size;t.sportList=Object.keys(t.sports).map(k=>Object.assign({label:k},t.sports[k])).sort((a,b)=>b.min-a.min);t.longest=l.slice().sort((a,b)=>(b.distance||0)-(a.distance||0))[0];return t}
+function ycFmt(n,d){return Number(n||0).toLocaleString('id-ID',{maximumFractionDigits:d||0})}
+function ycHours(min){return ycFmt(Math.round((min||0)/60))}
+function ycGrid(n,gx,gy,gw,gh){if(!n)return [];let cols=Math.max(1,Math.ceil(Math.sqrt(n*gw/gh))),rows=Math.ceil(n/cols);let cell=Math.min(gw/cols,gh/rows),ox=gx+(gw-cell*cols)/2,oy=gy+(gh-cell*rows)/2,out=[];for(let i=0;i<n;i++)out.push({x:ox+(i%cols)*cell,y:oy+Math.floor(i/cols)*cell,s:cell});return out}
+function ycStroke(ctx,m,col,w,p){if(!m||m.length<2)return;let n=p==null?m.length:Math.max(2,Math.ceil(m.length*p));ctx.beginPath();for(let i=0;i<n;i++){i?ctx.lineTo(m[i][0],m[i][1]):ctx.moveTo(m[i][0],m[i][1])}ctx.strokeStyle=col;ctx.lineWidth=w;ctx.lineJoin='round';ctx.lineCap='round';ctx.stroke()}
+function ycTheme(dark){return dark?{bg:'#0e0e14',fg:'#ffffff',fg2:'rgba(255,255,255,.66)',fg3:'rgba(255,255,255,.14)',acc:'#ff6a3d'}:{bg:'#f6f3ee',fg:'#16161c',fg2:'rgba(22,22,28,.6)',fg3:'rgba(22,22,28,.1)',acc:'#e24a12'}}
+function ycCol(c,dark){if(dark)return c;return typeof shade==='function'?shade(c,-.18):c}
+function ycBrand(ctx,x,y,S,o){let had=typeof ST!=='undefined'&&ST;if(!had)ST={brand:true};try{let b=ST.brand;ST.brand=true;brand(ctx,x,y,S,o);ST.brand=b}finally{if(!had)ST=null}}
+function ycName(){return ((DATA.profile&&DATA.profile.nama)||(typeof SESSION!=='undefined'&&SESSION.nama)||'Atlet')}
+
+/* ------------------------------ 126 · Poster A3 ------------------------------ */
+function ycPoster(y,dark){
+  let W=2339,H=3307,cv=document.createElement('canvas');cv.width=W;cv.height=H;let ctx=cv.getContext('2d'),th=ycTheme(dark),t=ycTotals(y),R=ycRoutes(y,160),M=170;
+  ctx.fillStyle=th.bg;ctx.fillRect(0,0,W,H);
+  T(ctx,'ACTIVE COACH  ·  '+ycName().toUpperCase(),M,M+30,{font:F(800,40,'ui'),color:th.fg2,spacing:10,max:W-2*M});
+  let ypx=520;T(ctx,String(y),M-14,M+90+ypx*.8,{font:F(400,ypx,'disp'),color:th.fg});
+  let sx=M+TW(ctx,String(y),F(400,ypx,'disp'))+60,sy=M+150,stats=[[ycFmt(t.km,0),'kilometer'],[ycFmt(t.n),'aktivitas'],[ycHours(t.min),'jam bergerak'],[ycFmt(t.elev),'meter tanjakan']];
+  if(sx>W-560){sx=M;sy=M+90+ypx*.8+60}
+  stats.forEach((s,i)=>{let yy=sy+i*118;T(ctx,s[0],sx,yy+70,{font:F(800,84,'ui'),color:i?th.fg:th.acc});T(ctx,s[1],sx+TW(ctx,s[0],F(800,84,'ui'))+18,yy+70,{font:F(600,36,'ui'),color:th.fg2})});
+  let gy0=Math.max(M+90+ypx*.8+80,sy+4*118+40),gy1=H-520,cells=ycGrid(R.length,M,gy0,W-2*M,gy1-gy0);
+  if(!R.length){T(ctx,'Belum ada rute GPS di tahun '+y,W/2,(gy0+gy1)/2,{font:F(700,60,'ui'),color:th.fg2,align:'center'})}
+  R.forEach((r,i)=>{let c=cells[i],pad=c.s*.14,m=projectRoute(r.pts,{x:c.x+pad,y:c.y+pad,w:c.s-2*pad,h:c.s-2*pad-(c.s>150?c.s*.1:0)},0);ycStroke(ctx,m,ycCol(r.color,dark),Math.max(2.2,c.s*.022));if(c.s>150){let d=new Date(r.x.date+'T00:00:00');T(ctx,d.getDate()+' '+YC_MON[d.getMonth()].slice(0,3),c.x+c.s/2,c.y+c.s-pad*.45,{font:F(600,Math.min(26,c.s*.075),'ui'),color:th.fg2,align:'center'})}});
+  ctx.fillStyle=th.fg3;ctx.fillRect(M,H-400,W-2*M,3);
+  let lx=M;t.sportList.slice(0,5).forEach(s=>{ctx.beginPath();ctx.arc(lx+16,H-300,16,0,Math.PI*2);ctx.fillStyle=ycCol(s.color,dark);ctx.fill();let lb=s.label+' · '+s.n;T(ctx,lb,lx+46,H-286,{font:F(700,40,'ui'),color:th.fg});lx+=46+TW(ctx,lb,F(700,40,'ui'))+70});
+  T(ctx,t.daysN+' hari aktif'+(t.longest&&t.longest.distance?'  ·  terjauh '+ycFmt(t.longest.distance,1)+' km ('+(t.longest.title||'')+')':''),M,H-200,{font:F(500,38,'ui'),color:th.fg2,max:W-2*M-520});
+  ycBrand(ctx,W-M,H-200,{fg2:th.fg2,dark},{px:34,align:'right',color:th.fg2});
+  return cv;
+}
+/* ------------------------------ 129 · Kalender dinding ------------------------------ */
+function ycCalCover(y){
+  let W=1654,H=2339,cv=document.createElement('canvas');cv.width=W;cv.height=H;let ctx=cv.getContext('2d'),t=ycTotals(y),R=ycRoutes(y,90);
+  let g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,'#ff6a3d');g.addColorStop(.55,'#ec4899');g.addColorStop(1,'#7c3aed');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  let cells=ycGrid(R.length,110,980,W-220,H-980-560);ctx.globalAlpha=.85;R.forEach((r,i)=>{let c=cells[i],p=c.s*.12;ycStroke(ctx,projectRoute(r.pts,{x:c.x+p,y:c.y+p,w:c.s-2*p,h:c.s-2*p},0),'#ffffff',Math.max(1.6,c.s*.025))});ctx.globalAlpha=1;
+  T(ctx,'KALENDER LATIHAN',110,200,{font:F(800,40,'ui'),color:'rgba(255,255,255,.85)',spacing:12});
+  T(ctx,String(y),96,260+380*.82,{font:F(400,380,'disp'),color:'#fff'});
+  T(ctx,ycName(),110,760,{font:F(800,64,'ui'),color:'#fff',max:W-220});
+  T(ctx,ycFmt(t.km)+' km  ·  '+t.n+' aktivitas  ·  '+ycHours(t.min)+' jam  ·  '+t.daysN+' hari aktif',110,840,{font:F(600,40,'ui'),color:'rgba(255,255,255,.9)',max:W-220});
+  let months=Array.from({length:12},(_,i)=>ycLogs(y).filter(x=>+String(x.date).slice(5,7)-1===i).reduce((a,x)=>a+(x.distance||0),0)),mx=Math.max(1,...months),bw=(W-220)/12,by=H-200,ch=260;
+  months.forEach((v,i)=>{let h=Math.max(8,v/mx*ch);rr(ctx,110+i*bw+bw*.18,by-h,bw*.64,h,10);ctx.fillStyle='rgba(255,255,255,'+(v?.92:.3)+')';ctx.fill();T(ctx,YC_MON[i].slice(0,1),110+i*bw+bw/2,by+50,{font:F(800,30,'ui'),color:'#fff',align:'center'})});
+  ycBrand(ctx,W-110,H-60,{fg2:'#fff',dark:true},{px:26,align:'right',color:'rgba(255,255,255,.85)'});
+  return cv;
+}
+function ycCalMonth(y,m){
+  let W=1654,H=2339,cv=document.createElement('canvas');cv.width=W;cv.height=H;let ctx=cv.getContext('2d'),th=ycTheme(false),M=110;
+  let logs=ycLogs(y).filter(x=>+String(x.date).slice(5,7)-1===m),R=ycRoutes(y,120).filter(r=>r.m===m),days={};logs.forEach(x=>{let k=+String(x.date).slice(8,10);(days[k]=days[k]||[]).push(x)});
+  let km=logs.reduce((a,x)=>a+(x.distance||0),0),min=logs.reduce((a,x)=>a+(x.minutes||0),0);
+  ctx.fillStyle='#fbf9f5';ctx.fillRect(0,0,W,H);
+  let px=fitPx(ctx,YC_MON[m].toUpperCase(),W-2*M-420,400,'disp',220,120);T(ctx,YC_MON[m].toUpperCase(),M-6,M+px*.82,{font:F(400,px,'disp'),color:th.fg});
+  T(ctx,String(y),M,M+px*.82+64,{font:F(700,44,'ui'),color:th.acc,spacing:8});
+  [[ycFmt(km,1),'km'],[String(logs.length),'aktivitas'],[String(Object.keys(days).length),'hari aktif'],[ycHours(min),'jam']].forEach((s,i)=>{let yy=M+20+i*70;T(ctx,s[0],W-M-150,yy+46,{font:F(800,52,'ui'),color:th.fg,align:'right'});T(ctx,s[1],W-M-136,yy+46,{font:F(600,30,'ui'),color:th.fg2})});
+  let ay=M+px*.82+120,ah=820;rr(ctx,M,ay,W-2*M,ah,36);ctx.fillStyle='#f0ebe2';ctx.fill();
+  if(R.length){let cells=ycGrid(R.length,M+30,ay+30,W-2*M-60,ah-60);R.forEach((r,i)=>{let c=cells[i],p=c.s*.12;ycStroke(ctx,projectRoute(r.pts,{x:c.x+p,y:c.y+p,w:c.s-2*p,h:c.s-2*p},0),ycCol(r.color,false),Math.max(2.4,c.s*.03))})}
+  else T(ctx,logs.length?'Aktivitas tanpa rute GPS':'Belum ada aktivitas di bulan ini',W/2,ay+ah/2,{font:F(600,44,'ui'),color:th.fg2,align:'center'});
+  let gy=ay+ah+70,cw=(W-2*M)/7,dows=['SEN','SEL','RAB','KAM','JUM','SAB','MIN'];
+  dows.forEach((d,i)=>T(ctx,d,M+cw*i+cw/2,gy,{font:F(800,30,'ui'),color:i>=5?th.acc:th.fg2,align:'center',spacing:3}));
+  let first=new Date(y,m,1),off=(first.getDay()+6)%7,last=new Date(y,m+1,0).getDate(),rows=Math.ceil((off+last)/7),chh=Math.min(200,(H-180-(gy+30))/rows);
+  for(let d=1;d<=last;d++){let i=off+d-1,cx=M+(i%7)*cw,cy=gy+30+Math.floor(i/7)*chh,list=days[d];
+    rr(ctx,cx+6,cy+6,cw-12,chh-12,22);ctx.fillStyle=list?'#ffffff':'rgba(0,0,0,.025)';ctx.fill();if(list){ctx.strokeStyle=ycCol(sportInfo(list[0]).color,false);ctx.lineWidth=4;ctx.stroke()}
+    T(ctx,String(d),cx+26,cy+56,{font:F(800,38,'ui'),color:list?th.fg:'rgba(22,22,28,.35)'});
+    if(list){let k=list.reduce((a,x)=>a+(x.distance||0),0),mn=list.reduce((a,x)=>a+(x.minutes||0),0);T(ctx,k?ycFmt(k,1)+' km':durationShort(mn),cx+cw-22,cy+chh-30,{font:F(800,30,'ui'),color:ycCol(sportInfo(list[0]).color,false),align:'right'});list.slice(0,3).forEach((x,j)=>{ctx.beginPath();ctx.arc(cx+cw-30-j*22,cy+40,8,0,Math.PI*2);ctx.fillStyle=ycCol(sportInfo(x).color,false);ctx.fill()})}}
+  ycBrand(ctx,W/2,H-70,{fg2:th.fg2,dark:false},{px:24,color:th.fg2});
+  return cv;
+}
+/* ------------------------------ PDF sederhana (gambar JPEG per halaman) ------------------------------ */
+async function ycPdf(canvases,wPt,hPt){
+  let enc=new TextEncoder(),parts=[],len=0,offs=[],push=b=>{if(typeof b==='string')b=enc.encode(b);parts.push(b);len+=b.length};
+  let imgs=[];for(const c of canvases){let blob=await new Promise(ok=>c.toBlob(ok,'image/jpeg',.9));imgs.push({w:c.width,h:c.height,bytes:new Uint8Array(await blob.arrayBuffer())})}
+  let n=imgs.length,obj=k=>{offs[k]=len;push(k+' 0 obj\n')};
+  push('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n');
+  obj(1);push('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  obj(2);push('<< /Type /Pages /Count '+n+' /Kids ['+imgs.map((_,i)=>(3+i*3)+' 0 R').join(' ')+'] >>\nendobj\n');
+  imgs.forEach((im,i)=>{let p=3+i*3,ct='q '+wPt+' 0 0 '+hPt+' 0 0 cm /Im0 Do Q';
+    obj(p);push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+wPt+' '+hPt+'] /Resources << /XObject << /Im0 '+(p+2)+' 0 R >> >> /Contents '+(p+1)+' 0 R >>\nendobj\n');
+    obj(p+1);push('<< /Length '+ct.length+' >>\nstream\n'+ct+'\nendstream\nendobj\n');
+    obj(p+2);push('<< /Type /XObject /Subtype /Image /Width '+im.w+' /Height '+im.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+im.bytes.length+' >>\nstream\n');push(im.bytes);push('\nendstream\nendobj\n')});
+  let total=3+n*3,x=len;push('xref\n0 '+total+'\n0000000000 65535 f \n');for(let k=1;k<total;k++)push(String(offs[k]).padStart(10,'0')+' 00000 n \n');
+  push('trailer\n<< /Size '+total+' /Root 1 0 R >>\nstartxref\n'+x+'\n%%EOF');
+  return new Blob(parts,{type:'application/pdf'});
+}
+function ycDownload(blob,name){let a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),8000)}
+/* ------------------------------ lembar pratinjau ------------------------------ */
+async function ycOpenPoster(y){
+  usgTrack('poster:open');if(typeof stFonts==='function')await stFonts();let dark=true;
+  let box=admSheet('ycSheet','Poster A3 · '+y,'<div class="st-seg yc-seg"><button type="button" data-th="1" class="on">Gelap</button><button type="button" data-th="0">Terang</button></div><div class="yc-prev" id="ycPrev">'+inlineSpinner('Menggambar poster…')+'</div><div class="dev-acts yc-acts"><button type="button" class="acx-btn" id="ycPng"><span class="icon"><svg><use href="#i-download"/></svg></span> Simpan gambar</button><button type="button" class="acx-btn st-btn-ghost" id="ycPdf"><span class="icon"><svg><use href="#i-doc"/></svg></span> PDF A3 (cetak)</button></div><p class="adm-note">Ukuran A3 (29,7 × 42 cm) siap dicetak di percetakan. Semua rute GPS tahun '+y+' digambar sebagai karya garis.</p>',{tall:true});
+  let cv=null,paint=()=>{let p=box.querySelector('#ycPrev');p.innerHTML=inlineSpinner('Menggambar poster…');setTimeout(()=>{cv=ycPoster(y,dark);let im=new Image();im.src=cv.toDataURL('image/jpeg',.8);im.alt='Poster';p.innerHTML='';p.appendChild(im)},30)};
+  box.querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{dark=b.dataset.th==='1';box.querySelectorAll('[data-th]').forEach(x=>x.classList.toggle('on',x===b));paint()});
+  box.querySelector('#ycPng').onclick=async e=>{if(!cv)return;let b=e.currentTarget;b.classList.add('is-busy');try{let blob=await new Promise(ok=>cv.toBlob(ok,'image/png'));await ACX.saveMedia(blob,'activecoach-poster-'+y+'.png');toast(ACX.native?'Poster tersimpan di Galeri ✓':'Poster diunduh ✓')}catch(x){toast('Gagal: '+x.message)}b.classList.remove('is-busy')};
+  box.querySelector('#ycPdf').onclick=async e=>{if(!cv)return;let b=e.currentTarget;b.classList.add('is-busy');try{ycDownload(await ycPdf([cv],842,1191),'activecoach-poster-'+y+'.pdf')}catch(x){toast('Gagal: '+x.message)}b.classList.remove('is-busy')};
+  paint();
+}
+async function ycOpenCalendar(y){
+  usgTrack('calendar:open');if(typeof stFonts==='function')await stFonts();
+  let box=admSheet('ycSheet','Kalender dinding · '+y,'<div class="yc-prev yc-cal" id="ycPrev">'+inlineSpinner('Menyusun 13 halaman…')+'</div><div class="dev-acts yc-acts"><button type="button" class="acx-btn" id="ycCalPdf"><span class="icon"><svg><use href="#i-doc"/></svg></span> Unduh PDF (A4, 13 halaman)</button></div><p class="adm-note">Sampul + 12 bulan: kalender harian dengan jarak per hari, kolase rute tiap bulan, dan ringkasan bulanan. Cetak A4 lalu jilid spiral.</p>',{tall:true});
+  let pages=[];await new Promise(r=>setTimeout(r,30));pages.push(ycCalCover(y));for(let m=0;m<12;m++){pages.push(ycCalMonth(y,m));if(m%3===2)await new Promise(r=>setTimeout(r,0))}
+  let p=box.querySelector('#ycPrev');p.innerHTML='';pages.forEach((c,i)=>{let im=new Image();im.src=c.toDataURL('image/jpeg',.6);im.alt=i?YC_MON[i-1]:'Sampul';p.appendChild(im)});
+  box.querySelector('#ycCalPdf').onclick=async e=>{let b=e.currentTarget;b.classList.add('is-busy');try{ycDownload(await ycPdf(pages,595,842),'activecoach-kalender-'+y+'.pdf')}catch(x){toast('Gagal: '+x.message)}b.classList.remove('is-busy')};
+}
+/* ------------------------------ 127 · Video setahun dalam 30 detik ------------------------------ */
+async function ycVideo(y){
+  usgTrack('yearvideo:open');
+  if(!window.MediaRecorder||!HTMLCanvasElement.prototype.captureStream){toast('Perangkat ini belum mendukung rekam video');return}
+  let types=['video/mp4;codecs=avc1.42E01E','video/mp4;codecs=avc1','video/mp4','video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'],mime=types.find(t=>{try{return MediaRecorder.isTypeSupported(t)}catch(e){return false}});
+  if(!mime){toast('Format video tidak didukung perangkat ini');return}
+  if(typeof stFonts==='function')await stFonts();
+  let W=720,H=1280,K=W/1080,cv=document.createElement('canvas');cv.width=W;cv.height=H;let ctx=cv.getContext('2d');
+  let R=ycRoutes(y,90),t=ycTotals(y),DUR=30,INTRO=2.6,MONTHS=21.6,OUT=DUR-INTRO-MONTHS,per=MONTHS/12;
+  let gx=70,gy=520,gw=1080-140,gh=860,cells=ycGrid(R.length,gx,gy,gw,gh),mapped=R.map((r,i)=>{let c=cells[i],p=c.s*.13;return projectRoute(r.pts,{x:c.x+p,y:c.y+p,w:c.s-2*p,h:c.s-2*p},0)});
+  let monthKm=Array.from({length:12},(_,i)=>ycLogs(y).filter(x=>+String(x.date).slice(5,7)-1===i).reduce((a,x)=>a+(x.distance||0),0)),cumKm=[],acc=0;monthKm.forEach(v=>{acc+=v;cumKm.push(acc)});
+  let monthN=Array.from({length:12},(_,i)=>ycLogs(y).filter(x=>+String(x.date).slice(5,7)-1===i).length),cumN=[],an=0;monthN.forEach(v=>{an+=v;cumN.push(an)});
+  let done=document.createElement('canvas');done.width=1080;done.height=1920;let dctx=done.getContext('2d'),doneUpTo=-1,lw=i=>Math.max(2,cells[i].s*.03);
+  let bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#16112e');bg.addColorStop(1,'#07070d');
+  let ease=v=>v<0?0:v>1?1:1-Math.pow(1-v,3);
+  function frame(s){
+    ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);ctx.setTransform(K,0,0,K,0,0);
+    if(s<INTRO){let p=ease(s/1.4),a=Math.min(1,s/.6);ctx.globalAlpha=a;T(ctx,'SETAHUN BERGERAK',540,640,{font:F(800,40,'ui'),color:'#ff9a6b',align:'center',spacing:10});let px=340+40*p;T(ctx,String(y),540,640+px*.95,{font:F(400,px,'disp'),color:'#fff',align:'center'});T(ctx,ycName(),540,1180,{font:F(700,48,'ui'),color:'rgba(255,255,255,.8)',align:'center',max:900});ctx.globalAlpha=1;ycBrand(ctx,540,1820,{fg2:'#fff',dark:true},{px:24,color:'rgba(255,255,255,.7)'});return}
+    let ms=s-INTRO,mi=Math.min(11,Math.floor(ms/per)),mp=s<INTRO+MONTHS?(ms-mi*per)/per:1,inMonths=s<INTRO+MONTHS;
+    let target=inMonths?mi-1:11;while(doneUpTo<target){doneUpTo++;R.forEach((r,i)=>{if(r.m===doneUpTo)ycStroke(dctx,mapped[i],r.color,lw(i))})}
+    ctx.globalAlpha=inMonths?1:Math.max(.25,1-(s-INTRO-MONTHS)/1.2);ctx.drawImage(done,0,0);
+    if(inMonths)R.forEach((r,i)=>{if(r.m===mi){ctx.save();ctx.shadowColor=r.color;ctx.shadowBlur=14;ycStroke(ctx,mapped[i],r.color,lw(i)*1.25,ease(Math.min(1,mp*1.25)));ctx.restore()}});
+    ctx.globalAlpha=1;
+    if(inMonths){
+      T(ctx,YC_MON[mi].toUpperCase(),540,240,{font:F(400,fitPx(ctx,YC_MON[mi].toUpperCase(),900,400,'disp',150,80),'disp'),color:'#fff',align:'center'});
+      let kmNow=(mi?cumKm[mi-1]:0)+monthKm[mi]*ease(mp),nNow=Math.round((mi?cumN[mi-1]:0)+monthN[mi]*ease(mp));
+      T(ctx,ycFmt(kmNow,0)+' km',540,360,{font:F(900,90,'ui'),color:'#ff7a45',align:'center'});T(ctx,nNow+' aktivitas',540,430,{font:F(700,40,'ui'),color:'rgba(255,255,255,.75)',align:'center'});
+      let mx=Math.max(1,...monthKm),bw=900/12,by=1700,chh=200;monthKm.forEach((v,i)=>{let f=i<mi?1:i===mi?ease(mp):0,h=Math.max(6,v/mx*chh*f);rr(ctx,90+i*bw+bw*.18,by-h,bw*.64,h,8);ctx.fillStyle=i===mi?'#ff7a45':i<mi?'rgba(255,255,255,.8)':'rgba(255,255,255,.15)';ctx.fill();T(ctx,YC_MON[i].slice(0,1),90+i*bw+bw/2,by+40,{font:F(800,26,'ui'),color:i===mi?'#ff7a45':'rgba(255,255,255,.55)',align:'center'})});
+      ycBrand(ctx,540,1840,{fg2:'#fff',dark:true},{px:22,color:'rgba(255,255,255,.6)'});
+    }else{
+      let o=ease((s-INTRO-MONTHS)/1.2);ctx.globalAlpha=o;ctx.fillStyle='rgba(7,7,13,.55)';ctx.fillRect(0,0,1080,1920);
+      T(ctx,'TOTAL '+y,540,520,{font:F(800,40,'ui'),color:'#ff9a6b',align:'center',spacing:10});
+      T(ctx,ycFmt(t.km,0),540,760,{font:F(900,230,'ui'),color:'#fff',align:'center'});T(ctx,'kilometer',540,840,{font:F(700,48,'ui'),color:'rgba(255,255,255,.8)',align:'center'});
+      [[t.n+' aktivitas',ycHours(t.min)+' jam'],[t.daysN+' hari aktif',ycFmt(t.elev)+' m tanjakan']].forEach((row,i)=>row.forEach((v,j)=>T(ctx,v,j?760:320,1010+i*90,{font:F(800,48,'ui'),color:'#fff',align:'center'})));
+      if(t.sportList[0])T(ctx,'Favorit: '+t.sportList[0].label,540,1250,{font:F(700,44,'ui'),color:t.sportList[0].color,align:'center'});
+      if(t.longest&&t.longest.distance)T(ctx,'Terjauh: '+ycFmt(t.longest.distance,1)+' km · '+(t.longest.title||''),540,1320,{font:F(600,38,'ui'),color:'rgba(255,255,255,.75)',align:'center',max:940});
+      ycBrand(ctx,540,1700,{fg2:'#fff',dark:true},{px:30,color:'#fff'});T(ctx,'Buat punyamu di Active Coach',540,1770,{font:F(600,32,'ui'),color:'rgba(255,255,255,.6)',align:'center'});ctx.globalAlpha=1;
+    }
+  }
+  let cancel=false,box=admSheet('ycSheet','Video setahun · '+y,'<div class="yc-rec"><canvas id="ycRecPrev"></canvas><div class="yc-rec-bar"><i id="ycRecFill"></i></div><p id="ycRecTxt">Merekam video 30 detik… tetap di layar ini.</p></div>',{tall:true,onClose:()=>{cancel=true}});
+  let pv=box.querySelector('#ycRecPrev');pv.width=W/2;pv.height=H/2;let pctx=pv.getContext('2d');
+  frame(0);let stream=cv.captureStream(30),rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:7000000}),chunks=[];
+  rec.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};let stopped=new Promise(ok=>rec.onstop=ok);rec.start(500);
+  let t0=performance.now();
+  await new Promise(ok=>{let step=now=>{if(cancel){ok();return}let s=(now-t0)/1000;frame(Math.min(DUR,s));pctx.drawImage(cv,0,0,pv.width,pv.height);let f=box.querySelector('#ycRecFill');if(f)f.style.width=Math.min(100,s/DUR*100)+'%';let tx=box.querySelector('#ycRecTxt');if(tx)tx.textContent='Merekam… '+Math.min(DUR,Math.floor(s))+' / '+DUR+' dtk';if(s<DUR)requestAnimationFrame(step);else ok()};requestAnimationFrame(step)});
+  rec.stop();await stopped;stream.getTracks().forEach(tr=>tr.stop());
+  if(cancel){toast('Pembuatan video dibatalkan');return}
+  let blob=new Blob(chunks,{type:mime.split(';')[0]}),ext=/mp4/.test(mime)?'mp4':'webm',name='activecoach-setahun-'+y+'.'+ext,url=URL.createObjectURL(blob);
+  let b=box.querySelector('.adm-body');b.innerHTML=`<video class="st-vid-prev" src="${url}" autoplay muted loop playsinline></video><div class="st-vid-actions"><button type="button" class="acx-btn st-btn-ghost" id="ycVSave"><span class="icon"><svg><use href="#i-download"/></svg></span>Simpan ke Galeri</button><button type="button" class="acx-btn st-btn-main" id="ycVShare"><span class="icon"><svg><use href="#i-share"/></svg></span>Bagikan</button></div>${ext!=='mp4'?'<p class="st-note" style="margin-top:10px">Format WebM — sebagian aplikasi butuh MP4.</p>':''}`;
+  b.querySelector('#ycVSave').onclick=async()=>{try{await ACX.saveMedia(blob,name);toast(ACX.native?'Video tersimpan di Galeri ✓':'Video diunduh ✓')}catch(e){toast('Gagal: '+(e.message||e))}};
+  b.querySelector('#ycVShare').onclick=()=>ACX.shareImage(blob,name,'Setahun bergerak: '+ycFmt(t.km)+' km, '+t.n+' aktivitas di '+y+' 💪 #activecoach #strava');
+}
+</script>

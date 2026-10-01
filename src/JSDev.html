@@ -1,0 +1,165 @@
+<script>
+'use strict';
+/* =====================================================================
+   Menu developer (khusus admin): info sistem, cek server, sinkron, log,
+   uji fitur, saklar lokal, cache, rilis. Tidak pernah menampilkan kunci
+   rahasia dan tidak ada aksi yang menghapus data di server.
+   ===================================================================== */
+const DEV={tab:'info',fps:null};
+const DEV_FP='35:0B:E8:97:4A:92:44:CA:94:F1:52:8C:C0:6B:69:A3:48:5C:5B:1E:EA:17:13:9E:8C:92:1D:4D:66:65:C6:D3';
+function devAgo(t){if(!t)return 'belum pernah';let s=Math.round((Date.now()-t)/1000);if(s<60)return s+' dtk lalu';if(s<3600)return Math.round(s/60)+' mnt lalu';if(s<86400)return Math.round(s/3600)+' jam lalu';return Math.round(s/86400)+' hari lalu'}
+function devBytes(n){if(!n)return '0 B';let u=['B','KB','MB','GB'],i=0;while(n>=1024&&i<3){n/=1024;i++}return (i?n.toFixed(1):n)+' '+u[i]}
+function devRow(k,v,copy){return `<div class="dev-kv"><span>${k}</span><b${copy?` data-copy="${esc(String(v))}"`:''}>${esc(String(v==null||v===''?'–':v))}${copy?' <i class="dev-copy">salin</i>':''}</b></div>`}
+function devStat(ok,label,detail){return `<div class="dev-check ${ok===true?'ok':ok===false?'bad':'warn'}"><span class="dev-dot"></span><div><b>${label}</b>${detail?`<small>${esc(detail)}</small>`:''}</div></div>`}
+function devBtn(id,label,cls){return `<button type="button" class="dev-btn${cls?' '+cls:''}" data-dev="${id}">${label}</button>`}
+function devPaintRow(){
+  let host=document.querySelector('[data-page-view="profile"] #admPanelRow')||document.getElementById('fbInboxRow');
+  if(!FB_ADMIN||!host){let r=document.getElementById('devRow');if(r&&!FB_ADMIN)r.remove();return}
+  if(document.getElementById('devRow'))return;
+  host.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="devRow"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-wrench"/></svg></span><span class="acx-row-text"><b>Menu developer</b><small>Info teknis, cek server, log, uji fitur</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');
+  document.getElementById('devRow').onclick=()=>devOpen();
+}
+(function(){try{let o=window.fbPaintRow;if(typeof o!=='function')return;window.fbPaintRow=function(){let r=o.apply(this,arguments);try{devPaintRow()}catch(e){}return r}}catch(e){}})();
+function devOpen(tab){
+  DEV.tab=tab||DEV.tab;
+  let tabs=[['info','Info'],['health','Server'],['sync','Sinkron'],['log','Log'],['test','Uji'],['flags','Saklar'],['cache','Cache'],['rel','Rilis']];
+  let box=admSheet('devSheet','Menu developer','<div class="st-seg adm-tabs dev-tabs" id="devTabs">'+tabs.map(t=>`<button type="button" data-t="${t[0]}" class="${t[0]===DEV.tab?'on':''}">${t[1]}</button>`).join('')+'</div><div id="devPane"></div>',{tall:true});
+  box.querySelectorAll('#devTabs button').forEach(b=>b.onclick=()=>{DEV.tab=b.dataset.t;box.querySelectorAll('#devTabs button').forEach(x=>x.classList.toggle('on',x===b));devPane()});
+  box.addEventListener('click',e=>{let c=e.target.closest('[data-copy]');if(c){devCopy(c.dataset.copy)}});
+  devPane();
+}
+async function devCopy(t){try{await navigator.clipboard.writeText(t);toast('Disalin')}catch(e){let a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy');toast('Disalin')}catch(x){}a.remove()}}
+function devBind(host,map){host.querySelectorAll('[data-dev]').forEach(b=>b.onclick=async()=>{let f=map[b.dataset.dev];if(!f)return;b.disabled=true;b.classList.add('is-busy');try{await f(b)}catch(e){toast('Gagal: '+(e.message||e))}b.disabled=false;b.classList.remove('is-busy')})}
+async function devPane(){
+  let host=document.getElementById('devPane');if(!host)return;host.innerHTML=inlineSpinner('Memuat…');
+  try{await ({info:devInfo,health:devHealthPane,sync:devSync,log:devLog,test:devTest,flags:devFlags,cache:devCache,rel:devRel}[DEV.tab])(host)}catch(e){host.innerHTML='<p class="adm-note">Gagal: '+esc(e.message||e)+'</p>'}
+}
+/* ---------------- 1. Info sistem ---------------- */
+async function devInfo(host){
+  let ua=navigator.userAgent,and=(ua.match(/Android ([\d.]+)/)||[])[1]||'-',model=((ua.match(/Android [\d.]+; ([^;)]+)/)||[])[1]||'-').replace(/ Build.*$/,''),wv=(ua.match(/Chrome\/([\d.]+)/)||[])[1]||'-';
+  let c=(ACX.cfg&&ACX.cfg())||{},u=(ACX.session&&ACX.session.user)||{},plat=(window.Capacitor&&Capacitor.getPlatform&&Capacitor.getPlatform())||'web';
+  let est={};try{est=await navigator.storage.estimate()}catch(e){}
+  let ls=0;try{for(let i=0;i<localStorage.length;i++){let k=localStorage.key(i);ls+=k.length+(localStorage.getItem(k)||'').length}}catch(e){}
+  let notif='–';try{let L=nfPlugin();if(L){let p=await L.checkPermissions();notif=p.display}else if(window.Notification)notif=Notification.permission}catch(e){}
+  let key=String(c.anonKey||''),mask=key?key.slice(0,6)+'…'+key.slice(-4):'–';
+  host.innerHTML=`<div class="adm-card"><div class="adm-h">Aplikasi</div>${devRow('Versi',window.AC_BUILD||ACX.currentVersion())}${devRow('Platform',plat)}${devRow('Mode tampilan',document.documentElement.getAttribute('data-view'))}${devRow('Tema',document.documentElement.getAttribute('data-theme'))}</div>
+    <div class="adm-card"><div class="adm-h">Perangkat</div>${devRow('Android',and)}${devRow('Model',model)}${devRow('WebView (Chrome)',wv)}${devRow('Layar',screen.width+'×'+screen.height+' @'+devicePixelRatio+'x')}${devRow('Online',navigator.onLine?'ya':'tidak')}</div>
+    <div class="adm-card"><div class="adm-h">Akun</div>${devRow('User ID',u.id||'',true)}${devRow('Athlete ID',(typeof SESSION!=='undefined'&&SESSION.athleteId)||'',true)}${devRow('Nama',(typeof SESSION!=='undefined'&&SESSION.nama)||'')}${devRow('Terdaftar',u.created_at?new Date(u.created_at).toLocaleString('id-ID'):'')}${devRow('Admin','ya')}</div>
+    <div class="adm-card"><div class="adm-h">Server</div>${devRow('Supabase',String(c.url||'').replace(/^https?:\/\//,''),true)}${devRow('Kunci publik (anon)',mask)}${devRow('Repo update',(window.ACX_CONFIG||{}).updateRepo||'')}</div>
+    <div class="adm-card"><div class="adm-h">Izin</div>${devRow('Notifikasi',notif)}${devRow('Pasang update APK','diatur Android (Setelan › Aplikasi › Instal aplikasi tidak dikenal)')}</div>
+    <div class="adm-card"><div class="adm-h">Penyimpanan di HP</div>${devRow('Terpakai (WebView)',devBytes(est.usage||0))}${devRow('Kuota',devBytes(est.quota||0))}${devRow('localStorage',devBytes(ls*2))}</div>`;
+}
+/* ---------------- 2. Cek kesehatan server ---------------- */
+async function devHealthPane(host){
+  host.innerHTML='<p class="adm-note">Menguji koneksi ke Supabase, fungsi server, tabel, dan Strava…</p>'+inlineSpinner('Mengecek…');
+  let h=await ACX.devHealth(),cb=h.callback.v||{},t=h.tables,st=h.strava.v||{};
+  let tl={ac_chunks:'Data latihan',ac_feedback:'Kotak masuk masukan',ac_admins:'Admin',ac_announcements:'Pengumuman',ac_events:'Kalender event',ac_usage:'Statistik anonim',ac_meta:'Meta & webhook'};
+  let exp=st.expiresAt?new Date(st.expiresAt*1000):null;
+  host.innerHTML=`<div class="adm-card"><div class="adm-h">Supabase</div>${devStat(h.auth.ok,'Auth online',h.auth.ok?h.auth.ms+' ms':h.auth.error)}${devStat(h.callback.ok,'Fungsi strava-callback',h.callback.ok?('versi '+(cb.v||'?')+' · '+h.callback.ms+' ms'):h.callback.error)}
+    ${h.callback.ok?devStat(!!cb.strava,'Secret Strava',cb.strava?'terisi':'STRAVA_CLIENT_ID/SECRET belum diisi')+devStat(!!cb.service,'Service key fungsi',cb.service?'tersedia':'tidak tersedia')+devStat(cb.table!==false,'Tabel login (ac_handoff)',cb.table===false?'belum dibuat':'ada'):''}
+    ${devStat(h.proxy.ok,'Fungsi proxy',h.proxy.ok?h.proxy.ms+' ms':h.proxy.error)}</div>
+    <div class="adm-card"><div class="adm-h">Tabel</div>${Object.keys(t).map(k=>devStat(t[k].ok,tl[k]||k,t[k].ok?k+' · '+t[k].ms+' ms':(/schema cache|does not exist|404/i.test(t[k].error)?'belum dibuat — jalankan SQL migrasi':t[k].error))).join('')}</div>
+    <div class="adm-card"><div class="adm-h">Strava</div>${devStat(h.strava.ok&&st.connected,'Akun Strava',h.strava.ok?(st.connected?'tersambung · '+(st.athlete||''):'belum tersambung'):h.strava.error)}${exp?devStat(exp>new Date(),'Token akses',(exp>new Date()?'berlaku sampai ':'kedaluwarsa ')+exp.toLocaleString('id-ID')+' (diperbarui otomatis)'):''}${devStat(h.webhookOk?true:null,'Webhook',h.webhookOk?'tertaut '+devAgo(h.webhookOk):'belum tertaut')}${devStat(null,'Notifikasi webhook terakhir',h.inboxSeen?devAgo(h.inboxSeen):'belum ada')}</div>
+    <div class="dev-acts">${devBtn('again','Cek ulang')}${devBtn('wh','Daftarkan ulang webhook')}</div>`;
+  devBind(host,{again:()=>devHealthPane(host),wh:async()=>{let j=await ACX.ensureWebhook(true);toast(j&&j.linked?'Webhook tertaut ✓':'Webhook gagal — lihat Log');devHealthPane(host)}});
+}
+/* ---------------- 3. Sinkronisasi & data ---------------- */
+async function devSync(host){
+  let s=await ACX.devStatus(),id=(typeof SESSION!=='undefined'&&SESSION.athleteId)||'';
+  let last=+(localStorage.getItem('acx_last_sync_'+id)||0),photo=+(localStorage.getItem('acx_photo_sync_'+id)||0);
+  let pend=s.dirty.length+(s.propsDirty?1:0)+s.filesDirty;
+  let rows=Object.keys(s.sheets).sort((a,b)=>s.sheets[b]-s.sheets[a]);
+  host.innerHTML=`<div class="adm-card"><div class="adm-h">Waktu sinkron</div>${devRow('Strava terakhir',devAgo(last))}${devRow('Kirim ke server terakhir',devAgo(s.lastFlushAt))}${devRow('Cek data dari server',devAgo(s.lastRemoteAt))}${devRow('Webhook tertaut',devAgo(+(localStorage.getItem('acx_wh_ok')||0)))}${devRow('Foto profil Strava',devAgo(photo))}${devRow('Sesi login berlaku sampai',s.tokenExpiresAt?new Date(s.tokenExpiresAt*1000).toLocaleTimeString('id-ID'):'–')}</div>
+    <div class="adm-card"><div class="adm-h">Antrean ke server <small>${pend?pend+' menunggu':'kosong ✓'}</small></div>${pend?devRow('Tabel berubah',s.dirty.join(', ')||'–')+devRow('Pengaturan berubah',s.propsDirty?'ya':'tidak')+devRow('File berubah',s.filesDirty):'<p class="adm-note">Semua perubahan sudah tersimpan di server.</p>'}${s.lastFlushError?devStat(false,'Error terakhir',s.lastFlushError):''}${s.flushing?'<p class="adm-note">Sedang mengirim…</p>':''}</div>
+    <div class="dev-acts">${devBtn('strava','Sinkron Strava sekarang')}${devBtn('flush','Kirim antrean')}${devBtn('remote','Unduh ulang dari server')}</div>
+    <div class="adm-card"><div class="adm-h">Isi database <small>${devBytes(s.bytes)} · ${s.files} file</small></div>${rows.map(k=>devRow(k,s.sheets[k].toLocaleString('id-ID')+' baris')).join('')}</div>`;
+  devBind(host,{strava:async()=>{await syncStrava();devSync(host)},flush:async()=>{await ACX.flush();toast('Antrean terkirim');devSync(host)},remote:async()=>{let n=await ACX.remote();await load();toast(n?n+' bagian diperbarui dari server':'Data sudah sama dengan server');devSync(host)}});
+}
+/* ---------------- 4. Log & error ---------------- */
+function devLogText(){
+  let L=ACX.devlog(),u=(typeof usgState==='function'?usgState():{errors:[]}),lines=['Active Coach '+(window.AC_BUILD||'')+' · '+new Date().toLocaleString('id-ID'),navigator.userAgent,''];
+  L.forEach(x=>lines.push(new Date(x.t).toLocaleTimeString('id-ID')+' ['+x.k+'] '+x.m));
+  if((u.errors||[]).length){lines.push('','Error hari ini:');u.errors.forEach(e=>lines.push(e.n+'× '+e.m))}
+  (window.__acErr||[]).forEach(e=>lines.push('boot: '+e));
+  return lines.join('\n');
+}
+async function devLog(host){
+  let L=ACX.devlog().slice().reverse(),f=DEV.logf||'all';
+  let list=L.filter(x=>f==='all'||x.k===f||(f==='error'&&x.k==='error'));
+  host.innerHTML=`<div class="st-seg dev-filter">${[['all','Semua'],['error','Error'],['sync','Sinkron'],['engine','Engine'],['rest','Server']].map(o=>`<button type="button" data-f="${o[0]}" class="${o[0]===f?'on':''}">${o[1]}</button>`).join('')}</div>
+    <div class="dev-acts">${devBtn('copy','Salin log')}${devBtn('share','Bagikan')}${devBtn('report','Kirim ke kotak masuk')}</div>
+    <div class="dev-log">${list.length?list.map(x=>`<div class="dev-line k-${esc(x.k)}"><time>${new Date(x.t).toLocaleTimeString('id-ID')}</time><span>${esc(x.k)}</span><p>${esc(x.m)}</p></div>`).join(''):'<p class="adm-note">Belum ada catatan.</p>'}</div>`;
+  host.querySelectorAll('.dev-filter button').forEach(b=>b.onclick=()=>{DEV.logf=b.dataset.f;devLog(host)});
+  devBind(host,{copy:()=>devCopy(devLogText()),share:async()=>{let t=devLogText(),S=window.Capacitor&&Capacitor.Plugins&&Capacitor.Plugins.Share;if(S)await S.share({title:'Log Active Coach',text:t});else if(navigator.share)await navigator.share({title:'Log Active Coach',text:t});else devCopy(t)},
+    report:async()=>{let msg=devLogText().slice(0,3900);await ACX.rest('POST','ac_feedback',[{user_id:ACX.session.user.id,name:(SESSION&&SESSION.nama)||'Admin',kind:'Laporan bug',message:msg,app_version:String(window.AC_BUILD||''),device:'Menu developer'}],'return=minimal');toast('Laporan terkirim ke kotak masuk ✓')}});
+}
+/* ---------------- 5. Uji fitur ---------------- */
+async function devNotif(title,body,extra){let L=nfPlugin();if(!L){toast('Notifikasi hanya bisa diuji di HP (aplikasi Android)');return}let p=await nfPermission(true);if(p!=='granted'){toast('Izin notifikasi belum diberikan');return}await L.schedule({notifications:[{id:1290+Math.floor(Math.random()*9),title,body,schedule:{at:new Date(Date.now()+3000),allowWhileIdle:true},extra:extra||{go:'dashboard'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'}]});toast('Notifikasi muncul dalam 3 detik')}
+async function devTest(host){
+  host.innerHTML=`<div class="adm-card"><div class="adm-h">Notifikasi uji</div><div class="dev-acts">${devBtn('n1','Pengingat harian')}${devBtn('n2','Rekap bulanan')}${devBtn('n3','Event H-7')}${devBtn('n4','Kenangan')}</div></div>
+    <div class="adm-card"><div class="adm-h">Tampilkan ulang</div><div class="dev-acts">${devBtn('ob','Onboarding')}${devBtn('tour','Tutorial')}${devBtn('rc','Kartu rekap')}${devBtn('wn','Layar "Yang baru"')}${devBtn('splash','Animasi pembuka')}${devBtn('mem','Kartu kenangan')}</div></div>
+    <div class="adm-card"><div class="adm-h">Simulasi</div><div class="dev-acts">${devBtn('upd','Layar update wajib')}${devBtn('ann','Pop-up pengumuman')}${devBtn('err','Picu error uji')}</div></div>
+    <div class="adm-card"><div class="adm-h">Peta & Studio</div><div class="dev-acts">${devBtn('map','Buka heatmap')}${devBtn('studio','Uji simpan gambar')}${devBtn('video','Uji video 5 dtk')}</div></div>`;
+  let close=()=>{let s=document.getElementById('devSheet');if(s&&s.__close)s.__close()};
+  devBind(host,{
+    n1:()=>devNotif('Sesi hari ini: Endurance 60 menit','Uji notifikasi pengingat harian dari Menu developer.'),
+    n2:()=>devNotif('Rekap bulan ini siap ✨','Uji notifikasi rekap bulanan.',{go:'recap'}),
+    n3:()=>devNotif('Seminggu lagi: Event uji 🎯','Uji notifikasi event H-7.'),
+    n4:()=>devNotif('Setahun lalu hari ini 📸','Uji notifikasi kenangan.',{go:'memory'}),
+    ob:()=>{close();setTimeout(()=>obOpen({}),300)},
+    tour:()=>{close();admSet('acx_tour_done',{});admSet('acx_tour_force',Date.now());setTimeout(()=>{switchPage('dashboard');tourMaybe(300)},300)},
+    rc:()=>{localStorage.removeItem('acx_rc_seen');close();setTimeout(()=>{switchPage('dashboard');let n=new Date();rcOpen(rcPrev({type:'month',y:n.getFullYear(),m:n.getMonth()}))},300)},
+    wn:()=>{close();setTimeout(()=>ACX.showWhatsNew(true),300)},
+    splash:()=>{close();setTimeout(devSplash,300)},
+    mem:()=>{close();setTimeout(()=>{if(typeof memOpenDemo==='function')memOpenDemo()},300)},
+    upd:()=>{close();setTimeout(()=>ACX.devUpdateGate(),300)},
+    ann:()=>{close();setTimeout(()=>{let b=admSheet('annPop','Pengumuman',annCard({id:0,level:'penting',title:'Contoh pengumuman penting',body:'Ini simulasi pop-up pengumuman dari Menu developer.',starts_at:new Date().toISOString(),link:''},false)+'<button type="button" class="acx-btn adm-wide" data-x>Mengerti</button>');b.classList.add('adm-center')},300)},
+    err:()=>{setTimeout(()=>{throw new Error('Error uji dari Menu developer')},10);toast('Error uji dipicu — cek tab Log')},
+    map:()=>{close();setTimeout(()=>setSub('training','routes'),300)},
+    studio:async()=>{close();await new Promise(r=>setTimeout(r,300));studioOpen();setTimeout(()=>stSaveImage(),1500)},
+    video:async()=>{close();await new Promise(r=>setTimeout(r,300));studioOpen();setTimeout(()=>stExportVideo(),1500)}
+  });
+}
+function devSplash(){let d=document.createElement('div');d.id='acSplash';d.innerHTML='<div class="acs-logo"><svg viewBox="0 0 100 100"><path d="M25 53h9l6.5-14.5 10.8 26 7.1-17.5 3.1 6H75"/></svg></div><div class="acs-name">ACTIVE COACH</div>';document.body.appendChild(d);setTimeout(()=>{d.classList.add('out');setTimeout(()=>d.remove(),480)},1400)}
+/* ---------------- 6. Saklar fitur (HP ini) ---------------- */
+const DEV_FLAGS=[['acx_dev_pause','Jeda sinkron otomatis','Sinkron Strava otomatis, cek webhook & notifikasi server dihentikan sementara'],['acx_usage_off','Matikan statistik anonim','Tidak mengirim statistik pemakaian dari HP ini'],['acx_dev_nosnap','Matikan pembukaan instan','Selalu muat data baru saat dibuka (tanpa snapshot)'],['acx_dev_noanim','Matikan animasi','Transisi & animasi kartu dimatikan'],['acx_dev_fps','Overlay performa','Tampilkan FPS & waktu render halaman'],['acx_dev_banner','Banner error','Tampilkan banner merah saat ada error JavaScript']];
+function devFlag(k){try{return !!JSON.parse(localStorage.getItem(k)||'false')}catch(e){return !!localStorage.getItem(k)}}
+function devFlags(host){
+  host.innerHTML='<p class="adm-note">Hanya berlaku di HP ini dan tidak mengubah data.</p><div class="adm-card">'+DEV_FLAGS.map(f=>`<label class="dev-flag"><span><b>${f[1]}</b><small>${f[2]}</small></span><span class="st-toggle mini"><input type="checkbox" data-flag="${f[0]}"${devFlag(f[0])?' checked':''}><i></i></span></label>`).join('')+'</div>';
+  host.querySelectorAll('[data-flag]').forEach(i=>i.onchange=()=>{let k=i.dataset.flag;if(k==='acx_dev_banner'){if(i.checked)localStorage.setItem(k,'1');else localStorage.removeItem(k);if(window.__acPaint)window.__acPaint()}else localStorage.setItem(k,JSON.stringify(i.checked));devApplyFlags();toast(i.checked?'Aktif':'Nonaktif');ACX.dlog('dev','Saklar '+k+' = '+i.checked)});
+}
+function devApplyFlags(){
+  document.documentElement.classList.toggle('dev-noanim',devFlag('acx_dev_noanim'));
+  if(devFlag('acx_dev_fps'))devFpsStart();else devFpsStop();
+}
+function devFpsStart(){
+  if(DEV.fps)return;let el=document.createElement('div');el.id='devFps';document.body.appendChild(el);let n=0,last=performance.now(),fps=0;
+  let loop=t=>{n++;if(t-last>=1000){fps=n;n=0;last=t;el.textContent=fps+' fps · '+(DEV.pageMs!=null?'halaman '+DEV.pageMs+' ms':'')}if(DEV.fps)DEV.fps=requestAnimationFrame(loop)};DEV.fps=requestAnimationFrame(loop);
+}
+function devFpsStop(){if(DEV.fps){cancelAnimationFrame(DEV.fps);DEV.fps=null}let el=document.getElementById('devFps');if(el)el.remove()}
+(function(){try{let o=window.switchPage;if(typeof o!=='function')return;window.switchPage=function(){let t0=performance.now(),r=o.apply(this,arguments);DEV.pageMs=Math.round(performance.now()-t0);return r}}catch(e){}})();
+/* ---------------- 7. Cache & reset ---------------- */
+function devCache(host){
+  host.innerHTML=`<p class="adm-note">Tidak ada yang menghapus data di server. Data latihan tetap aman.</p><div class="adm-card">
+    ${[['snap','Hapus snapshot pembukaan instan','Data terakhir yang ditampilkan saat aplikasi dibuka'],['lists','Hapus cache pengumuman & event','Diunduh ulang dari server'],['tiles','Hapus cache gambar peta','Ubin peta & foto yang tersimpan di WebView'],['prefs','Reset tutorial & preferensi tampilan','Tutorial, tab terakhir, kartu yang ditutup'],['reload','Muat ulang total','Buka ulang aplikasi dari nol tanpa logout']].map(r=>`<div class="dev-cache"><span><b>${r[1]}</b><small>${r[2]}</small></span>${devBtn(r[0],r[0]==='reload'?'Muat ulang':'Hapus',r[0]==='reload'?'':'ghost')}</div>`).join('')}</div>`;
+  devBind(host,{
+    snap:async()=>{if(!confirm('Hapus snapshot pembukaan instan?'))return;await ACX_SNAP.clear();toast('Snapshot dihapus')},
+    lists:()=>{['acx_ann_cache','acx_ev_cache'].forEach(k=>localStorage.removeItem(k));ADM.annAt=0;ADM.evAt=0;toast('Cache dihapus')},
+    tiles:async()=>{if(!confirm('Hapus cache gambar peta?'))return;let n=0;try{if(window.caches){for(let k of await caches.keys()){await caches.delete(k);n++}}}catch(e){}toast(n?'Cache peta dihapus':'Cache peta dikelola otomatis oleh WebView (dibersihkan saat penuh)')},
+    prefs:()=>{if(!confirm('Reset tutorial & preferensi tampilan?'))return;['acx_tour_done','acx_tour_force','acxSubs','acx_rc_seen','acx_ann_seen','acx_ann_pop','acx_mem_seen'].forEach(k=>localStorage.removeItem(k));toast('Preferensi direset')},
+    reload:()=>{if(confirm('Muat ulang aplikasi sekarang?'))location.reload()}
+  });
+}
+/* ---------------- 8. Rilis & versi ---------------- */
+async function devRel(host){
+  let cur=ACX.currentVersion(),rel=null,err='';try{rel=await ACX.latestRelease()}catch(e){err=e.message}
+  let n=rel?ACX.splitNotes(rel.notes):{user:'',dev:''},md=t=>esc(t).replace(/^## (.*)$/gm,'<b>$1</b>').replace(/^[-*] (.*)$/gm,'• $1').split('\n').filter(l=>l.trim()).join('<br>');
+  let newer=rel&&rel.version!==cur;
+  host.innerHTML=`<div class="adm-card"><div class="adm-h">Versi</div>${devRow('Terpasang',cur)}${devRow('Terbaru di GitHub',rel?rel.version:(err||'–'))}${devStat(rel?!newer:null,rel?(newer?'Ada versi lebih baru':'Sudah versi terbaru'):'Tidak bisa cek GitHub',rel&&rel.size?'APK '+devBytes(rel.size):'')}
+    <div class="dev-acts">${rel?`<a class="dev-btn" href="${esc(rel.page)}" target="_blank" rel="noopener">Buka halaman rilis</a>`:''}${devBtn('chk','Cek update sekarang')}</div></div>
+    ${rel?`<div class="adm-card"><div class="adm-h">Catatan rilis · pengguna</div><div class="dev-notes">${md(n.user)}</div></div>${n.dev?`<div class="adm-card"><div class="adm-h">Catatan rilis · developer</div><div class="dev-notes">${md(n.dev)}</div></div>`:''}`:''}
+    <div class="adm-card"><div class="adm-h">Tanda tangan APK</div><p class="adm-note">Semua versi ditandatangani kunci yang sama, jadi update selalu bisa menimpa versi lama. GitHub Actions menolak merilis APK dengan sidik jari lain.</p>${devRow('SHA-256',DEV_FP,true)}</div>`;
+  devBind(host,{chk:()=>ACX.checkForUpdate(true)});
+}
+document.addEventListener('DOMContentLoaded',()=>{try{devApplyFlags()}catch(e){}});
+</script>

@@ -11,7 +11,7 @@ importScripts('gas-shim.js');
 var E = self.ACX_ENGINE;
 var CFG = null, SES = null, codeLoaded = false, hashes = {}, meta = { propsHash: '', filesHash: {} };
 var queue = Promise.resolve(), flushTimer = null, flushing = false, flushAgain = false, retryMs = 4000;
-var CHUNK_ROWS = 150, BATCH_BYTES = 900000;
+var CHUNK_ROWS = 150, BATCH_BYTES = 900000, lastFlushAt = 0, lastRemoteAt = 0, lastFlushError = '';
 
 function post(msg) { self.postMessage(msg); }
 function log() { try { console.log.apply(console, ['[engine]'].concat([].slice.call(arguments))); } catch (e) {} }
@@ -159,6 +159,7 @@ async function remoteCheck() {
   var idx = await fetchServerIndex(), n = await downloadChanged(idx);
   var m = await rest('GET', 'ac_meta?select=key,value&key=eq.props');
   if (m && m[0]) { var ph = hash(JSON.stringify(m[0].value || {})); if (ph !== meta.propsHash) { E.db.props = m[0].value || {}; meta.propsHash = ph; n++; } }
+  lastRemoteAt = Date.now();
   if (n) { E.resetSheetObjects(); await saveCache(); }
   return n;
 }
@@ -209,10 +210,12 @@ async function flush() {
     }
     await saveCache();
     retryMs = 4000;
+    lastFlushAt = Date.now(); lastFlushError = '';
     post({ type: 'sync', state: 'saved', at: Date.now() });
   } catch (e) {
     dirtyNames.forEach(function (n) { E.dirty.add(n); }); if (propsDirty) E.propsDirty = true; fileIds.forEach(function (id) { E.filesDirty.add(id); });
     await saveCache();
+    lastFlushError = String(e && e.message || e);
     post({ type: 'sync', state: 'offline', error: String(e && e.message || e) });
     retryMs = Math.min(retryMs * 2, 120000); scheduleFlush(retryMs);
   } finally {
@@ -306,6 +309,12 @@ self.onmessage = function (ev) {
       }
       if (E.dirty.size || E.propsDirty || E.filesDirty.size) scheduleFlush();
     });
+    return;
+  }
+  if (m.type === 'devstatus') {
+    var sheets = {}; Object.keys(E.db.sheets || {}).forEach(function (n) { sheets[n] = Math.max(0, (E.db.sheets[n] || []).length - 1); });
+    var bytes = 0; try { bytes = JSON.stringify(E.db.sheets).length + JSON.stringify(E.db.files).length; } catch (x) {}
+    post({ type: 'result', id: m.id, ok: true, value: { dirty: Array.from(E.dirty), propsDirty: !!E.propsDirty, filesDirty: E.filesDirty.size, flushing: flushing, retryMs: retryMs, lastFlushAt: lastFlushAt, lastRemoteAt: lastRemoteAt, lastFlushError: lastFlushError, sheets: sheets, files: Object.keys(E.db.files || {}).length, bytes: bytes, codeLoaded: codeLoaded, tokenExpiresAt: SES && SES.expires_at || 0 } });
     return;
   }
   if (m.type === 'import') {

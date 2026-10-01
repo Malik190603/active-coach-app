@@ -87,9 +87,28 @@ fs.writeFileSync(gradlePath, gradle);
 
 // 3) Ikon & splash dari folder assets/
 if (fs.existsSync(path.join(ROOT, 'assets', 'icon-only.png'))) {
-  try { run('npx @capacitor/assets generate --android --iconBackgroundColor "#12121a" --iconBackgroundColorDark "#12121a" --splashBackgroundColor "#f4f4f7" --splashBackgroundColorDark "#0b0b0f"'); }
+  try { run('npx @capacitor/assets generate --android --iconBackgroundColor "#12121a" --iconBackgroundColorDark "#12121a" --splashBackgroundColor "#0e0e14" --splashBackgroundColorDark "#0e0e14"'); }
   catch (e) { console.warn('Ikon gagal dibuat (lanjut dengan ikon bawaan):', e.message); }
 }
+
+// Layar pembuka: latar gelap seragam (Android 12+ splash sistem & versi lama) agar menyambung mulus ke animasi logo
+const valDir = path.join(ROOT, 'android/app/src/main/res/values');
+fs.writeFileSync(path.join(valDir, 'ac_splash.xml'), `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ac_splash_bg">#0E0E14</color>
+</resources>
+`);
+const stylesPath = path.join(valDir, 'styles.xml');
+let styles = fs.readFileSync(stylesPath, 'utf8');
+styles = styles.replace(/<style name="AppTheme\.NoActionBarLaunch"[\s\S]*?<\/style>/, `<style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">@color/ac_splash_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+        <item name="android:windowBackground">@color/ac_splash_bg</item>
+    </style>`);
+fs.writeFileSync(stylesPath, styles);
+console.log('Layar pembuka gelap diterapkan');
 
 // Ikon kecil notifikasi (monokrom, dipakai LocalNotifications)
 const drawDir = path.join(ROOT, 'android/app/src/main/res/drawable');

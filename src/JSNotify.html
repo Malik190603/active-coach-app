@@ -46,6 +46,8 @@ async function nfSchedule(opts){
   if(prefs.weekly){let n=new Date(),m1=new Date(n.getFullYear(),n.getMonth()+1,1),at=nfAt(m1,'08:00'),mn=['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][n.getMonth()];
     list.push({id:NF_IDS.recap,title:'Rekap '+mn+' kamu siap ✨',body:'Lihat total jarak, hari aktif & sorotan bulan ini — siap dibagikan.',schedule:{at,allowWhileIdle:true},extra:{go:'recap'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'});
     let ye=nfAt(new Date(n.getFullYear(),11,31),'19:00');if(ye.getTime()>now+60000)list.push({id:NF_IDS.recap+1,title:'Rekap tahun '+n.getFullYear()+' siap 🎉',body:'Setahun bergerak dalam satu kartu. Yuk lihat & bagikan!',schedule:{at:ye,allowWhileIdle:true},extra:{go:'recap',year:n.getFullYear()},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})}
+  if(prefs.weekly&&typeof memFind==='function'){for(let i=0;i<7;i++){let d=new Date();d.setDate(d.getDate()+i);let l=memFind(d);if(!l.length)continue;let x=l[0],yrs=d.getFullYear()-+String(x.date).slice(0,4),at=nfAt(d,'08:30');if(at.getTime()<now+60000)continue;
+    list.push({id:1270+i,title:'Setahun lalu hari ini 📸'.replace('Setahun',yrs>1?yrs+' tahun':'Setahun'),body:(x.title||'Aktivitas')+(x.distance?' · '+x.distance.toFixed(1)+' km':'')+' — lihat & bagikan kenangannya.',schedule:{at,allowWhileIdle:true},extra:{go:'memory',id:String(x.id)},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})}}
   try{let t=DATA.profile&&DATA.profile.targetEvent?JSON.parse(DATA.profile.targetEvent):null;if(t&&t.date){[[7,'Seminggu lagi: '+t.title+' 🎯','Masuk fase race week — kurangi volume, tidur cukup, cek perlengkapan.'],[1,'Besok: '+t.title+' 🏁','Siapkan nomor dada/perlengkapan, makan karbo, tidur lebih awal. Semangat!']].forEach((q,i)=>{let d=new Date(t.date+'T00:00:00');d.setDate(d.getDate()-q[0]);let at=nfAt(d,'19:00');if(at.getTime()>now+60000)list.push({id:NF_IDS.event+i,title:q[1],body:q[2],schedule:{at,allowWhileIdle:true},extra:{go:'dashboard'},smallIcon:'ic_stat_ac',iconColor:'#FC4C02'})})}}catch(e){}
   if(list.length){try{await L.schedule({notifications:list})}catch(e){console.warn('Notifikasi gagal dijadwalkan',e)}}
 }
@@ -53,6 +55,7 @@ function nfHandleTap(extra){
   extra=extra||{};try{
     if(extra.go==='studio'){if(typeof studioOpen==='function'){studioOpen();setTimeout(()=>{if(extra.tpl&&typeof stSetTpl==='function')stSetTpl(extra.tpl)},400)}}
     else if(extra.go==='garage')switchPage('garage');
+    else if(extra.go==='memory'){switchPage('dashboard');if(typeof memOpen==='function')setTimeout(()=>memOpen(extra.id),400)}
     else if(extra.go==='recap'){switchPage('dashboard');if(typeof rcOpen==='function'){let n=new Date();setTimeout(()=>rcOpen(extra.year?{type:'year',y:+extra.year}:rcPrev({type:'month',y:n.getFullYear(),m:n.getMonth()})),400)}}
     else switchPage('dashboard');
   }catch(e){}

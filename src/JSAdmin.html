@@ -79,7 +79,8 @@ function annPaint(){
   let row=document.getElementById('annRowBadge');if(row){let n=ADM.ann.filter(a=>seen.indexOf(a.id)<0).length;row.hidden=!n;row.textContent=n}
 }
 function annPopup(){
-  let shown=admLS('acx_ann_pop',[]),a=ADM.ann.find(x=>x.level==='penting'&&shown.indexOf(x.id)<0);if(!a||document.querySelector('.adm-sheet,.upd-gate,#obSheet'))return;
+  let shown=admLS('acx_ann_pop',[]),a=ADM.ann.find(x=>x.level==='penting'&&shown.indexOf(x.id)<0);if(!a)return;
+  if(document.querySelector('.adm-sheet,.upd-gate,#obSheet,.tour,.st-sheet')){clearTimeout(annPopup.t);annPopup.n=(annPopup.n||0)+1;if(annPopup.n<60)annPopup.t=setTimeout(annPopup,5000);return}annPopup.n=0;
   shown.push(a.id);admSet('acx_ann_pop',shown.slice(-40));
   let b=admSheet('annPop','Pengumuman',annCard(a,false)+'<button type="button" class="acx-btn adm-wide" data-x>Mengerti</button>');b.classList.add('adm-center');
 }
@@ -142,17 +143,18 @@ function evNextCard(){
 /* ============================ DASHBOARD (tambahan) ============================ */
 function admPaintDash(){
   let host=document.getElementById('dashExtras');if(!host)return;
-  let html=(typeof rcDashCard==='function'?rcDashCard():'')+evDashCard()+evNextCard();
+  let html=(typeof rcDashCard==='function'?rcDashCard():'')+(typeof memDashCard==='function'?memDashCard():'')+evDashCard()+evNextCard();
   host.innerHTML=html;
   host.querySelectorAll('[data-ev-open]').forEach(b=>b.onclick=e=>{if(e.target.closest('a,button[data-ev-target]'))return;evOpen()});
   host.querySelectorAll('[data-ev-target]').forEach(b=>b.onclick=async e=>{e.stopPropagation();let id=b.closest('[data-ev]').dataset.ev,ev=ADM.events.find(x=>String(x.id)===id);if(ev)await evSetTarget(ev)});
   if(typeof rcBindDash==='function')rcBindDash(host);
+  if(typeof memBindDash==='function')memBindDash(host);
   annPaint();
 }
 (function(){try{let o=window.renderDashboard;if(typeof o!=='function')return;window.renderDashboard=function(){let r=o.apply(this,arguments);try{admPaintDash()}catch(e){}return r}}catch(e){}})();
 
 /* ================================ PANEL ADMIN ================================ */
-const ADM_FEAT={'page:dashboard':'Hari Ini','page:training/plan':'Latihan › Rencana','page:training/calendar':'Latihan › Kalender','page:training/activities':'Latihan › Riwayat','page:training/routes':'Latihan › Peta','page:performance/fitness':'Performa › Fitness','page:performance/intensity':'Performa › Intensitas','page:performance/speed':'Performa › Kecepatan','page:performance/records':'Performa › Rekor','page:garage/bikes':'Gear › Sepeda','page:garage/shoes':'Gear › Sepatu','page:garage/commute':'Gear › Komuter','page:sharing':'Berbagi','page:overlay-editor':'Studio','page:profile':'Profil','page:detail':'Detail','studio:save':'Studio › simpan gambar','studio:video':'Studio › video','studio:share':'Studio › bagikan','event:open':'Kalender event','event:filter':'Kalender event › filter','event:untarget':'Hapus target event','event:target':'Jadikan target event','recap:open':'Rekap bulanan','tour:done':'Tutorial selesai'};
+const ADM_FEAT={'page:dashboard':'Hari Ini','page:training/plan':'Latihan › Rencana','page:training/calendar':'Latihan › Kalender','page:training/activities':'Latihan › Riwayat','page:training/routes':'Latihan › Peta','page:performance/fitness':'Performa › Fitness','page:performance/intensity':'Performa › Intensitas','page:performance/speed':'Performa › Kecepatan','page:performance/records':'Performa › Rekor','page:garage/bikes':'Gear › Sepeda','page:garage/shoes':'Gear › Sepatu','page:garage/commute':'Gear › Komuter','page:sharing':'Berbagi','page:overlay-editor':'Studio','page:profile':'Profil','page:detail':'Detail','studio:save':'Studio › simpan gambar','studio:video':'Studio › video','studio:share':'Studio › bagikan','event:open':'Kalender event','event:filter':'Kalender event › filter','event:untarget':'Hapus target event','event:target':'Jadikan target event','recap:open':'Rekap bulanan','memory:share':'Bagikan kenangan','poster:open':'Poster A3','calendar:open':'Kalender PDF','yearvideo:open':'Video setahun','tour:done':'Tutorial selesai'};
 function admFeatName(k){if(ADM_FEAT[k])return ADM_FEAT[k];if(/^tpl:/.test(k))return 'Template › '+k.slice(4);return k.replace(/^page:/,'').replace('/',' › ')}
 function admPaintRow(){
   let fb=document.getElementById('fbInboxRow');if(!FB_ADMIN||!fb){let r=document.getElementById('admPanelRow');if(r&&!FB_ADMIN)r.remove();return}

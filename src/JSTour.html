@@ -28,12 +28,19 @@ const TOURS={
   profile:[['#evRow','Fitur baru','Kalender event, pengumuman, dan rekap bulanan ada di sini.']]
 };
 const TOUR={on:false,t:0};
+/* Tutorial otomatis hanya untuk pengguna baru (akun terdaftar ≤ 7 hari / login pertama), atau setelah "Lihat tutorial lagi". */
+function tourEligible(){
+  try{if(admLS('acx_tour_force',0))return true;
+    let id=typeof SESSION!=='undefined'&&SESSION&&SESSION.athleteId,flag=id&&admLS('acx_newacct_'+id,0);if(flag&&Date.now()-flag<7*864e5)return true;
+    let u=window.ACX&&ACX.session&&ACX.session.user,c=u&&u.created_at&&new Date(u.created_at).getTime();return !!(c&&Date.now()-c<7*864e5)}catch(e){return false}
+}
 function tourDone(){return admLS('acx_tour_done',{})}
 function tourKey(){let v=currentPageView();return TAB_SUBS[v]&&TOURS[v+'/'+SUB_STATE[v]]?v+'/'+SUB_STATE[v]:v}
 function tourVisible(el){if(!el)return false;let r=el.getBoundingClientRect();return r.width>8&&r.height>8&&!el.closest('[hidden]')}
 function tourMaybe(delay){
   clearTimeout(TOUR.t);TOUR.t=setTimeout(()=>{
     if(TOUR.on||document.getElementById('app').hidden||document.querySelector('.st-sheet,.ob,.upd-gate,.modal.show,.popup-overlay:not([hidden]),.acx-pick'))return;
+    if(!tourEligible())return;
     let k=tourKey(),steps=TOURS[k];if(!steps||tourDone()[k])return;
     let list=steps.map(s=>({el:[...document.querySelectorAll(s[0])].find(tourVisible),t:s[1],d:s[2]})).filter(s=>s.el);
     if(!list.length)return;tourRun(k,list);
@@ -65,7 +72,7 @@ function tourRun(key,list){
 }
 window.ACX_BACK=window.ACX_BACK||[];ACX_BACK.push(()=>{let t=document.querySelector('.tour');if(t&&t.__end){t.__end();return true}return false});
 (function(){['switchPage','setSub'].forEach(n=>{try{let o=window[n];if(typeof o!=='function')return;window[n]=function(){let r=o.apply(this,arguments);tourMaybe();return r}}catch(e){}})})();
-function tourReset(){admSet('acx_tour_done',{});toast('Tutorial akan muncul lagi di setiap fitur');switchPage('dashboard');tourMaybe(700)}
+function tourReset(){admSet('acx_tour_done',{});admSet('acx_tour_force',Date.now());toast('Tutorial akan muncul lagi di setiap fitur');switchPage('dashboard');tourMaybe(700)}
 document.addEventListener('DOMContentLoaded',()=>{
   setTimeout(()=>{let pr=document.querySelector('[data-page-view="profile"] #acxPrivacyRow');if(pr&&!document.getElementById('tourRow')){pr.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="tourRow"><span class="acx-row-ic tone-violet icon"><svg><use href="#i-info"/></svg></span><span class="acx-row-text"><b>Lihat tutorial lagi</b><small>Tip singkat di setiap fitur</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');document.getElementById('tourRow').onclick=tourReset}},40);
   let tries=0,iv=setInterval(()=>{tries++;let a=document.getElementById('app');if(a&&!a.hidden&&typeof DATA!=='undefined'&&DATA&&DATA.logs){clearInterval(iv);tourMaybe(3500)}else if(tries>300)clearInterval(iv)},500);

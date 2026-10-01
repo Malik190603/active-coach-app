@@ -1,0 +1,131 @@
+<script>
+'use strict';
+/* =====================================================================
+   Template musiman (otomatis tampil paling depan saat musimnya) +
+   template Kenangan ("setahun lalu hari ini").
+   ===================================================================== */
+ST_CATS.splice(1,0,['season','Musiman']);
+/* perkiraan tanggal Idul Fitri (bisa bergeser ±1 hari sesuai sidang isbat) */
+const ST_IDUL_FITRI={2025:'2025-03-31',2026:'2026-03-20',2027:'2027-03-10',2028:'2028-02-27',2029:'2029-02-15',2030:'2030-02-05',2031:'2031-01-25'};
+function stSeasonNow(d){
+  d=d||new Date();let y=d.getFullYear(),t=new Date(y,d.getMonth(),d.getDate()).getTime(),day=864e5;
+  let idf=ST_IDUL_FITRI[y]?new Date(ST_IDUL_FITRI[y]+'T00:00:00').getTime():0;
+  if(idf){if(t>=idf-30*day&&t<idf-day)return 'ramadan';if(t>=idf-day&&t<=idf+14*day)return 'lebaran'}
+  let m=d.getMonth(),dd=d.getDate();
+  if(m===7)return 'merdeka';
+  if(m===11&&dd>=15&&dd<=27)return 'natal';
+  if((m===11&&dd>=28)||(m===0&&dd<=10))return 'tahunbaru';
+  return '';
+}
+function stThemeBg(ctx,W,H,S,cols,o){
+  o=o||{};if(S.bgMode==='transparent')return;
+  let photo=S.bgMode==='photo'||S.bgMode==='photoBlur'||S.bgMode==='map';
+  let g=ctx.createLinearGradient(0,0,o.horizontal?W:W*.3,o.horizontal?0:H);cols.forEach((c,i)=>g.addColorStop(i/(cols.length-1),c));
+  ctx.save();ctx.globalAlpha=photo?.62:1;ctx.fillStyle=g;ctx.fillRect(0,0,W,H);ctx.restore();
+}
+function stSeed(D){let s=0;String(D.id||D.title).split('').forEach(c=>s=(s*31+c.charCodeAt(0))>>>0);return ()=>{s=(s*1103515245+12345)>>>0;return (s>>>8)/16777216}}
+function stStats(ctx,W,y,D,S,o){o=o||{};let ms=stFirst(D,3),x0=o.x||S.sz.l,w=(o.w||W-S.sz.l-S.sz.r),cw=w/Math.max(1,ms.length);ms.forEach((m,i)=>metricBlock(ctx,m,x0+cw*i+cw/2,y,o.S||S,{vpx:o.vpx||60,lpx:22,align:'center',vcolor:o.vcolor,lcolor:o.lcolor,ucolor:o.ucolor}))}
+function stStar(ctx,x,y,r,col){ctx.beginPath();for(let i=0;i<10;i++){let a=-Math.PI/2+i*Math.PI/5,rr2=i%2?r*.45:r;ctx.lineTo(x+Math.cos(a)*rr2,y+Math.sin(a)*rr2)}ctx.closePath();ctx.fillStyle=col;ctx.fill()}
+function stTitleBlock(ctx,W,y,big,sub,S,o){o=o||{};let px=fitPx(ctx,big,W-140,400,o.fam||'disp',o.max||170,70);ctx.save();if(o.glow){ctx.shadowColor=o.glow;ctx.shadowBlur=30}T(ctx,big,W/2,y+px*.8,{font:F(400,px,o.fam||'disp'),color:o.color||'#fff',align:'center',spacing:o.spacing||0});ctx.restore();if(sub)T(ctx,sub,W/2,y+px*.8+58,{font:F(700,30,'ui'),color:o.subColor||'rgba(255,255,255,.85)',align:'center',spacing:4,max:W-140});return y+px*.8+(sub?90:30)}
+ST_TPLS.push(
+/* Musiman 1 — 17 Agustus */
+{k:'merdeka',n:'Merdeka',cat:['season'],bg:'strava',season:'merdeka',
+ draw(ctx,W,H,D,S){
+  stThemeBg(ctx,W,H,S,['#e11d2a','#b4121d','#7a0a12']);
+  ctx.save();let n=14,bw=W/n;for(let i=0;i<n;i++){ctx.beginPath();ctx.moveTo(i*bw,0);ctx.lineTo(i*bw+bw,0);ctx.lineTo(i*bw+bw/2,bw*1.1);ctx.closePath();ctx.fillStyle=i%2?'#ffffff':'#ff3b47';ctx.fill()}ctx.restore();
+  ctx.save();ctx.globalAlpha=.1;ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(0,H*.62);ctx.lineTo(W,H*.42);ctx.lineTo(W,H*.56);ctx.lineTo(0,H*.76);ctx.closePath();ctx.fill();ctx.restore();
+  let ke=D.date.getFullYear()-1945,y=ST.fmt==='story'?S.sz.t-40:120;
+  y=stTitleBlock(ctx,W,y,'MERDEKA!','DIRGAHAYU RI KE-'+ke,S,{max:200,glow:'rgba(0,0,0,.35)'});
+  T(ctx,D.sportLabel+' · '+D.dateShort.toUpperCase(),W/2,y+20,{font:F(700,26,'ui'),color:'rgba(255,255,255,.75)',align:'center',spacing:4});
+  let cardH=ST.fmt==='story'?330:280,cy=(ST.fmt==='story'?H-S.sz.b:H-80)-cardH,box={x:110,y:y+60,w:W-220,h:cy-y-100};
+  if(!S.routeInBg&&box.h>120){if(!drawRoute(ctx,D,box,{color:'#ffffff',width:12,casing:'rgba(120,0,10,.55)',casingW:10,markers:true,pad:10}))stNoRoute(ctx,D,box,S,'#fff')}
+  sh(ctx,true,40,.3,12);rr(ctx,60,cy,W-120,cardH,40);ctx.fillStyle='#ffffff';ctx.fill();sh(ctx,false);
+  rr(ctx,60,cy,W-120,16,8);ctx.fillStyle='#e11d2a';ctx.fill();
+  T(ctx,D.title,W/2,cy+82,{font:F(800,46,'ui'),color:'#15151b',align:'center',max:W-200});
+  stStats(ctx,W,cy+130,D,S,{x:80,w:W-160,vpx:Math.min(60,cardH*.2),vcolor:'#c8102e',lcolor:'#6b6b76',ucolor:'#c8102e'});
+  brand(ctx,W/2,Math.min(H-26,cy+cardH+56),S,{px:20,color:'rgba(255,255,255,.85)'});
+ }},
+/* Musiman 2 — Ramadan */
+{k:'ramadan',n:'Ramadan',cat:['season'],bg:'midnight',season:'ramadan',
+ draw(ctx,W,H,D,S){
+  stThemeBg(ctx,W,H,S,['#0b3b3a','#08212b','#050d18']);
+  let rnd=stSeed(D),gold='#f5c84b';
+  ctx.save();for(let i=0;i<46;i++){let x=rnd()*W,y=rnd()*H*.55,r=1.5+rnd()*2.5;ctx.globalAlpha=.35+rnd()*.6;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill()}ctx.restore();
+  let mx=W*.74,my=(ST.fmt==='story'?S.sz.t:120)+60,mr=110,oc=document.createElement('canvas');oc.width=oc.height=mr*2+140;let o=oc.getContext('2d'),c0=oc.width/2;o.shadowColor=gold;o.shadowBlur=50;o.beginPath();o.arc(c0,c0,mr,0,Math.PI*2);o.fillStyle=gold;o.fill();o.shadowBlur=0;o.globalCompositeOperation='destination-out';o.beginPath();o.arc(c0+46,c0-28,mr*.92,0,Math.PI*2);o.fill();ctx.drawImage(oc,mx-c0,my-c0);
+  stStar(ctx,mx-34,my+30,20,gold);
+  [[150,0,.9],[290,0,.65]].forEach(l=>{let lx=l[0],ly=-10,len=(ST.fmt==='story'?S.sz.t:60)+60*l[2];ctx.strokeStyle='rgba(245,200,75,.6)';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(lx,len);ctx.stroke();let s=l[2];ctx.save();ctx.translate(lx,len);ctx.shadowColor=gold;ctx.shadowBlur=30;rr(ctx,-34*s,0,68*s,96*s,18*s);ctx.fillStyle='#f59e0b';ctx.fill();ctx.restore();ctx.fillStyle='#fde68a';rr(ctx,lx-20*s,len+18*s,40*s,60*s,10*s);ctx.fill();ctx.fillStyle='#b45309';ctx.fillRect(lx-40*s,len-6*s,80*s,10*s)});
+  let y=ST.fmt==='story'?S.sz.t+180:250,word=D.isRun?'NGABUBURIT RUN':D.isRide?'NGABUBURIT RIDE':'NGABUBURIT';
+  y=stTitleBlock(ctx,W,y,word,'TETAP BERGERAK SAAT PUASA',S,{max:150,color:'#fff',subColor:gold,glow:'rgba(245,200,75,.35)'});
+  let bot=ST.fmt==='story'?H-S.sz.b:H-90,box={x:110,y:y+20,w:W-220,h:bot-y-260};
+  if(!S.routeInBg&&box.h>120){if(!drawRoute(ctx,D,box,{color:gold,width:10,glow:30,glowColor:gold,core:'#fff7d6',pad:10}))stNoRoute(ctx,D,box,S,gold)}
+  T(ctx,D.title+' · '+D.dateShort,W/2,bot-170,{font:F(700,34,'ui'),color:'#fff',align:'center',max:W-160});
+  stStats(ctx,W,bot-120,D,S,{vcolor:gold,lcolor:'rgba(255,255,255,.7)',ucolor:gold});
+  brand(ctx,W/2,Math.min(H-26,bot+50),S,{px:20,color:'rgba(255,255,255,.75)'});
+ }},
+/* Musiman 3 — Idul Fitri */
+{k:'lebaran',n:'Lebaran',cat:['season'],bg:'forest',season:'lebaran',
+ draw(ctx,W,H,D,S){
+  stThemeBg(ctx,W,H,S,['#138a4b','#0b5e33','#06331d']);
+  let gold='#f6cf57',kt=(x,y,s,a)=>{ctx.save();ctx.translate(x,y);ctx.rotate(a||0);ctx.fillStyle='#d9a521';ctx.beginPath();ctx.moveTo(0,-s);ctx.lineTo(s*.8,0);ctx.lineTo(0,s);ctx.lineTo(-s*.8,0);ctx.closePath();ctx.fill();ctx.strokeStyle='#8a6410';ctx.lineWidth=s*.06;for(let i=-2;i<=2;i++){ctx.beginPath();ctx.moveTo(-s*.4+i*s*.2,-s*.5-i*s*.0);ctx.lineTo(s*.4+i*s*.2,s*.5);ctx.stroke()}ctx.strokeStyle='#5c7a1f';ctx.lineWidth=s*.08;ctx.beginPath();ctx.moveTo(0,s);ctx.quadraticCurveTo(s*.4,s*1.5,s*.1,s*2);ctx.stroke();ctx.restore()};
+  ctx.save();ctx.globalAlpha=.12;ctx.strokeStyle=gold;ctx.lineWidth=2;for(let x=-60;x<W+60;x+=90)for(let y=-60;y<H+60;y+=90){ctx.beginPath();ctx.moveTo(x,y-30);ctx.lineTo(x+30,y);ctx.lineTo(x,y+30);ctx.lineTo(x-30,y);ctx.closePath();ctx.stroke()}ctx.restore();
+  let top=ST.fmt==='story'?S.sz.t-60:60;kt(150,top+40,58,-.25);kt(W-150,top+60,46,.3);
+  let y=ST.fmt==='story'?S.sz.t+90:170;
+  y=stTitleBlock(ctx,W,y,'SELAMAT IDUL FITRI','MOHON MAAF LAHIR & BATIN',S,{max:120,color:gold,subColor:'#fff',fam:'disp',spacing:2});
+  let bot=ST.fmt==='story'?H-S.sz.b:H-90,box={x:120,y:y+30,w:W-240,h:bot-y-300};
+  if(!S.routeInBg&&box.h>120){if(!drawRoute(ctx,D,box,{color:'#ffffff',width:11,casing:'rgba(246,207,87,.55)',casingW:10,markers:true,pad:10}))stNoRoute(ctx,D,box,S,'#fff')}
+  T(ctx,'Tetap aktif di hari kemenangan · '+D.dateShort,W/2,bot-180,{font:F(600,30,'ui'),color:'rgba(255,255,255,.85)',align:'center',max:W-160});
+  stStats(ctx,W,bot-125,D,S,{vcolor:'#fff',lcolor:gold,ucolor:gold});
+  brand(ctx,W/2,Math.min(H-26,bot+50),S,{px:20,color:'rgba(255,255,255,.8)'});
+ }},
+/* Musiman 4 — Natal */
+{k:'natal',n:'Natal',cat:['season'],bg:'forest',season:'natal',
+ draw(ctx,W,H,D,S){
+  stThemeBg(ctx,W,H,S,['#0f4d32','#0a3322','#061a12']);
+  let rnd=stSeed(D),red='#e23744',gold='#f6cf57';
+  ctx.save();for(let i=0;i<90;i++){let x=rnd()*W,y=rnd()*H,r=2+rnd()*5;ctx.globalAlpha=.25+rnd()*.6;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill()}ctx.restore();
+  ctx.save();ctx.fillStyle=red;ctx.fillRect(0,0,W,22);ctx.fillStyle='#fff';for(let x=0;x<W;x+=60){ctx.beginPath();ctx.arc(x+30,22,14,0,Math.PI);ctx.fill()}ctx.restore();
+  let y=ST.fmt==='story'?S.sz.t-30:110;stStar(ctx,W/2,y,40,gold);y+=40;
+  y=stTitleBlock(ctx,W,y,'SELAMAT NATAL','MERRY CHRISTMAS & HAPPY MILES',S,{max:150,color:'#fff',subColor:gold,glow:'rgba(255,255,255,.25)'});
+  let bot=ST.fmt==='story'?H-S.sz.b:H-90,box={x:120,y:y+20,w:W-240,h:bot-y-280};
+  if(!S.routeInBg&&box.h>120){if(!drawRoute(ctx,D,box,{color:red,width:11,casing:'#ffffff',casingW:10,markers:true,pad:10}))stNoRoute(ctx,D,box,S,'#fff')}
+  T(ctx,D.title+' · '+D.dateShort,W/2,bot-170,{font:F(700,34,'ui'),color:'#fff',align:'center',max:W-160});
+  stStats(ctx,W,bot-120,D,S,{vcolor:'#fff',lcolor:gold,ucolor:'#ffd1d5'});
+  brand(ctx,W/2,Math.min(H-26,bot+50),S,{px:20,color:'rgba(255,255,255,.8)'});
+ }},
+/* Musiman 5 — Tahun Baru */
+{k:'tahunbaru',n:'Tahun Baru',cat:['season'],bg:'midnight',season:'tahunbaru',
+ draw(ctx,W,H,D,S){
+  stThemeBg(ctx,W,H,S,['#14103a','#0a0a22','#050510']);
+  let rnd=stSeed(D),cols=['#ff4fa3','#ffd166','#4cc9f0','#a78bfa','#7ee787','#ff7a3d'];
+  for(let k=0;k<6;k++){let cx=W*(.12+rnd()*.76),cy=H*(.06+rnd()*.32),R=80+rnd()*120,c=cols[k%cols.length],n=22;ctx.save();ctx.shadowColor=c;ctx.shadowBlur=14;ctx.strokeStyle=c;ctx.lineCap='round';for(let i=0;i<n;i++){let a=i/n*Math.PI*2,r1=R*.25,r2=R*(.75+rnd()*.3);ctx.lineWidth=3+rnd()*2;ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1);ctx.lineTo(cx+Math.cos(a)*r2,cy+Math.sin(a)*r2);ctx.stroke();ctx.beginPath();ctx.arc(cx+Math.cos(a)*(r2+10),cy+Math.sin(a)*(r2+10),3,0,Math.PI*2);ctx.fillStyle=c;ctx.fill()}ctx.restore()}
+  let yr=D.date.getMonth()===11?D.date.getFullYear()+1:D.date.getFullYear(),y=ST.fmt==='story'?S.sz.t+60:140;
+  let px=fitPx(ctx,String(yr),W-200,400,'disp',ST.fmt==='square'?240:330,140);let g=ctx.createLinearGradient(0,y,0,y+px);g.addColorStop(0,'#fff');g.addColorStop(1,'#ffd166');ctx.save();ctx.shadowColor='#ffd166';ctx.shadowBlur=40;ctx.font=F(400,px,'disp');ctx.textAlign='center';ctx.fillStyle=g;ctx.fillText(String(yr),W/2,y+px*.82);ctx.restore();
+  y+=px*.82+64;T(ctx,'TAHUN BARU, PR BARU!',W/2,y,{font:F(800,36,'ui'),color:'#fff',align:'center',spacing:5});
+  let bot=ST.fmt==='story'?H-S.sz.b:H-90,box={x:130,y:y+40,w:W-260,h:bot-y-290};
+  if(!S.routeInBg&&box.h>110){if(!drawRoute(ctx,D,box,{color:'#ffd166',width:9,glow:28,glowColor:'#ff4fa3',core:'#fff',pad:10}))stNoRoute(ctx,D,box,S,'#ffd166')}
+  T(ctx,D.title+' · '+D.dateShort,W/2,bot-170,{font:F(700,32,'ui'),color:'rgba(255,255,255,.9)',align:'center',max:W-160});
+  stStats(ctx,W,bot-120,D,S,{vcolor:'#fff',lcolor:'#ffd166',ucolor:'#ffd166'});
+  brand(ctx,W/2,Math.min(H-26,bot+50),S,{px:20,color:'rgba(255,255,255,.75)'});
+ }},
+/* Kenangan — "setahun lalu hari ini" */
+{k:'memory',n:'Kenangan',cat:['trend','photo'],bg:'paper',
+ draw(ctx,W,H,D,S){
+  let yrs=Math.max(0,new Date().getFullYear()-D.date.getFullYear()),lab=yrs?yrs+' TAHUN LALU':'KENANGAN',ink=S.dark?'#fff':'#1b1b20',mut=S.dark?'rgba(255,255,255,.7)':'#6b6b76';
+  let top=ST.fmt==='story'?S.sz.t-40:70;
+  T(ctx,'📸 HARI INI, '+lab,W/2,top+30,{font:F(800,30,'ui'),color:S.acc==='#ffffff'&&!S.dark?'#fc4c02':S.acc,align:'center',spacing:4});
+  T(ctx,D.dateStr,W/2,top+80,{font:F(600,30,'ui'),color:mut,align:'center'});
+  let fw=Math.min(760,W-200),avail=(ST.fmt==='story'?H-S.sz.b-300:H-360)-(top+120),fh=Math.min(avail,fw*1.05),x=(W-fw)/2,y=top+130;
+  [[-.06,'#e8e2d6'],[.045,'#f1ece2']].forEach(q=>{ctx.save();ctx.translate(W/2,y+fh/2);ctx.rotate(q[0]);sh(ctx,true,30,.18,10);ctx.fillStyle=q[1];ctx.fillRect(-fw/2,-fh/2,fw,fh);ctx.restore()});
+  ctx.save();ctx.translate(W/2,y+fh/2);ctx.rotate(-.012);sh(ctx,true,40,.25,14);ctx.fillStyle='#fffdf8';ctx.fillRect(-fw/2,-fh/2,fw,fh);sh(ctx,false);
+  let ix=-fw/2+30,iy=-fh/2+30,iw=fw-60,ih=fh-150;ctx.save();ctx.beginPath();ctx.rect(ix,iy,iw,ih);ctx.clip();
+  if(S.photo){let im=S.photo,sc=Math.max(iw/im.width,ih/im.height);ctx.drawImage(im,ix+(iw-im.width*sc)/2,iy+(ih-im.height*sc)/2,im.width*sc,im.height*sc);ctx.fillStyle='rgba(255,236,200,.12)';ctx.fillRect(ix,iy,iw,ih)}
+  else{let g=ctx.createLinearGradient(ix,iy,ix+iw,iy+ih);g.addColorStop(0,'#f3e9d8');g.addColorStop(1,'#e4d6bd');ctx.fillStyle=g;ctx.fillRect(ix,iy,iw,ih);if(!drawRoute(ctx,D,{x:ix+40,y:iy+40,w:iw-80,h:ih-80},{color:'#c2410c',width:9,markers:true,pad:6}))stNoRoute(ctx,D,{x:ix,y:iy+ih*.25,w:iw,h:ih*.5},S,'#c2410c')}
+  ctx.restore();ctx.strokeStyle='rgba(0,0,0,.08)';ctx.strokeRect(ix,iy,iw,ih);
+  T(ctx,D.title,0,fh/2-62,{font:F(700,58,'hand'),color:'#2a2a30',align:'center',max:fw-60});
+  T(ctx,D.metrics.slice(0,3).map(m=>m.value+(m.unit?' '+m.unit:'')).join(' · '),0,fh/2-18,{font:F(600,40,'hand'),color:'#6b6b76',align:'center',max:fw-60});
+  ctx.restore();
+  let by=y+fh+70;T(ctx,yrs?'Lihat seberapa jauh kamu sudah berkembang sejak hari itu.':'Simpan momen terbaikmu.',W/2,by,{font:F(600,30,'ui'),color:ink,align:'center',max:W-160});
+  brand(ctx,W/2,Math.min(H-26,by+70),S,{px:20});
+ }}
+);
+</script>

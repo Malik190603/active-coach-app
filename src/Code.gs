@@ -1,4 +1,4 @@
-/** Active Coach - Google Apps Script backend.
+/** Active Coach - mesin analisis (dijalankan di HP oleh app/engine).
  * Full-auto: satu-satunya sumber data latihan adalah sinkronisasi Strava.
  * Tidak ada input manual untuk aktivitas/check-in/gear. Coach menghitung
  * training load (CTL/ATL/TSB) dan menyusun rencana mingguan otomatis.
@@ -46,7 +46,7 @@ function finishStravaOAuth(query) {
   if (query.error) return HtmlService.createHtmlOutput('<h2>' + STRAVA_LOGO_IMG + ' tidak terhubung</h2><p>' + query.error + '</p>');
   ensureRuntimeDatabase();
   var c = stravaConfig(), athleteId = String(query.state || DEFAULT_ATHLETE_ID);
-  if (!query.code || !c.clientId || !c.clientSecret) return HtmlService.createHtmlOutput('<h2>Konfigurasi ' + STRAVA_LOGO_IMG + ' belum lengkap</h2><p>Isi Script Properties lalu coba lagi.</p>');
+  if (!query.code || !c.clientId || !c.clientSecret) return HtmlService.createHtmlOutput('<h2>Konfigurasi ' + STRAVA_LOGO_IMG + ' belum lengkap</h2><p>Isi secret Strava di Supabase › Edge Functions › Secrets lalu coba lagi.</p>');
   var response = UrlFetchApp.fetch('https://www.strava.com/oauth/token', { method: 'post', payload: { client_id: c.clientId, client_secret: c.clientSecret, code: query.code, grant_type: 'authorization_code' }, muteHttpExceptions: true });
   var token = JSON.parse(response.getContentText());
   if (!token.access_token) return HtmlService.createHtmlOutput('<h2>Token ' + STRAVA_LOGO_IMG + ' gagal</h2><pre>' + response.getContentText() + '</pre>');
@@ -146,7 +146,7 @@ function getStravaProfileExtras(athleteId) { try { var athlete = stravaFetch('/a
   return { bikes: athlete.bikes || [], shoes: athlete.shoes || [], clubs: [], equipment: equipment.length ? equipment : [{ type: 'Sepeda', name: 'Belum ada gear terdaftar di Strava', distanceKm: 0, reminder: '' }], trophies: trophies.slice(0, 20), challenges: [] }; } catch (err) { return { bikes: [], shoes: [], clubs: [], equipment: [{ type: 'Sepeda', name: 'Gear tidak dapat dimuat', distanceKm: 0, reminder: '' }], trophies: [], challenges: [] }; } }
 function createStravaWebhook() {
   var c = stravaConfig();
-  if (!c.clientId || !c.clientSecret || !c.verifyToken || !c.webhookUrl) throw new Error('Isi STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, STRAVA_VERIFY_TOKEN, dan STRAVA_WEBHOOK_CALLBACK_URL di Script Properties.');
+  if (!c.clientId || !c.clientSecret || !c.verifyToken || !c.webhookUrl) throw new Error('Isi STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, STRAVA_VERIFY_TOKEN, dan STRAVA_WEBHOOK_CALLBACK_URL di Supabase › Edge Functions › Secrets.');
   validateStravaWebhookUrl(c.webhookUrl);
   testStravaWebhookEndpoint();
   var response = UrlFetchApp.fetch('https://www.strava.com/api/v3/push_subscriptions?client_id=' + encodeURIComponent(c.clientId) + '&client_secret=' + encodeURIComponent(c.clientSecret) + '&callback_url=' + encodeURIComponent(c.webhookUrl) + '&verify_token=' + encodeURIComponent(c.verifyToken), { method: 'post', muteHttpExceptions: true });
@@ -159,7 +159,7 @@ function testStravaWebhookEndpoint() {
   return 'Webhook endpoint OK: ' + body;
 }
 function validateStravaWebhookUrl(url) {
-  if (!/^https:\/\/.+/.test(String(url || '')) || /\/dev(?:\?|$)/.test(String(url || ''))) throw new Error('STRAVA_WEBHOOK_CALLBACK_URL harus URL HTTPS publik, bukan token, URL editor, atau URL /dev. URL /exec Apps Script atau URL Cloudflare Worker sama-sama boleh.');
+  if (!/^https:\/\/.+/.test(String(url || '')) || /\/dev(?:\?|$)/.test(String(url || ''))) throw new Error('STRAVA_WEBHOOK_CALLBACK_URL harus URL HTTPS publik, bukan token, URL editor, atau URL /dev. Gunakan URL fungsi strava-callback di Supabase.');
 }
 function deleteStravaWebhook() {
   var c = stravaConfig(), id = scriptProps().getProperty('STRAVA_WEBHOOK_ID'); if (!id) return 'Tidak ada webhook tersimpan.';

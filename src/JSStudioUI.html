@@ -132,7 +132,8 @@ function stRenderThumbs(force){
   let host=$('#stTpls');if(!host||!ST)return;let x=stActivity();
   let key=[ST.act,ST.fmt,ST.accent,ST.text,ST.trim,ST_PHOTO?1:0,ST.bg.map,x&&x.stravaId&&ST_STREAMS[x.stravaId]?1:0,ST.title,(ST.metrics||[]).join(','),ST_CAT].join('|');
   let list=ST_TPLS.filter(t=>ST_CAT==='all'||t.cat.indexOf(ST_CAT)>=0);
-  if(host.dataset.cat!==ST_CAT||force||!host.children.length){host.dataset.cat=ST_CAT;host.innerHTML=list.map(t=>`<button type="button" class="st-tpl${t.k===ST.tpl?' on':''}" data-tpl="${t.k}"><span class="st-tpl-thumb" data-fmt="${ST.fmt}"><canvas></canvas></span><span class="st-tpl-name">${esc(t.n)}</span></button>`).join('');host.querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>stSetTpl(b.dataset.tpl));ST_THUMB_KEY=''}
+  let SK=typeof stSeasonNow==='function'?stSeasonNow():'';if(SK&&(ST_CAT==='all'||ST_CAT==='season')){let si=list.findIndex(t=>t.k===SK);if(si>0)list.unshift(list.splice(si,1)[0])}
+  if(host.dataset.cat!==ST_CAT||force||!host.children.length){host.dataset.cat=ST_CAT;host.innerHTML=list.map(t=>`<button type="button" class="st-tpl${t.k===ST.tpl?' on':''}" data-tpl="${t.k}"><span class="st-tpl-thumb" data-fmt="${ST.fmt}"><canvas></canvas></span><span class="st-tpl-name">${esc(t.n)}</span>${t.k===SK?'<em class="st-tpl-new">Musim ini</em>':''}</button>`).join('');host.querySelectorAll('[data-tpl]').forEach(b=>b.onclick=()=>stSetTpl(b.dataset.tpl));ST_THUMB_KEY=''}
   host.querySelectorAll('[data-tpl]').forEach(b=>b.classList.toggle('on',b.dataset.tpl===ST.tpl));
   if(key===ST_THUMB_KEY)return;ST_THUMB_KEY=key;
   let f=stFmt(),btns=[...host.querySelectorAll('[data-tpl]')],i=0;clearTimeout(ST_THUMB_T);

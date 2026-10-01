@@ -39,13 +39,42 @@
   <?!= include('StylePro') ?>
   <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+</head>
+<body>
+    <style>
+      #acSplash{position:fixed;inset:0;z-index:2147483000;background:#0e0e14;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:opacity .42s ease,visibility .42s}
+      #acSplash.out{opacity:0;visibility:hidden}
+      #acSplash .acs-logo{width:112px;height:112px;border-radius:50%;position:relative;overflow:hidden;background:conic-gradient(from 200deg at 50% 50%,#3b7bff 0deg,#ff6a3d 120deg,#ec4fa0 200deg,#8b5cf6 270deg,#3b7bff 360deg);box-shadow:0 0 0 0 rgba(255,90,54,.0);animation:acsShape .7s cubic-bezier(.22,1,.36,1) .05s forwards,acsGlow 1.6s ease-in-out .7s infinite}
+      #acSplash .acs-logo svg{position:absolute;inset:0;width:100%;height:100%}
+      #acSplash .acs-logo path{fill:none;stroke:#fff;stroke-width:7.5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:120;stroke-dashoffset:120;animation:acsDraw .75s cubic-bezier(.65,0,.35,1) .3s forwards}
+      #acSplash .acs-name{margin-top:22px;font:800 17px/1 Inter,system-ui,sans-serif;letter-spacing:.32em;color:rgba(255,255,255,.92);opacity:0;transform:translateY(6px);animation:acsIn .5s ease .55s forwards}
+      #acSplash .acs-dot{position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 54px);width:22px;height:22px;border-radius:50%;border:2.5px solid rgba(255,255,255,.18);border-top-color:#ff6a3d;opacity:0;animation:acsSpin .8s linear infinite,acsIn .4s ease 1.6s forwards}
+      #acSplash.out .acs-logo{transform:scale(.86);transition:transform .42s ease}
+      @keyframes acsShape{to{border-radius:28%;transform:scale(1.06)}}
+      @keyframes acsGlow{0%,100%{box-shadow:0 0 0 0 rgba(255,106,61,0),0 18px 50px -16px rgba(236,79,160,.55)}50%{box-shadow:0 0 0 10px rgba(255,106,61,.08),0 18px 60px -12px rgba(236,79,160,.75)}}
+      @keyframes acsDraw{to{stroke-dashoffset:0}}
+      @keyframes acsIn{to{opacity:1;transform:none}}
+      @keyframes acsSpin{to{transform:rotate(360deg)}}
+      @media (prefers-reduced-motion:reduce){#acSplash *{animation-duration:.01ms!important;animation-delay:0s!important}}
+    </style>
+  <div id="acSplash" aria-hidden="true">
+    <div class="acs-logo"><svg viewBox="0 0 100 100"><path d="M25 53h9l6.5-14.5 10.8 26 7.1-17.5 3.1 6H75"/></svg></div>
+    <div class="acs-name">ACTIVE COACH</div>
+    <span class="acs-dot"></span>
+  </div>
+  <script>
+  (function(){var t0=Date.now(),done=false,el=document.getElementById('acSplash');
+    window.acSplashDone=function(){if(done||!el)return;done=true;var wait=Math.max(0,1050-(Date.now()-t0));setTimeout(function(){el.classList.add('out');setTimeout(function(){if(el&&el.parentNode)el.parentNode.removeChild(el)},480)},wait)};
+    var iv=setInterval(function(){var a=document.getElementById('app'),l=document.getElementById('loginScreen'),g=document.querySelector('.upd-gate'),b=document.getElementById('bootError');
+      var sh=document.getElementById('appShell');if((a&&!a.hidden&&sh&&!sh.hidden)||(sh&&!sh.hidden&&Date.now()-t0>2600)||(l&&!l.hidden)||g||(b&&!b.hidden)){clearInterval(iv);window.acSplashDone()}},80);
+    setTimeout(function(){clearInterval(iv);window.acSplashDone()},9000);
+  })();
+  </script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-</head>
-<body>
-  <div id="bootError" hidden style="max-width:560px;margin:40px auto;padding:20px 22px;font-family:Arial,sans-serif;font-size:15px;line-height:1.6;color:#1c1c1e;background:#fff;border:2px solid #ff3b30;border-radius:14px">
-    <b>Aplikasi tidak bisa start.</b><br>Cek 3 hal ini:<br>1) File harus ada dengan nama persis: <b>Code</b>, <b>Index</b>, <b>Stylesheet</b>, <b>StravaLogo</b>, plus 11 file JS: <b>JSCore, JSHealth, JSBrowse, JSOverlay, JSTemplates, JSOverlay2, JSActivity, JSPlan, JSReview, JSGarage, JSApp</b> (tanpa .txt/.html di nama).<br>2) Deploy &gt; Manage deployments &gt; <b>New version</b>, lalu buka URL /exec yang terbaru.<br>3) Buka menu <b>Executions</b> di Apps Script untuk melihat pesan error merah.
+  <div id="bootError" hidden style="max-width:520px;margin:40px auto;padding:20px 22px;font-family:Inter,Arial,sans-serif;font-size:15px;line-height:1.6;color:#1c1c1e;background:#fff;border:2px solid #ff3b30;border-radius:14px">
+    <b>Active Coach gagal dibuka.</b><br>Tutup aplikasi lalu buka lagi. Kalau masih muncul, perbarui ke versi terbaru dari halaman rilis GitHub atau kirim tangkapan layar ini ke pengembang.<div id="bootErrorList" style="margin-top:10px;font-size:12.5px;color:#666"></div>
   </div>
   <script>window.__ACS_BOOTED=false;setTimeout(function(){if(window.__ACS_BOOTED)return;var b=document.getElementById('bootError');if(b)b.hidden=false;},8000);</script>
   <svg style="display:none" aria-hidden="true">
@@ -587,7 +616,7 @@
         <div class="acx-list">
           <button type="button" class="acx-row" id="stravaSync" hidden><span class="acx-row-ic tone-strava icon"><svg><use href="#i-sync"/></svg></span><span class="acx-row-text"><b>Sinkronkan sekarang</b><small>Tarik aktivitas terbaru</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>
           <button type="button" class="acx-row" id="stravaConnect"><span class="acx-row-ic tone-blue icon"><svg><use href="#i-link"/></svg></span><span class="acx-row-text"><b class="js-connect-label">Hubungkan Strava</b><small class="js-connect-sub">Izinkan akses data aktivitas</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>
-          <button type="button" class="acx-row" id="reloadBtn"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-history"/></svg></span><span class="acx-row-text"><b>Muat ulang data</b><small>Ambil ulang dari spreadsheet</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>
+          <button type="button" class="acx-row" id="reloadBtn"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-history"/></svg></span><span class="acx-row-text"><b>Muat ulang dari server</b><small>Ambil ulang data terbaru dari server</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>
         </div>
       </div>
     </div>
@@ -705,6 +734,7 @@
   <?!= include('JSBrowse') ?>
   <?!= include('JSStudio') ?>
   <?!= include('JSStudioTpl') ?>
+  <?!= include('JSStudioSeason') ?>
   <?!= include('JSStudioUI') ?>
   <?!= include('JSActivity') ?>
   <?!= include('JSPlan') ?>
@@ -716,7 +746,9 @@
   <?!= include('JSFeedback') ?>
   <?!= include('JSAdmin') ?>
   <?!= include('JSRecap') ?>
+  <?!= include('JSYear') ?>
   <?!= include('JSTour') ?>
+  <?!= include('JSDev') ?>
   <?!= include('JSApp') ?>
   <script>
   (function(){
@@ -726,14 +758,13 @@
       try{if(!DETAIL_RENDERERS.prohub)miss.push('Menu Pro belum terdaftar (JSGarage berhenti karena error)')}catch(e2){miss.push('DETAIL_RENDERERS: '+e2.message)}
       var list=errs.concat(miss).concat((window.__acErr||[]).slice(0,6).map(function(t){return 'JS: '+t}));
       var d=document.getElementById('acInstallBanner');
-      if(!list.length){if(d)d.remove();return}
+      var on=false;try{on=localStorage.getItem('acx_dev_banner')==='1'}catch(x){}
+      if(!list.length||!on){if(d)d.remove();return}
       if(!d){d=document.createElement('div');d.id='acInstallBanner';d.style.cssText='position:fixed;left:10px;right:10px;top:10px;z-index:99999;background:#ff3b30;color:#fff;padding:12px 14px;border-radius:14px;font:12.5px/1.45 -apple-system,system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);max-height:60vh;overflow:auto;word-break:break-word';d.onclick=function(){d.style.display='none'};document.body.appendChild(d)}
-      d.innerHTML='<b>Ada masalah ('+window.AC_BUILD+')</b><br>'+list.map(function(t){return '\u2022 '+String(t).replace(/</g,'&lt;')}).join('<br>')+'<br><small>Screenshot banner ini dan kirim ke Claude. Ketuk untuk menutup.</small>';
+      d.innerHTML='<b>Ada masalah ('+window.AC_BUILD+')</b><br>'+list.map(function(t){return '\u2022 '+String(t).replace(/</g,'&lt;')}).join('<br>')+'<br><small>Banner developer (Menu developer › Saklar). Ketuk untuk menutup.</small>';
     }catch(e){}}
     window.__acPaint=paint;paint();
-    window.addEventListener('load',function(){paint();
-      var t=document.createElement('div');t.textContent='Active Coach \u00b7 '+window.AC_BUILD;t.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:84px;z-index:99998;background:rgba(0,0,0,.72);color:#fff;font:600 11.5px -apple-system,system-ui,sans-serif;padding:6px 12px;border-radius:99px;pointer-events:none;transition:opacity .6s';
-      document.body.appendChild(t);setTimeout(function(){t.style.opacity='0'},6000);setTimeout(function(){t.remove()},7000)});
+    window.addEventListener('load',function(){paint()});
   })();
 </script>
 </body></html>

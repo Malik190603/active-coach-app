@@ -56,7 +56,9 @@ function rcOpen(p){
       <div class="adm-card"><div class="adm-h">${p.type==='year'?'Jarak per bulan':'Kalender latihan'}</div>${cal}</div>
       <div class="adm-card"><div class="adm-h">Per olahraga</div>${s.sportList.map(x=>`<div class="rc-sport"><span class="rc-dot" style="background:${x.color}"></span><b>${esc(x.label)}</b><span>${x.n}× · ${x.km?stDist(x.km)+' km · ':''}${durationShort(x.min)}</span><i style="--w:${Math.max(4,x.min/s.min*100)}%;--c:${x.color}"></i></div>`).join('')}</div>
       <div class="adm-card"><div class="adm-h">Sorotan</div>${hl.map(h=>`<div class="rc-hl"${h[4]?` data-id="${esc(h[4])}"`:''}><span>${h[0]}</span><div><small>${h[1]}</small><b>${esc(h[2])}</b><em>${esc(h[3])}</em></div></div>`).join('')}</div>
-      <button type="button" class="acx-btn adm-wide" id="rcShare"><span class="icon"><svg><use href="#i-share"/></svg></span> Buat kartu rekap di Studio</button>`;
+      <button type="button" class="acx-btn adm-wide" id="rcShare"><span class="icon"><svg><use href="#i-share"/></svg></span> Buat kartu rekap di Studio</button>
+      ${p.type==='year'?`<div class="adm-card yc-card"><div class="adm-h">Cetak & kenang tahun ${p.y}</div><button type="button" class="yc-item" data-yc="poster"><span>🖼️</span><div><b>Poster A3</b><small>Semua rute setahun jadi karya garis, siap dicetak</small></div></button><button type="button" class="yc-item" data-yc="video"><span>🎬</span><div><b>Video setahun · 30 dtk</b><small>Rute tergambar bulan demi bulan + total di akhir</small></div></button><button type="button" class="yc-item" data-yc="cal"><span>📅</span><div><b>Kalender dinding PDF</b><small>Sampul + 12 bulan dengan jarak per hari</small></div></button></div>`:'<p class="adm-note" style="text-align:center">Poster A3, video setahun & kalender PDF ada di tab <b>Tahunan</b>.</p>'}`;
+    body.querySelectorAll('[data-yc]').forEach(b=>b.onclick=()=>{let k=b.dataset.yc;box.__close();setTimeout(()=>{if(k==='poster')ycOpenPoster(p.y);else if(k==='cal')ycOpenCalendar(p.y);else ycVideo(p.y)},240)});
     body.querySelectorAll('.rc-hl[data-id]').forEach(el=>el.onclick=()=>{box.__close();setTimeout(()=>showDetail(el.dataset.id),250)});
     body.querySelector('#rcShare').onclick=()=>{let pick=s.longest||(DATA.logs||[]).find(x=>x.date>=s.range.from&&x.date<=s.range.to);if(!pick){toast('Tidak ada aktivitas');return}ST_RECAP=Object.assign({},p);box.__close();setTimeout(()=>{studioOpen(pick.id);setTimeout(()=>{if(typeof stSetTpl==='function'){if(ST&&ST.tpl==='monthly'){ST_DCACHE.k='';stRenderThumbs(true);stDraw()}else stSetTpl('monthly')}},450)},250)};
   };
@@ -83,4 +85,24 @@ if(typeof ST_TPLS!=='undefined')ST_TPLS.push({k:'monthly',n:'Rekap Bulanan',cat:
  }});
 /* baris profil */
 document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{let ev=document.getElementById('evRow');if(!ev||document.getElementById('rcRow'))return;ev.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="rcRow"><span class="acx-row-ic tone-pink icon"><svg><use href="#i-sparkles"/></svg></span><span class="acx-row-text"><b>Rekap bulanan & tahunan</b><small>Ringkasan otomatis siap dibagikan</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');document.getElementById('rcRow').onclick=()=>rcOpen(rcDefault())},30));
+</script>
+<script>
+'use strict';
+/* =====================================================================
+   Kenangan: "setahun lalu hari ini" — kartu di Hari Ini + notifikasi pagi.
+   ===================================================================== */
+function memFind(d){d=d||new Date();let md=String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'),y=d.getFullYear();
+  return (DATA.logs||[]).filter(x=>String(x.date).slice(5,10)===md&&+String(x.date).slice(0,4)<y).sort((a,b)=>a.date<b.date?1:-1)}
+function memDashCard(){
+  let today=dateKey(new Date());if(admLS('acx_mem_seen','')===today)return '';
+  let list=memFind();if(!list.length)return '';let x=list[0],yrs=new Date().getFullYear()-+String(x.date).slice(0,4);
+  let hide=DATA.privacy&&DATA.privacy.hideRoutes,map=(!hide&&x.polyline&&typeof acxStaticMap==='function')?acxStaticMap(x.polyline,120,120,{color:sportInfo(x).color,pad:.16}):'<span class="icon"><svg><use href="#'+sportIconId(x.sport,x.sportType)+'"/></svg></span>';
+  let stats=[x.distance?stDist(x.distance)+' km':'',durationShort(x.minutes),x.elevation?Math.round(x.elevation)+' m':''].filter(Boolean).join(' · ');
+  return `<article class="acx-card mem-dash" data-mem="${esc(x.id)}" role="button"><button type="button" class="ann-x" data-mem-x aria-label="Tutup"><span class="icon"><svg><use href="#i-close"/></svg></span></button><div class="mem-map">${map}</div><div class="mem-txt"><span class="mem-kick">📸 ${yrs} tahun lalu hari ini${list.length>1?' · +'+(list.length-1)+' lainnya':''}</span><b>${esc(x.title||'Aktivitas')}</b><small>${esc(stats)}</small><div class="mem-acts"><button type="button" class="ev-btn" data-mem-detail>Lihat</button><button type="button" class="ev-btn on" data-mem-share>Bagikan kenangan</button></div></div></article>`;
+}
+function memBindDash(host){
+  host.querySelectorAll('[data-mem]').forEach(c=>{let id=c.dataset.mem;c.onclick=e=>{if(e.target.closest('[data-mem-x]')){e.stopPropagation();admSet('acx_mem_seen',dateKey(new Date()));c.classList.add('out');setTimeout(()=>admPaintDash(),220);return}if(e.target.closest('[data-mem-share]')){memOpen(id);return}showDetail(id)};});
+}
+function memOpen(id){if(!id){let l=memFind();if(!l.length)return;id=l[0].id}usgTrack('memory:share');studioOpen(id);setTimeout(()=>{if(typeof stSetTpl==='function')stSetTpl('memory')},450)}
+function memOpenDemo(){let l=(DATA.logs||[]).filter(x=>x.polyline);let x=l[l.length-1]||(DATA.logs||[])[0];if(x)memOpen(x.id)}
 </script>

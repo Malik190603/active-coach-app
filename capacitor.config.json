@@ -7,7 +7,7 @@
   },
   "android": {
     "allowMixedContent": false,
-    "backgroundColor": "#0b0b0f"
+    "backgroundColor": "#0e0e14"
   },
   "plugins": {
     "SystemBars": {

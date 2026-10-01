@@ -1,6 +1,6 @@
 # Active Coach — Aplikasi Android
 
-Aplikasi Android (APK) untuk Active Coach. Tampilan dan semua fiturnya sama dengan versi web. Datanya disimpan di **Supabase** (database + server gratis), tidak lagi di Google Sheets.
+Aplikasi Android (APK) untuk Active Coach. Masuk dengan Strava, data tersimpan di **Supabase** (database + server gratis).
 
 ```
 HP Android (APK)                                Supabase (gratis)
@@ -14,7 +14,7 @@ HP Android (APK)                                Supabase (gratis)
                                               └─────────────────────────────────┘
 ```
 
-- **Code.gs tetap dipakai apa adanya.** Code.gs dijalankan di HP oleh lapisan tiruan Apps Script (`app/engine/gas-shim.js`). Jadi sinkron Strava, plan, garasi, analisis Pro, dan laporan PDF hasilnya sama persis.
+- **Mesin analisis berjalan di HP.** `src/Code.gs` dijalankan di HP oleh lapisan kompatibilitas (`app/engine/gas-shim.js`). Jadi sinkron Strava, plan, garasi, analisis Pro, dan laporan PDF hasilnya sama persis.
 - **Cepat dan tetap jalan offline.** Data disimpan juga di memori HP, jadi aplikasi langsung terbuka. Perubahan dikirim ke Supabase otomatis, hanya bagian yang berubah.
 - **Masuk dengan Strava.** Tidak ada email/sandi. Akun dibuat otomatis dari akun Strava, lalu aktivitas langsung diimpor.
 - **Aman.** `STRAVA_CLIENT_SECRET` dan service key hanya ada di server Supabase, tidak pernah ada di HP. Setiap akun hanya bisa membaca datanya sendiri (Row Level Security).
@@ -38,7 +38,6 @@ HP Android (APK)                                Supabase (gratis)
    - `STRAVA_CLIENT_ID` = Client ID dari <https://www.strava.com/settings/api>
    - `STRAVA_CLIENT_SECRET` = Client Secret dari halaman yang sama
 6. **Ubah callback di Strava:** buka <https://www.strava.com/settings/api>, lalu ganti **Authorization Callback Domain** menjadi domain project Supabase-mu, misalnya `abcdxyz.supabase.co` (tanpa `https://`).
-   > Kalau versi web lama (Apps Script) masih mau dipakai, Strava hanya menerima satu callback domain per aplikasi. Buat aplikasi Strava kedua untuk HP kalau kedua versi mau dipakai bersamaan.
    > **Kuota atlet:** aplikasi Strava baru hanya mengizinkan **1 atlet** (kamu sendiri). Supaya teman bisa ikut masuk, ajukan kenaikan kuota di halaman API Strava (*Request athlete capacity*). Sampai disetujui, orang lain akan melihat pesan "batas jumlah atlet".
 7. Catat **Project URL** dan **anon / publishable key** di **Project Settings → API**. Keduanya dipakai di langkah 2 atau saat pertama kali membuka aplikasi.
 
@@ -57,15 +56,6 @@ Setiap kali kamu mengubah file di repo, APK baru dibuat otomatis. Versi baru bis
 
 **Alternatif lewat Android Studio:** `npm install` → `npm run build` → `npm run android:prepare` → `npm run android:open` → tombol ▶ Run.
 
-## Langkah 3 — Pindahkan data dari Google Sheets
-
-1. Di project Apps Script lama, tambahkan file script baru bernama **Migrasi**, lalu tempel isi `apps-script/Migrasi.gs`.
-2. Pilih fungsi **eksporUntukAplikasi** → **Run** → izinkan akses. Di *Execution log* akan muncul tautan file `active-coach-export-....json` di Google Drive.
-3. Unduh file itu ke HP.
-4. Di aplikasi: **Masuk dengan Strava**, lalu buka **Profil → Pulihkan dari cadangan** dan pilih file tadi. Login Strava-mu tetap tersambung.
-
-Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda, hasil analisis Pro, pengaturan, dan **token Strava**. Karena token ikut pindah, Strava biasanya langsung tersambung tanpa login ulang. Kalau spreadsheet berisi lebih dari satu atlet, aplikasi akan menanyakan profil mana yang milikmu.
-
 ## Pemakaian sehari-hari
 
 - **Masuk:** ketuk **Masuk dengan Strava** → izinkan di Strava → otomatis kembali ke aplikasi, akun dibuat dan aktivitas diimpor. Sesi disimpan, jadi aplikasi langsung terbuka berikutnya. Akun yang sama bisa dipakai di beberapa HP.
@@ -77,18 +67,7 @@ Yang ikut pindah: semua aktivitas, plan, catatan, garasi dan servis, foto sepeda
 - **Notifikasi:** Profil → Notifikasi. Pengingat latihan harian sesuai plan (jam bisa dipilih), rekap mingguan (Minggu 19:00), dan pengingat servis sepeda.
 - **Impor file:** Profil → Impor aktivitas (GPX/TCX/FIT) untuk aktivitas dari Garmin, Coros, Wahoo, dll. yang tidak ada di Strava.
 - **Video animasi:** di Studio, tombol *Buat video animasi (5 dtk)* — rute tergambar & angka berjalan, hasil MP4 untuk Reels/Story.
-- **Cadangan:** buka **Profil → Cadangkan data** untuk menyimpan salinan lengkap (.json). Pulihkan lewat **Profil → Pulihkan dari cadangan**.
 - **Laporan PDF dan kartu Wrapped:** tombol unduh akan membuka menu *Simpan / Bagikan* Android.
-
-### Perbedaan dengan versi web
-
-| Fitur | Versi web (Apps Script) | Aplikasi |
-|---|---|---|
-| Aktivitas baru dari Strava | Webhook real-time | Sinkron otomatis saat aplikasi dibuka/aktif lagi, tarik ke bawah, atau tombol sinkron |
-| Analisis otomatis tiap jam | Trigger Apps Script | Berjalan saat aplikasi dibuka (dan tiap 30 menit selama terbuka) |
-| Login | Nama + PIN | Masuk dengan Strava |
-| Data | Google Sheets | Supabase (+ cache di HP, tetap bisa dibuka offline) |
-
 
 ## Kritik & saran
 
@@ -110,6 +89,10 @@ Jalankan SQL `supabase/migrations/20261001180000_admin_suite.sql` sekali di Supa
 - **Event** — kelola Kalender event (lari, sepeda, trail, triathlon, renang). Pengguna melihatnya di Profil › Kalender event dan bisa menjadikannya target latihan (hitung mundur di Hari Ini + pengingat H-7 & H-1).
 - **Masukan** — kotak masuk kritik & saran.
 
+**Menu developer** (Profil › Menu developer, khusus admin): info sistem & perangkat, cek kesehatan server (Supabase, fungsi, tabel, token Strava, webhook), status sinkron & antrean, log 200 baris terakhir (salin/bagikan/kirim ke kotak masuk), uji notifikasi & layar, saklar lokal (jeda sinkron, overlay FPS, banner error), hapus cache, dan info rilis + sidik jari APK.
+
+**Karya tahunan** (Rekap › Tahunan): Poster A3 semua rute (PNG/PDF), video "setahun dalam 30 detik", dan kalender dinding PDF 13 halaman. Ada juga kartu **Kenangan** ("setahun lalu hari ini") dan **template musiman** otomatis (17 Agustus, Ramadan, Lebaran, Natal, Tahun Baru).
+
 Fitur lain di versi ini: **Rekap bulanan & tahunan** otomatis (kartu di Hari Ini tiap awal bulan + template Studio "Rekap Bulanan") dan **tutorial singkat** per fitur (bisa diulang dari Profil).
 
 ## Tanda tangan APK
@@ -127,10 +110,9 @@ Tidak perlu diatur manual: setelah login, aplikasi meminta fungsi `strava-callba
 | Folder / file | Isi |
 |---|---|
 | `src/` | Code.gs dan tampilan (Index.html, JS*.html, Stylesheet.html, StylePro.html). **Ubah tampilan atau fitur di sini.** `JSMap.html` = peta, `JSStudio*.html` = Studio & template. |
-| `app/engine/` | `gas-shim.js` (tiruan Apps Script), `worker.js` (penyimpanan dan sinkron), `app-engine.js` (fungsi khusus aplikasi) |
+| `app/engine/` | `gas-shim.js` (lapisan kompatibilitas mesin), `worker.js` (penyimpanan dan sinkron), `app-engine.js` (fungsi khusus aplikasi) |
 | `app/bridge.js` | Pengganti `google.script.run`, Masuk dengan Strava, deep link, sinkron otomatis, getaran, tombol kembali, simpan/bagikan file |
 | `supabase/` | Skema database dan dua Edge Function |
-| `apps-script/Migrasi.gs` | Ekspor data dari Google Sheets |
 | `scripts/` | `build-web.mjs` (menyusun `www/`) dan `prepare-android.mjs` (proyek Android, deep link, ikon) |
 | `assets/` | Ikon dan splash aplikasi |
 | `.github/workflows/android.yml` | Build APK otomatis |

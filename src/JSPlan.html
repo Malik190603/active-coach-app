@@ -152,7 +152,7 @@ function confirmPlanDaySwap(dateA,dateB){
     syncDashboardPlanToday();renderPlanResult();renderPlanCustom();renderDashboard();
     // Tampilan sudah diubah duluan (optimistic). Kalau backend belum punya swapWeeklyPlanDay
     // (mis. Code.gs belum di-deploy ulang), JANGAN di-revert — biarkan berubah untuk sesi ini
-    // saja dan kasih tahu user kalau ini belum tersimpan permanen ke Spreadsheet.
+    // saja dan kasih tahu user kalau ini belum tersimpan permanen ke server.
     closeModal();
     try{
       let res=await gs('swapWeeklyPlanDay',dateA,dateB,currentAthleteId());
