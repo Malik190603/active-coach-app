@@ -1857,13 +1857,23 @@ function proGarageAfterRender(body){
 }
 
 const PRO_SHOE_TYPES=[['daily','Harian / easy'],['long','Long run'],['tempo','Tempo / interval'],['race','Lomba (carbon)'],['trail','Trail']];
+function proShoeNameOk(n){return !!n&&!/^Sepatu( g?\d+| Strava)?$/i.test(n)&&!/^g\d+$/.test(n)}
+function proShoeName(s,c){if(c&&c.name)return c.name;if(proShoeNameOk(s.name))return s.name;let bm=[s.brand,s.model].filter(Boolean).join(' ');return bm||'Sepatu Strava'}
+/* Tarik nama & jarak sepatu dari Strava bila belum ada nama, atau sudah lebih dari 6 jam. */
+function proShoeAutoSync(force){
+  let G=DATA.bikeGarage;if(!G||PRO.shoeSyncing)return;
+  let S=proShoesModel()||[],stale=!G.shoesSyncedAt||Date.now()-G.shoesSyncedAt>6*3600e3,missing=S.some(x=>!x.named);
+  if(!force&&!(stale||missing&&!PRO.shoeSyncTried))return;
+  PRO.shoeSyncing=true;PRO.shoeSyncTried=true;
+  gs('garageSyncShoes',currentAthleteId()).then(r=>{if(r){DATA.bikeGarage=r;if(typeof garageModel==='function')garageModel.cache=null}if(force)toast('Sepatu tersinkron dari Strava')}).catch(e=>{if(force)toast('Gagal sinkron sepatu: '+(e&&e.message||e))}).finally(()=>{PRO.shoeSyncing=false;if(PRO.page==='shoes')proRefreshPage()});
+}
 function proShoesModel(){
   let G=DATA.bikeGarage;if(!G)return null;let cfg=proStore('shoes',{})||{},gi=G.gearIndex||{},logs=(DATA.logs||[]).filter(x=>x.sport==='Running'),bySid={};logs.forEach(x=>{if(x.stravaId)bySid[String(x.stravaId)]=x});
   let ids=new Set([...(G.stravaShoes||[]).map(s=>s.id),...Object.keys(gi).filter(k=>k.charAt(0)==='g')]);
-  return [...ids].map(id=>{let s=(G.stravaShoes||[]).find(z=>z.id===id)||{id:id,name:'Sepatu '+id,distanceKm:0},c=cfg[id]||{},runs=(gi[id]||[]).map(sid=>bySid[String(sid)]).filter(Boolean).sort((a,b)=>b.date.localeCompare(a.date));
+  return [...ids].map(id=>{let s=(G.stravaShoes||[]).find(z=>z.id===id)||{id:id,name:'',distanceKm:0},c=cfg[id]||{},runs=(gi[id]||[]).map(sid=>bySid[String(sid)]).filter(Boolean).sort((a,b)=>b.date.localeCompare(a.date));
     let km=Number(s.distanceKm)||runs.reduce((t,x)=>t+x.distance,0),retire=Number(c.retireKm)||700,pct=km/retire*100,last=runs[0]||null,since30=runs.filter(x=>x.date>=proAddDays(proToday(),-30)).reduce((t,x)=>t+x.distance,0);
     let mins=runs.reduce((t,x)=>t+x.minutes,0),dist=runs.reduce((t,x)=>t+x.distance,0);
-    return {id:id,name:s.name,km:km,retire:retire,pct:pct,type:c.type||'daily',price:Number(c.price)||0,retired:!!(c.retired||s.retired),runs:runs,last:last,km30:since30,pace:dist?mins/dist:0,cfg:c}}).sort((a,b)=>(a.retired?1:0)-(b.retired?1:0)||b.km30-a.km30);
+    return {id:id,name:proShoeName(s,c),named:proShoeNameOk(s.name),km:km,retire:retire,pct:pct,type:c.type||'daily',price:Number(c.price)||0,retired:!!(c.retired||s.retired),runs:runs,last:last,km30:since30,pace:dist?mins/dist:0,cfg:c}}).sort((a,b)=>(a.retired?1:0)-(b.retired?1:0)||b.km30-a.km30);
 }
 function proShoeReco(plan){
   let S=proShoesModel();if(!S)return '';S=S.filter(s=>!s.retired);if(!S.length)return '';
@@ -1875,15 +1885,16 @@ function proShoesRender(){
   PRO.page='shoes';
   return proNeedState(()=>{
     if(!DATA.bikeGarage){if(!PRO.shoeLoading){PRO.shoeLoading=true;gs('getBikeGarage',currentAthleteId()).then(r=>{DATA.bikeGarage=r;if(typeof garageModel==='function')garageModel.cache=null}).catch(()=>{}).finally(()=>{PRO.shoeLoading=false;proRefreshPage()})}return '<article class="panel">'+inlineSpinner('Memuat data sepatu…')+'</article>'}
-    let S=proShoesModel()||[];
+    let S=proShoesModel()||[];setTimeout(()=>proShoeAutoSync(false),50);
+    if(!S.length&&PRO.shoeSyncing)return '<article class="panel">'+inlineSpinner('Mengambil sepatu dari Strava…')+'</article>';
     if(!S.length)return proEmpty('Belum ada sepatu','Tambahkan sepatu di Strava (Pengaturan → Gear → Sepatu) dan pilih sepatu saat merekam lari. Setelah itu buka Garasi → Sinkron untuk menarik datanya.');
     let active=S.filter(s=>!s.retired),rot=active.filter(s=>s.km30>0).length;
-    return `<article class="panel"><div class="panel-head"><div><span class="eyebrow">RAK SEPATU</span><h3>${active.length} sepatu aktif · ${rot} dirotasi bulan ini</h3><small class="muted">Rotasi 2–3 sepatu dengan karakter berbeda memberi waktu busa pulih dan variasi beban pada kaki.</small></div></div></article>
+    return `<article class="panel"><div class="panel-head"><div><span class="eyebrow">RAK SEPATU</span><h3>${active.length} sepatu aktif · ${rot} dirotasi bulan ini</h3><small class="muted">Rotasi 2–3 sepatu dengan karakter berbeda memberi waktu busa pulih dan variasi beban pada kaki.</small></div><button type="button" class="link-btn" data-shoe-sync>${PRO.shoeSyncing?'Menyinkron…':'Sinkron Strava'}</button></div></article>
       <div class="pro-shoes">${S.map(s=>`<button type="button" class="pro-shoe${s.retired?' retired':''}" data-shoe="${esc(s.id)}"><div class="pro-shoe-top"><b>${esc(s.name)}</b><span class="gx-chip ${s.pct>=100?'bad':s.pct>=85?'warn':'ok'}">${s.retired?'Pensiun':s.pct>=100?'Ganti':s.pct>=85?'Segera':'Baik'}</span></div><small>${esc((PRO_SHOE_TYPES.find(x=>x[0]===s.type)||['',''])[1])}</small><div class="pro-shoe-km"><b>${proN(s.km)}</b><span>/ ${proN(s.retire)} km</span></div><div class="gx-health"><i style="width:${Math.min(100,s.pct)}%;background:${s.pct>=100?'var(--ios-red)':s.pct>=85?'var(--ios-orange)':'var(--ios-green)'}"></i></div><small>${s.runs.length} lari · ${proKm(s.km30,0)} 30 hari${s.pace?' · pace '+pace(s.pace):''}${s.last?' · terakhir '+esc(fmtDateShort(s.last.date)):''}</small>${s.price&&s.km?`<small>${fmtRp(s.price/s.km)}/km</small>`:''}</button>`).join('')}</div>
       ${typeof proShoeReco==='function'?proShoeReco(proPlanFor(proAddDays(proToday(),1))):''}`;
   });
 }
-function proShoesAfter(){proBindCommon();hostAll('[data-shoe]').forEach(el=>el.onclick=()=>proShoeForm(el.dataset.shoe))}
+function proShoesAfter(){proBindCommon();hostAll('[data-shoe]').forEach(el=>el.onclick=()=>proShoeForm(el.dataset.shoe));hostAll('[data-shoe-sync]').forEach(el=>el.onclick=()=>{el.textContent='Menyinkron…';proShoeAutoSync(true)})}
 function proShoeForm(id){
   let s=(proShoesModel()||[]).find(x=>x.id===id);if(!s)return;let c=s.cfg||{};
   $('#detailBox').classList.remove('wide');

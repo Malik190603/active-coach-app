@@ -206,6 +206,91 @@ async function fcmSend(tokens: string[], title: string, body: string, data: Reco
   return { sent, failed, removed: dead.length, errors };
 }
 
+/* ---------------- maintenance & rilis ---------------- */
+type Maint = { on?: boolean; until?: string; reason?: string; started_at?: string; version?: string; by?: string; await_owner?: boolean; [k: string]: unknown };
+async function getMaint(): Promise<Maint | null> {
+  const r = await fetch(BASE + '/rest/v1/ac_config?select=value&key=eq.maintenance', { headers: adminHeaders(false) });
+  if (r.status === 404) return null;
+  const j = await readJson(r); return Array.isArray(j) && j[0] ? (j[0].value || {}) : (r.ok ? {} : null);
+}
+async function setMaint(value: unknown) {
+  await fetch(BASE + '/rest/v1/ac_config?on_conflict=key', { method: 'POST', headers: { ...adminHeaders(true), Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify([{ key: 'maintenance', value, updated_at: new Date().toISOString() }]) });
+}
+function maintActive(m: Maint | null) { return !!(m && m.on && (!m.until || Date.parse(String(m.until)) > Date.now())); }
+async function isAdmin(userId: string) {
+  const r = await fetch(BASE + '/rest/v1/ac_admins?select=user_id&user_id=eq.' + encodeURIComponent(userId), { headers: adminHeaders(false) });
+  const j = await readJson(r); return r.ok && Array.isArray(j) && j.length > 0;
+}
+async function ann(row: { title: string; body: string; level: string; ends_at: string; link?: string }) {
+  const r = await fetch(BASE + '/rest/v1/ac_announcements', { method: 'POST', headers: { ...adminHeaders(true), Prefer: 'return=representation' }, body: JSON.stringify([{ link: '', active: true, starts_at: new Date().toISOString(), created_by: null, ...row }]) });
+  const j = await readJson(r); return Array.isArray(j) && j[0] ? String(j[0].id) : '';
+}
+/* Kirim ke semua HP (kategori maint selalu terkirim) atau hanya HP milik admin. */
+async function pushAll(title: string, body: string, data: Record<string, string>, who: '' | 'admins', tag: string) {
+  if (!fcmAccount()) return { skipped: 'FCM belum diatur' };
+  let filter = '';
+  if (who === 'admins') {
+    const a = await readJson(await fetch(BASE + '/rest/v1/ac_admins?select=user_id', { headers: adminHeaders(false) }));
+    const ids = Array.isArray(a) ? a.map((x: { user_id: string }) => x.user_id) : [];
+    if (!ids.length) return { total: 0 };
+    filter = '&user_id=in.(' + ids.map(encodeURIComponent).join(',') + ')';
+  }
+  const list = (await pushTokens(filter)) || [], seen = new Set<string>();
+  const picked = list.filter((r) => { if (seen.has(r.token)) return false; seen.add(r.token); return true; }).map((r) => r.token);
+  if (!picked.length) return { total: 0 };
+  try { const r = await fcmSend(picked, title.slice(0, 120), body.slice(0, 300), data, { channel: 'alerts', tag }); return { total: picked.length, ...r }; } catch (e) { return { error: String((e as Error).message || e) }; }
+}
+/* Token OIDC GitHub Actions (tanpa rahasia bersama): hanya workflow di cabang main repo ini yang diterima. */
+const GH_OIDC_ISS = env('GITHUB_OIDC_ISSUER') || 'https://token.actions.githubusercontent.com';
+const GH_AUD = 'active-coach-maint';
+let GH_JWKS: { keys: Array<Record<string, string>>; at: number } | null = null;
+function b64urlDecode(s: string) { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)); }
+async function githubOidc(token: string) {
+  try {
+    const parts = token.split('.'); if (parts.length !== 3) return null;
+    const head = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[0]))), claims = JSON.parse(new TextDecoder().decode(b64urlDecode(parts[1])));
+    if (head.alg !== 'RS256') return null;
+    if (!GH_JWKS || Date.now() - GH_JWKS.at > 3600e3 || !GH_JWKS.keys.some((k) => k.kid === head.kid)) {
+      const r = await fetch(GH_OIDC_ISS + '/.well-known/jwks'); const j = await readJson(r);
+      GH_JWKS = { keys: Array.isArray(j.keys) ? j.keys : [], at: Date.now() };
+    }
+    const jwk = GH_JWKS.keys.find((k) => k.kid === head.kid); if (!jwk) return null;
+    const key = await crypto.subtle.importKey('jwk', { kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', ext: true }, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
+    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64urlDecode(parts[2]), new TextEncoder().encode(parts[0] + '.' + parts[1]));
+    if (!ok) return null;
+    const now = Math.floor(Date.now() / 1000);
+    const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
+    if (claims.iss !== GH_OIDC_ISS || !aud.includes(GH_AUD) || !(claims.exp > now) || (claims.nbf && claims.nbf > now + 60)) return null;
+    if (String(claims.repository || '').toLowerCase() !== GITHUB_REPO.toLowerCase() || claims.ref !== 'refs/heads/main') return null;
+    return claims;
+  } catch { return null; }
+}
+async function doRelease(push: boolean): Promise<Record<string, unknown>> {
+  const gr = await fetch(GITHUB_API + '/repos/' + GITHUB_REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'active-coach' } });
+  if (!gr.ok) return { error: 'GitHub ' + gr.status, status: 502 };
+  const rel = await readJson(gr), version = String(rel.tag_name || '').replace(/^v/i, '');
+  if (!/^\d+\.\d+\.\d+$/.test(version)) return { error: 'Versi rilis tidak dikenali', status: 400 };
+  const title = '🚀 Versi ' + version + ' sudah tersedia';
+  const ex = await fetch(BASE + '/rest/v1/ac_announcements?select=id&title=eq.' + encodeURIComponent(title), { headers: adminHeaders(false) });
+  if (ex.status === 404) return { error: 'Tabel ac_announcements belum ada', status: 400 };
+  const exRows = await readJson(ex);
+  if (Array.isArray(exRows) && exRows.length) return { ok: true, version, already: true };
+  const notes = String(rel.body || '').replace(/\r/g, ''), cut = notes.search(/^## Catatan developer/m), user = cut >= 0 ? notes.slice(0, cut) : notes;
+  const bullets = user.split('\n').map((l) => l.trim()).filter((l) => /^[-*•] /.test(l)).slice(0, 4).map((l) => '• ' + l.replace(/^[-*•] /, ''));
+  const body = (bullets.length ? 'Yang baru:\n' + bullets.join('\n') + '\n\n' : '') + 'Perbarui langsung dari aplikasi — tanpa uninstall, data tetap aman.';
+  const annId = await ann({ title, body, level: 'update', link: String(rel.html_url || ''), ends_at: new Date(Date.now() + 14 * 864e5).toISOString() });
+  let pushRes: Record<string, unknown> = { skipped: push ? 'FCM belum diatur' : 'digabung' };
+  if (push && fcmAccount()) {
+    const list = (await pushTokens('')) || [], seen = new Set<string>();
+    const picked = list.filter((r) => { if (seen.has(r.token)) return false; seen.add(r.token); return (!r.app_version || verNewer(version, r.app_version)) && wants(r, 'update'); }).map((r) => r.token);
+    if (picked.length) {
+      const short = bullets.length ? bullets.slice(0, 2).map((b) => b.replace(/^• /, '')).join(' · ') : 'Ketuk untuk memperbarui — tanpa uninstall.';
+      try { pushRes = await fcmSend(picked, title, short.slice(0, 230), { go: 'update', id: annId, version }, { channel: 'announcements', tag: 'update' }); pushRes.total = picked.length; } catch (e) { pushRes = { error: String((e as Error).message || e) }; }
+    } else pushRes = { total: 0 };
+  }
+  return { ok: true, version, announced: !!annId, push: pushRes };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   const u = new URL(req.url), q = u.searchParams;
@@ -275,37 +360,56 @@ Deno.serve(async (req) => {
   // Rilis baru di GitHub → pengumuman + notifikasi otomatis (sekali per versi)
   if (q.has('release')) {
     if (!SERVICE) return json({ error: 'Service key tidak tersedia' }, 500);
-    const gr = await fetch(GITHUB_API + '/repos/' + GITHUB_REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'active-coach' } });
-    if (!gr.ok) return json({ error: 'GitHub ' + gr.status }, 502);
-    const rel = await readJson(gr), version = String(rel.tag_name || '').replace(/^v/i, '');
-    if (!/^\d+\.\d+\.\d+$/.test(version)) return json({ error: 'Versi rilis tidak dikenali' }, 400);
-    const title = '🚀 Versi ' + version + ' sudah tersedia';
-    const ex = await fetch(BASE + '/rest/v1/ac_announcements?select=id&title=eq.' + encodeURIComponent(title), { headers: adminHeaders(false) });
-    if (ex.status === 404) return json({ error: 'Tabel ac_announcements belum ada' }, 400);
-    const exRows = await readJson(ex);
-    if (Array.isArray(exRows) && exRows.length) return json({ ok: true, version, already: true });
-    const notes = String(rel.body || '').replace(/\r/g, ''), cut = notes.search(/^## Catatan developer/m), user = cut >= 0 ? notes.slice(0, cut) : notes;
-    const bullets = user.split('\n').map((l) => l.trim()).filter((l) => /^[-*•] /.test(l)).slice(0, 4).map((l) => '• ' + l.replace(/^[-*•] /, ''));
-    const body = (bullets.length ? 'Yang baru:\n' + bullets.join('\n') + '\n\n' : '') + 'Perbarui langsung dari aplikasi — tanpa uninstall, data tetap aman.';
-    const ins = await fetch(BASE + '/rest/v1/ac_announcements', { method: 'POST', headers: { ...adminHeaders(true), Prefer: 'return=representation' }, body: JSON.stringify([{ title, body, level: 'update', link: String(rel.html_url || ''), active: true, starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 14 * 864e5).toISOString(), created_by: null }]) });
-    const insRows = await readJson(ins), annId = Array.isArray(insRows) && insRows[0] ? String(insRows[0].id) : '';
-    let push: Record<string, unknown> = { skipped: 'FCM belum diatur' };
-    if (fcmAccount()) {
-      const list = (await pushTokens('')) || [], seen = new Set<string>();
-      const picked = list.filter((r) => { if (seen.has(r.token)) return false; seen.add(r.token); return (!r.app_version || verNewer(version, r.app_version)) && wants(r, 'update'); }).map((r) => r.token);
-      if (picked.length) {
-        const short = bullets.length ? bullets.slice(0, 2).map((b) => b.replace(/^• /, '')).join(' · ') : 'Ketuk untuk memperbarui — tanpa uninstall.';
-        try { push = await fcmSend(picked, title, short.slice(0, 230), { go: 'update', id: annId, version }, { channel: 'announcements', tag: 'update' }); push.total = picked.length; } catch (e) { push = { error: String((e as Error).message || e) }; }
-      } else push = { total: 0 };
+    const m = await getMaint();
+    if (maintActive(m)) return json({ ok: true, deferred: 'maintenance' }); // dikabarkan saat maintenance selesai
+    const r = await doRelease(true);
+    return json(r, r.error ? (r.status as number || 400) : 200);
+  }
+
+  // Mode maintenance: GET = status (publik), POST = nyalakan/matikan (GitHub Actions via OIDC, atau admin)
+  if (q.has('maint')) {
+    if (!SERVICE) return json({ error: 'Service key tidak tersedia' }, 500);
+    if (req.method === 'GET') return json({ ok: true, maintenance: await getMaint() });
+    let by = '';
+    const gh = await githubOidc(req.headers.get('x-github-oidc') || '');
+    if (gh) by = 'ci';
+    else { const user = await userFromToken(req); if (user && await isAdmin(user.id)) by = 'admin'; }
+    if (!by) return json({ error: 'Hanya pemilik aplikasi atau GitHub Actions repo ini' }, 403);
+    let b: { on?: boolean; minutes?: number; reason?: string; version?: string; release?: boolean; quiet?: boolean; await_owner?: boolean; notify?: boolean } = {};
+    try { b = await req.json(); } catch { /* kosong */ }
+    const cur = await getMaint(), was = maintActive(cur), now = Date.now();
+    if (cur === null) return json({ error: 'Tabel ac_config belum ada — jalankan SQL 20261002000000_maintenance.sql' }, 400);
+    if (b.on) {
+      const minutes = Math.max(5, Math.min(240, Number(b.minutes) || 45));
+      const reason = String(b.reason || (was && cur.reason) || 'Pembaruan server').slice(0, 120);
+      const value = { on: true, reason, started_at: was && cur.started_at ? cur.started_at : new Date(now).toISOString(), until: new Date(now + minutes * 60000).toISOString(), by, version: String(b.version || (was && cur.version) || '').slice(0, 20), await_owner: !!b.await_owner };
+      await setMaint(value);
+      let push: Record<string, unknown> = { skipped: true };
+      if (!was) {
+        await ann({ title: '🛠 Sedang maintenance', body: reason + '. Perkiraan selesai ±' + minutes + ' menit lagi. Selama maintenance aplikasi dikunci sementara — data di HP-mu tetap aman dan tersinkron otomatis setelah selesai.', level: 'penting', ends_at: new Date(now + (minutes + 60) * 60000).toISOString() });
+        if (b.notify !== false) push = await pushAll('🛠 Active Coach sedang maintenance', reason + '. Perkiraan selesai ±' + minutes + ' menit lagi. Data di HP-mu aman.', { go: 'maint', cat: 'maint' }, '', 'maint');
+      }
+      if (b.await_owner) push = { users: push, owner: await pushAll('🛠 APK sudah rilis — server menunggu kamu', 'Jalankan SQL / deploy fungsi yang baru, lalu buka Developer › Maintenance › Selesai.', { go: 'dev-maint', cat: 'maint' }, 'admins', 'owner') };
+      return json({ ok: true, maintenance: value, started: !was, push });
     }
-    return json({ ok: true, version, announced: ins.ok, push });
+    // matikan
+    await setMaint({ on: false, ended_at: new Date(now).toISOString(), by, last: was ? { reason: cur.reason, started_at: cur.started_at, version: cur.version } : null });
+    try { await fetch(BASE + '/rest/v1/ac_announcements?active=eq.true&title=like.' + encodeURIComponent('🛠*'), { method: 'PATCH', headers: { ...adminHeaders(true), Prefer: 'return=minimal' }, body: JSON.stringify({ active: false }) }); } catch { /* abaikan */ }
+    if (b.quiet) return json({ ok: true, maintenance: { on: false }, quiet: true });
+    let rel: Record<string, unknown> | null = null;
+    if (b.release) rel = await doRelease(!was);
+    if (!was) return json({ ok: true, maintenance: { on: false }, wasOn: false, release: rel });
+    const v = rel && !rel.error ? String(rel.version || '') : '';
+    if (!v) await ann({ title: '✅ Server sudah normal kembali', body: 'Maintenance selesai. Tarik layar ke bawah di Hari Ini untuk menyinkronkan aktivitas terbaru. Terima kasih sudah menunggu!', level: 'info', ends_at: new Date(now + 2 * 864e5).toISOString() });
+    const push = await pushAll(v ? '✅ Selesai! Versi ' + v + ' sudah tersedia' : '✅ Active Coach bisa dipakai lagi', v ? 'Maintenance selesai. Ketuk untuk memperbarui — tanpa uninstall, data tetap aman.' : 'Maintenance selesai. Terima kasih sudah menunggu!', v ? { go: 'update', version: v, cat: 'maint' } : { go: 'ann', cat: 'maint' }, '', 'maint');
+    return json({ ok: true, maintenance: { on: false }, wasOn: true, release: rel, push });
   }
 
   // Cek dari aplikasi: fungsi ada & versi terbaru
   if (q.has('ping')) {
     let table = false;
     if (SERVICE) { try { const t = await fetch(BASE + '/rest/v1/ac_handoff?select=code&limit=1', { headers: adminHeaders(false) }); table = t.ok; } catch { /* abaikan */ } }
-    return json({ ok: true, v: 5, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table, push: !!fcmAccount() });
+    return json({ ok: true, v: 6, maint: true, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table, push: !!fcmAccount() });
   }
 
   // Cabut izin Strava (Putuskan Strava) & hapus akun beserta semua data

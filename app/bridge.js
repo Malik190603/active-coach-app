@@ -61,7 +61,7 @@
   /* ---------- log developer (200 baris terakhir, hanya di HP ini) ---------- */
   var DEVLOG = [];
   function dlog(kind, msg) { try { DEVLOG.push({ t: Date.now(), k: kind, m: String(msg == null ? '' : msg).replace(/(access_token|refresh_token|apikey|Bearer)[^,\s"]*/gi, '$1…').slice(0, 300) }); if (DEVLOG.length > 200) DEVLOG.shift(); } catch (e) {} }
-  function devPaused() { return !!LS.get('acx_dev_pause'); }
+  function devPaused() { return !!LS.get('acx_dev_pause') || !!window.AC_MAINT_LOCK; }
   window.addEventListener('error', function (e) { if (e && e.message) dlog('error', e.message + (e.lineno ? ' @' + e.lineno : '')); });
   window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; dlog('error', 'Promise: ' + ((r && r.message) || r)); });
   function worker() {
@@ -500,7 +500,7 @@
     var r = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
     if (!r.ok) throw new Error('GitHub ' + r.status);
     var j = await r.json(), apk = (j.assets || []).find(function (a) { return /\.apk$/i.test(a.name || ''); });
-    return { version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /^\s*(##\s*Yang baru\s*)?\[WAJIB\]/m.test(j.body || '') };
+    return { publishedAt: j.published_at || '', version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /^\s*(##\s*Yang baru\s*)?\[WAJIB\]/m.test(j.body || '') };
   }
   function splitNotes(md) {
     var s = String(md || '').replace(/\r/g, ''), i = s.search(/^## Catatan developer/m);
@@ -762,6 +762,7 @@
   setInterval(function () { if (document.visibilityState === 'visible') checkInbox(); }, 90000);
   function afterLogin() {
     paintAccount();
+    setTimeout(function () { MAINT.dismissed = false; MAINT.admin = {}; maintCheck(true); }, 600);
     runTriggersSoon(8000);
     setTimeout(autoSync, 6000);
     setTimeout(function () { ensureWebhook(); checkInbox(); try { if (typeof fbCheckAdmin === 'function') fbCheckAdmin(); } catch (e) {} }, 4000);
@@ -805,6 +806,7 @@
   var __origLogout = null;
   document.addEventListener('DOMContentLoaded', function () {
     initLoginUi(); injectProfileRows();
+    setTimeout(function () { maintCheck(true); }, 1200);
     checkForUpdate(false);
     setTimeout(showWhatsNew, 7000);
     try { if (typeof nfInit === 'function') nfInit(); } catch (e) {}
@@ -892,6 +894,9 @@
   function pushHandle(data) {
     data = data || {};
     try {
+      if (data.go === 'maint' || data.cat === 'maint') maintCheck(true);
+      if (data.go === 'dev-maint') { if (typeof ownOpen === 'function') setTimeout(function () { ownOpen('dev', 'maint'); }, 600); return; }
+      if (data.go === 'maint') return;
       if (data.go === 'update') { checkForUpdate(true); return; }
       if (data.go === 'event' && typeof evOpen === 'function') { if (typeof switchPage === 'function') switchPage('dashboard'); setTimeout(evOpen, 300); return; }
       if (typeof switchPage === 'function') switchPage('dashboard');
@@ -917,6 +922,7 @@
         // Android tidak menampilkan notifikasi Firebase saat aplikasi terbuka → tampilkan sendiri di bilah notifikasi
         try { if (P.LocalNotifications) P.LocalNotifications.schedule({ notifications: [{ id: 1400 + Math.floor(Math.random() * 500), title: n.title || 'Active Coach', body: n.body || '', channelId: (n.data && n.data.cat === 'maint') ? 'alerts' : 'announcements', smallIcon: 'ic_stat_ac', iconColor: '#FC4C02', extra: Object.assign({ push: '1' }, n.data || {}), schedule: { at: new Date(Date.now() + 500), allowWhileIdle: true } }] }); } catch (e) { dlog('error', 'Notifikasi lokal: ' + e.message); }
         note(n.title || 'Pengumuman baru');
+        if (n.data && n.data.cat === 'maint') maintCheck(true);
         if (typeof annFetch === 'function') annFetch(true);
       });
       PN.addListener('pushNotificationActionPerformed', function (a) {
@@ -941,6 +947,91 @@
     try { await Promise.race([acxRest('POST', 'rpc/ac_unregister_push', { p_token: tok }), new Promise(function (ok) { setTimeout(ok, 4000); })]); } catch (e) {}
     LS.del('acx_push_token');
   }
+
+  /* ---------- mode maintenance: kunci aplikasi untuk semua kecuali pemilik ---------- */
+  var MAINT = { v: null, admin: {}, timer: 0, tick: 0, busy: false, lockedOnce: false, dismissed: false };
+  function maintActive(v) { return !!(v && v.on && (!v.until || Date.parse(v.until) > Date.now())); }
+  async function maintFetch() {
+    var c = cfg(); if (!c.url || !c.anonKey) return null;
+    var h = { apikey: c.anonKey }, s = null;
+    try { if (currentSession) s = await freshSession(); } catch (e) {}
+    if (s && s.access_token) h.Authorization = 'Bearer ' + s.access_token;
+    try {
+      var r = await fetch(c.url + '/rest/v1/ac_config?select=value&key=eq.maintenance', { headers: h, cache: 'no-store' });
+      if (r.status === 401 && h.Authorization) { delete h.Authorization; r = await fetch(c.url + '/rest/v1/ac_config?select=value&key=eq.maintenance', { headers: h, cache: 'no-store' }); }
+      if (r.status === 404 || r.status === 400) return { on: false, missing: true };
+      if (!r.ok) return null;
+      var j = await r.json(); return (j && j[0] && j[0].value) || { on: false };
+    } catch (e) { return null; }
+  }
+  async function maintIsOwner() {
+    if (typeof FB_ADMIN !== 'undefined' && FB_ADMIN) return true;
+    var uid = currentSession && currentSession.user && currentSession.user.id; if (!uid) return false;
+    if (MAINT.admin[uid] !== undefined) return MAINT.admin[uid];
+    try { var rows = await acxRest('GET', 'ac_admins?select=user_id'); MAINT.admin[uid] = Array.isArray(rows) && rows.length > 0; } catch (e) { return false; }
+    return MAINT.admin[uid];
+  }
+  function maintHm(t) { try { return new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; } }
+  function maintLeft(t) { var m = Math.max(0, Math.round((Date.parse(t) - Date.now()) / 60000)); return m < 1 ? 'sebentar lagi' : m < 60 ? '±' + m + ' menit lagi' : '±' + Math.floor(m / 60) + ' jam ' + (m % 60) + ' menit lagi'; }
+  function maintPaint() {
+    var v = MAINT.v, on = maintActive(v), box = $('#acMaint'), bar = $('#acMaintBar');
+    if (!on || MAINT.owner) { if (box) { box.classList.add('out'); setTimeout(function () { if (box.parentNode && box.classList.contains('out')) box.remove(); }, 400); } window.AC_MAINT_LOCK = false; }
+    if (!on || !MAINT.owner) { if (bar) bar.remove(); }
+    if (!on) return;
+    if (MAINT.owner) {
+      if (!bar) { document.body.insertAdjacentHTML('beforeend', '<button type="button" id="acMaintBar" class="ac-maint-owner"></button>'); bar = $('#acMaintBar'); bar.onclick = function () { if (typeof ownOpen === 'function') ownOpen('dev', 'maint'); }; }
+      bar.innerHTML = '<i></i><span>Mode maintenance aktif · pengguna lain terkunci sampai ' + esc(maintHm(v.until)) + (v.await_owner ? ' · <b>menunggu kamu</b>' : '') + '</span><em>›</em>';
+      return;
+    }
+    if (MAINT.dismissed && !currentSession) return;
+    window.AC_MAINT_LOCK = true;
+    var total = Math.max(1, Date.parse(v.until) - Date.parse(v.started_at || v.until)), pct = Math.min(96, Math.max(4, (Date.now() - Date.parse(v.started_at || Date.now())) / total * 100));
+    if (!box) {
+      document.body.insertAdjacentHTML('beforeend', '<div id="acMaint" class="ac-maint" role="dialog" aria-modal="true" aria-labelledby="acMaintT"><div class="ac-maint-box"><div class="ac-maint-ic"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.6 17.2a1.6 1.6 0 0 0 2.3 2.3l5.7-5.7a4 4 0 0 0 5.2-5.4l-2.5 2.5-2.1-.5-.5-2.1z"/></svg></div><h2 id="acMaintT">Sedang maintenance</h2><p class="ac-maint-why"></p><div class="ac-maint-eta"><small>Perkiraan selesai</small><b></b><span></span></div><div class="ac-maint-prog"><i></i></div><p class="ac-maint-note">Aplikasi dikunci sementara selama pembaruan. Data latihanmu aman di HP dan akan tersinkron otomatis. Layar ini terbuka sendiri begitu selesai — kamu juga akan mendapat notifikasi.</p><button type="button" class="ac-maint-btn" data-m="check">Cek lagi</button><button type="button" class="ac-maint-own" data-m="own" hidden>Saya pemilik aplikasi — masuk</button></div></div>');
+      box = $('#acMaint');
+      box.querySelector('[data-m="check"]').onclick = function (e) { var b = e.currentTarget; b.classList.add('is-busy'); maintCheck(true).then(function () { b.classList.remove('is-busy'); if (maintActive(MAINT.v)) note('Masih maintenance — ' + maintLeft(MAINT.v.until)); }); };
+      box.querySelector('[data-m="own"]').onclick = function () { MAINT.dismissed = true; box.remove(); window.AC_MAINT_LOCK = false; };
+      MAINT.lockedOnce = true; dlog('sync', 'Mode maintenance: aplikasi dikunci');
+    }
+    box.classList.remove('out');
+    box.querySelector('.ac-maint-why').textContent = v.reason || 'Pembaruan server';
+    box.querySelector('.ac-maint-eta b').textContent = 'pukul ' + maintHm(v.until);
+    box.querySelector('.ac-maint-eta span').textContent = maintLeft(v.until);
+    box.querySelector('.ac-maint-prog i').style.width = pct + '%';
+    box.querySelector('[data-m="own"]').hidden = !!currentSession;
+  }
+  async function maintCheck(force) {
+    if (MAINT.busy) return MAINT.v;
+    if (!force && document.visibilityState === 'hidden') return MAINT.v;
+    MAINT.busy = true;
+    try {
+      var v = await maintFetch();
+      if (v) {
+        var was = maintActive(MAINT.v); MAINT.v = v;
+        var on = maintActive(v);
+        MAINT.owner = on ? await maintIsOwner() : false;
+        maintPaint();
+        if (was && !on && MAINT.lockedOnce) { MAINT.lockedOnce = false; note('✅ Maintenance selesai'); setTimeout(function () { try { checkForUpdate(false); autoSync(true); } catch (e) {} }, 800); }
+      }
+    } finally { MAINT.busy = false; }
+    clearTimeout(MAINT.timer);
+    var active = maintActive(MAINT.v), wait = active ? 30000 : 300000;
+    if (active && MAINT.v.until) wait = Math.min(wait, Math.max(2000, Date.parse(MAINT.v.until) - Date.now() + 1500));
+    MAINT.timer = setTimeout(function () { maintCheck(false); }, wait);
+    clearInterval(MAINT.tick); if (active) MAINT.tick = setInterval(maintPaint, 15000);
+    return MAINT.v;
+  }
+  async function maintSet(body) {
+    var s = await freshSession(); if (!s || !s.access_token) throw new Error('Belum masuk');
+    var c = cfg(), h = redeemHeaders(c); h.Authorization = 'Bearer ' + s.access_token;
+    var r = await fetch(c.url + '/functions/v1/strava-callback?maint=1', { method: 'POST', headers: h, body: JSON.stringify(body || {}) });
+    var j = {}; try { j = await r.json(); } catch (e) {}
+    if (!r.ok || !j.maintenance) throw new Error(j.error || (r.status === 404 || !j.maintenance ? 'Fungsi strava-callback versi lama — deploy ulang (butuh v6)' : 'Server ' + r.status));
+    dlog('sync', 'Maintenance ' + (body && body.on ? 'dinyalakan' : 'dimatikan') + (j.push && j.push.sent != null ? ' · notif ' + j.push.sent + ' HP' : ''));
+    await maintCheck(true);
+    return j;
+  }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') maintCheck(false); });
   async function pushSend(msg) {
     var s = await freshSession(); if (!s || !s.access_token) throw new Error('Belum masuk');
     var c = cfg(), h = redeemHeaders(c); h.Authorization = 'Bearer ' + s.access_token;
@@ -971,5 +1062,5 @@
     var card = document.querySelector('#updSheet .upd-card') || document.querySelector('#updSheet');
     if (card && !document.getElementById('updSimClose')) { card.insertAdjacentHTML('beforeend', '<button type="button" class="acx-btn st-btn-ghost" id="updSimClose" style="margin-top:10px;width:100%">Tutup simulasi</button>'); document.getElementById('updSimClose').onclick = function () { var g = $('#updSheet'); if (g) g.remove(); }; }
   }
-  window.ACX = { pushSyncPrefs: pushSyncPrefs, pushHandle: pushHandle, pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { maintCheck: maintCheck, maintSet: maintSet, maintState: function () { return { v: MAINT.v, active: maintActive(MAINT.v), owner: !!MAINT.owner }; }, pushSyncPrefs: pushSyncPrefs, pushHandle: pushHandle, pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

@@ -104,7 +104,15 @@ Di **Profil › Khusus pemilik** ada dua ubin yang membuka halaman penuh:
 - **Preferensi pengguna:** di Profil › Notifikasi pengguna bisa mematikan notifikasi pengumuman, versi baru, atau event. Maintenance & gangguan selalu terkirim (kanal prioritas tinggi).
 - Notifikasi sejenis saling menggantikan (tidak menumpuk), token HP yang sudah tidak aktif dihapus otomatis.
 
-Setelah memperbarui ke versi ini: jalankan `20261001220000_admin_users.sql` dan **deploy ulang** `strava-callback` (versi fungsi harus v5 — cek di Developer › Ringkasan).
+Setelah memperbarui: jalankan `20261001220000_admin_users.sql` dan `20261002000000_maintenance.sql`, lalu **deploy ulang** `strava-callback` (versi fungsi harus v6 — cek di Developer › Ringkasan).
+
+### Mode maintenance (kunci sementara)
+Jalankan SQL `20261002000000_maintenance.sql` dan deploy ulang `strava-callback` (harus **v6**). Setelah itu:
+- **Manual:** Developer › Maintenance › *Mulai maintenance* → semua pengguna lain dapat notifikasi dan aplikasinya terkunci dengan layar "Sedang maintenance" (hitung mundur, data di HP aman, sinkron dijeda). Akun pemilik tetap bisa masuk dan melihat pita oranye "Mode maintenance aktif". *Selesai maintenance* membuka kunci dan mengabari pengguna (bisa sekaligus mengumumkan versi terbaru). Kunci selalu terbuka sendiri saat waktunya habis.
+- **Otomatis saat rilis:** GitHub Actions menyalakan maintenance bila commit mengubah folder `supabase/` (SQL/fungsi) atau pesan commit berisi `[maintenance]` (`[no-maintenance]` untuk membatalkan). Update tampilan/fitur biasa tidak mengunci pengguna. GitHub masuk ke server memakai token OIDC bawaan GitHub — **tidak perlu rahasia tambahan**; server hanya menerima workflow dari cabang `main` repo ini.
+  - Selesai build: bila server juga diperbarui otomatis (lihat di bawah), maintenance dimatikan dan pengguna menerima satu notifikasi "✅ Selesai! Versi X sudah tersedia". Bila belum, maintenance tetap menyala (maks. 2 jam) dan kamu mendapat notifikasi untuk menjalankan SQL/deploy lalu menekan *Selesai maintenance*.
+  - Build gagal → kunci dibuka tanpa notifikasi.
+- **(Opsional) Perbarui server otomatis:** buat *Access token* di Supabase (Account › Access Tokens) lalu simpan di GitHub › Settings › Secrets › Actions sebagai `SUPABASE_ACCESS_TOKEN`. Saat ada file SQL baru/berubah atau kode fungsi berubah, workflow menjalankan SQL itu dan mendeploy fungsinya sendiri selama maintenance — tidak perlu lagi salin-tempel kode. Token ini kuat (akses ke proyek Supabase-mu), jadi hanya simpan di GitHub Secrets, jangan di tempat lain.
 
 **Karya tahunan** (Rekap › Tahunan): Poster A3 semua rute (PNG/PDF), video "setahun dalam 30 detik", dan kalender dinding PDF 13 halaman. Ada juga kartu **Kenangan** ("setahun lalu hari ini") dan **template musiman** otomatis (17 Agustus, Ramadan, Lebaran, Natal, Tahun Baru).
 

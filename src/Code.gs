@@ -751,6 +751,7 @@ function garageState_(ss, athleteId, extra) {
     stravaBikes: sb.bikes || [], stravaBikesFull: !!sb.full, gearSyncedAt: Number(scriptProps().getProperty('GARAGE_GEAR_SYNC_' + athleteId) || 0),
     stravaConnected: !!(ath.stravaAccessToken || ath.stravaRefreshToken), serverTime: new Date().getTime() };
   try { out.stravaShoes = JSON.parse(scriptProps().getProperty('GARAGE_STRAVA_SHOES_' + athleteId) || '[]'); } catch (e) { out.stravaShoes = []; }
+  out.shoesSyncedAt = Number(scriptProps().getProperty('GARAGE_SHOES_SYNC_' + athleteId) || 0);
   if (extra) Object.keys(extra).forEach(function(k) { out[k] = extra[k]; });
   return out;
 }
@@ -937,6 +938,47 @@ function garageSyncGear(athleteId, full) {
     return garageState_(SpreadsheetApp.getActiveSpreadsheet(), athleteId, { syncInfo: { scanned: pairs.length, changed: changed, full: !after, complete: complete, stravaBikes: bikes.length } });
   } catch (err) { logError('Garage gear sync', err, athleteId); throw err; }
 }
+/* Nama sepatu dari Strava. /athlete memberi sepatu aktif; sepatu yang dipakai lari tapi tidak ada di
+   daftar itu (pensiun/terhapus) diambil satu per satu lewat /gear/{id}. Nama lama tidak pernah dibuang. */
+function garageShoeNameOk_(s) { return !!(s && s.name && !/^Sepatu( g?\d+| Strava)?$/i.test(s.name) && !/^g\d+$/.test(s.name)); }
+function garageRefreshShoes_(athleteId, ath) {
+  var props = scriptProps(), key = 'GARAGE_STRAVA_SHOES_' + athleteId, prev = [], map = {}, order = [], fetched = 0;
+  try { prev = JSON.parse(props.getProperty(key) || '[]') || []; } catch (e) { prev = []; }
+  prev.forEach(function(s) { if (s && s.id) { map[s.id] = s; order.push(s.id); } });
+  function put(sh, source) {
+    var id = normId_(sh.id); if (!id) return;
+    var nm = gStr_(sh.nickname || sh.name || ((sh.brand_name || '') + ' ' + (sh.model_name || '')), 80);
+    var old = map[id] || {};
+    if (!map[id]) order.push(id);
+    map[id] = { id: id, name: nm || (garageShoeNameOk_(old) ? old.name : ''), brand: gStr_(sh.brand_name || old.brand || '', 40), model: gStr_(sh.model_name || old.model || '', 60), distanceKm: Math.round(num(sh.distance) / 100) / 10, primary: !!sh.primary, retired: !!sh.retired, source: source };
+  }
+  if (ath === undefined) { try { ath = stravaFetch('/athlete', null, athleteId); } catch (e) { ath = null; console.log('Daftar sepatu Strava tidak tersedia: ' + e); } }
+  var active = {};
+  if (ath && ath.shoes instanceof Array) ath.shoes.forEach(function(sh) { put(sh, 'athlete'); active[normId_(sh.id)] = true; });
+  var need = {};
+  try { garageGearValues_(garageGearSheet_()).forEach(function(r) { var g = normId_(r[2]); if (normId_(r[1]) === athleteId && g && g.charAt(0) === 'g') need[g] = true; }); } catch (e) {}
+  Object.keys(map).forEach(function(id) { if (!garageShoeNameOk_(map[id])) need[id] = true; });
+  Object.keys(need).forEach(function(id) {
+    if (active[id] && garageShoeNameOk_(map[id])) return;
+    if (map[id] && garageShoeNameOk_(map[id]) && map[id].source === 'gear' && map[id].at && new Date().getTime() - map[id].at < 7 * 86400000) return;
+    if (fetched >= 15) return;
+    fetched++;
+    try { var g = stravaFetch('/gear/' + encodeURIComponent(id), null, athleteId); if (g && (g.name || g.nickname || g.brand_name)) { put(g, 'gear'); map[id].at = new Date().getTime(); if (!active[id] && g.retired === undefined) map[id].retired = true; } } catch (e2) { console.log('Gear ' + id + ' tidak terbaca: ' + e2); }
+  });
+  var list = order.filter(function(id, i) { return map[id] && order.indexOf(id) === i; }).map(function(id) { return map[id]; });
+  props.setProperty(key, JSON.stringify(list.slice(0, 40)));
+  props.setProperty('GARAGE_SHOES_SYNC_' + athleteId, String(new Date().getTime()));
+  return list;
+}
+/* Dipanggil halaman Gear › Sepatu: perbarui nama & jarak sepatu dari Strava. */
+function garageSyncShoes(athleteId) {
+  ensureRuntimeDatabase();
+  athleteId = normId_(athleteId || DEFAULT_ATHLETE_ID);
+  try {
+    var list = garageRefreshShoes_(athleteId);
+    return garageState_(SpreadsheetApp.getActiveSpreadsheet(), athleteId, { shoeSync: { shoes: list.length, named: list.filter(garageShoeNameOk_).length } });
+  } catch (err) { logError('Garage shoe sync', err, athleteId); throw err; }
+}
 function garageRefreshStravaBikes_(athleteId) {
   var props = scriptProps(), prev = garageStravaBikes_(athleteId), prevMap = {}, list = [], known = {}, full = false, fetches = 0;
   (prev.bikes || []).forEach(function(b) { prevMap[b.id] = b; });
@@ -945,10 +987,9 @@ function garageRefreshStravaBikes_(athleteId) {
     if (ath && ath.bikes instanceof Array) {
       full = true;
       ath.bikes.forEach(function(b) { var id = normId_(b.id); if (!id) return; known[id] = true; list.push({ id: id, name: gStr_(b.nickname || b.name, 80) || 'Sepeda Strava', distanceKm: Math.round(num(b.distance) / 100) / 10, primary: !!b.primary, retired: !!b.retired, source: 'athlete' }); });
-      // Sepatu (untuk Rak Sepatu): disimpan terpisah.
-      var shoes = (ath.shoes || []).map(function(sh) { return { id: normId_(sh.id), name: gStr_(sh.nickname || sh.name, 80) || 'Sepatu', distanceKm: Math.round(num(sh.distance) / 100) / 10, primary: !!sh.primary, retired: !!sh.retired }; }).filter(function(x) { return x.id; });
-      props.setProperty('GARAGE_STRAVA_SHOES_' + athleteId, JSON.stringify(shoes.slice(0, 30)));
     }
+    // Sepatu (untuk Rak Sepatu): disimpan terpisah, termasuk nama dari /gear untuk sepatu lama.
+    if (ath) garageRefreshShoes_(athleteId, ath);
   } catch (e) { console.log('Daftar sepeda Strava tidak tersedia: ' + e); }
   var seen = {};
   garageGearValues_(garageGearSheet_()).forEach(function(r) { var g = normId_(r[2]); if (normId_(r[1]) === athleteId && g && g.charAt(0) === 'b') seen[g] = true; });
