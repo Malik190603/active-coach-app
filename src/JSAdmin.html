@@ -161,15 +161,11 @@ function admPaintDash(){
 /* ================================ PANEL ADMIN ================================ */
 const ADM_FEAT={'page:dashboard':'Hari Ini','page:training/plan':'Latihan › Rencana','page:training/calendar':'Latihan › Kalender','page:training/activities':'Latihan › Riwayat','page:training/routes':'Latihan › Peta','page:performance/fitness':'Performa › Fitness','page:performance/intensity':'Performa › Intensitas','page:performance/speed':'Performa › Kecepatan','page:performance/records':'Performa › Rekor','page:garage/bikes':'Gear › Sepeda','page:garage/shoes':'Gear › Sepatu','page:garage/commute':'Gear › Komuter','page:sharing':'Berbagi','page:overlay-editor':'Studio','page:profile':'Profil','page:detail':'Detail','studio:save':'Studio › simpan gambar','studio:video':'Studio › video','studio:share':'Studio › bagikan','event:open':'Kalender event','event:filter':'Kalender event › filter','event:untarget':'Hapus target event','event:target':'Jadikan target event','recap:open':'Rekap bulanan','memory:share':'Bagikan kenangan','poster:open':'Poster A3','calendar:open':'Kalender PDF','yearvideo:open':'Video setahun','tour:done':'Tutorial selesai'};
 function admFeatName(k){if(ADM_FEAT[k])return ADM_FEAT[k];if(/^tpl:/.test(k))return 'Template › '+k.slice(4);return k.replace(/^page:/,'').replace('/',' › ')}
-function admPaintRow(){
-  let fb=document.getElementById('fbInboxRow');if(!FB_ADMIN||!fb){let r=document.getElementById('admPanelRow');if(r&&!FB_ADMIN)r.remove();return}
-  if(document.getElementById('admPanelRow'))return;
-  fb.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="admPanelRow"><span class="acx-row-ic tone-coral icon"><svg><use href="#i-chart"/></svg></span><span class="acx-row-text"><b>Panel admin</b><small>Dasbor pengguna · kirim pengumuman · kelola event</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');
-  document.getElementById('admPanelRow').onclick=()=>admOpen('dash');
-}
+function admPaintRow(){let r=document.getElementById('admPanelRow');if(r)r.remove()}
 async function annPushSend(a){
   let txt=String(a.body||'').replace(/\s+/g,' ').trim();
-  return ACX.pushSend({title:String(a.title||'Active Coach').slice(0,120),body:txt.length>230?txt.slice(0,227)+'…':txt,data:annIsUpdate(a)?{go:'update',id:String(a.id||'')}:{go:'ann',id:String(a.id||'')}});
+  let t=String(a.title||''),cat=/^(🛠|⚠️|✅)/.test(t)||a.level==='penting'?'maint':annIsUpdate(a)?'update':a.level==='event'?'event':'ann';
+  return ACX.pushSend({title:t.slice(0,120)||'Active Coach',body:txt.length>230?txt.slice(0,227)+'…':txt,category:cat,tag:cat==='update'?'update':undefined,data:{go:cat==='update'?'update':cat==='event'?'event':'ann',id:String(a.id||''),cat}});
 }
 const ANN_TPLS=[
   {k:'maint',e:'🛠',n:'Maintenance terjadwal',level:'penting',dur:1},

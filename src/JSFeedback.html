@@ -15,11 +15,10 @@ async function fbCheckAdmin(){
     fbPaintRow(n);if(n>seen){toast('📬 '+n+' masukan baru dari pengguna');localStorage.setItem('acx_fb_seen',String(n))}else if(n<seen)localStorage.setItem('acx_fb_seen',String(n))}catch(e){}
 }
 function fbPaintRow(n){
-  let host=document.querySelector('[data-page-view="profile"] #openFeedback');if(!host)return;
-  let row=document.getElementById('fbInboxRow');
-  if(!FB_ADMIN){if(row)row.remove();return}
-  if(!row){host.insertAdjacentHTML('afterend','<button type="button" class="acx-row" id="fbInboxRow"><span class="acx-row-ic tone-violet icon"><svg><use href="#i-bell"/></svg></span><span class="acx-row-text"><b>Kotak masuk masukan</b><small>Kritik & saran dari semua pengguna</small></span><span class="fb-badge" id="fbBadge" hidden></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');row=document.getElementById('fbInboxRow');row.onclick=fbOpenInbox}
-  let b=document.getElementById('fbBadge');if(b&&n!=null){b.hidden=!n;b.textContent=n>99?'99+':String(n)}
+  /* Kotak masuk kini ada di halaman Panel Admin; di profil cukup lencana pada ubin Admin. */
+  let row=document.getElementById('fbInboxRow');if(row)row.remove();
+  if(n!=null)window.FB_NEW=n;
+  if(typeof ownPaintTiles==='function')ownPaintTiles();
 }
 /* ---------- riwayat milik pengguna (di popup Saran & Kritik) ---------- */
 async function fbLoadMine(){

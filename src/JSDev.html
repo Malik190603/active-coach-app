@@ -12,13 +12,7 @@ function devBytes(n){if(!n)return '0 B';let u=['B','KB','MB','GB'],i=0;while(n>=
 function devRow(k,v,copy){return `<div class="dev-kv"><span>${k}</span><b${copy?` data-copy="${esc(String(v))}"`:''}>${esc(String(v==null||v===''?'–':v))}${copy?' <i class="dev-copy">salin</i>':''}</b></div>`}
 function devStat(ok,label,detail){return `<div class="dev-check ${ok===true?'ok':ok===false?'bad':'warn'}"><span class="dev-dot"></span><div><b>${label}</b>${detail?`<small>${esc(detail)}</small>`:''}</div></div>`}
 function devBtn(id,label,cls){return `<button type="button" class="dev-btn${cls?' '+cls:''}" data-dev="${id}">${label}</button>`}
-function devPaintRow(){
-  let host=document.querySelector('[data-page-view="profile"] #admPanelRow')||document.getElementById('fbInboxRow');
-  if(!FB_ADMIN||!host){let r=document.getElementById('devRow');if(r&&!FB_ADMIN)r.remove();return}
-  if(document.getElementById('devRow'))return;
-  host.insertAdjacentHTML('beforebegin','<button type="button" class="acx-row" id="devRow"><span class="acx-row-ic tone-gray icon"><svg><use href="#i-wrench"/></svg></span><span class="acx-row-text"><b>Menu developer</b><small>Info teknis, cek server, log, uji fitur</small></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>');
-  document.getElementById('devRow').onclick=()=>devOpen();
-}
+function devPaintRow(){let r=document.getElementById('devRow');if(r)r.remove()}
 (function(){try{let o=window.fbPaintRow;if(typeof o!=='function')return;window.fbPaintRow=function(){let r=o.apply(this,arguments);try{devPaintRow()}catch(e){}return r}}catch(e){}})();
 function devOpen(tab){
   DEV.tab=tab||DEV.tab;

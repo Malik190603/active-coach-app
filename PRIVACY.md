@@ -19,7 +19,10 @@ Your data is used **only to show you your own training analysis**: readiness, tr
 - Share images are created on your phone and only leave the device when you tap **Share**.
 
 ## Anonymous usage statistics
-To find bugs and improve the app, Active Coach sends a small **daily usage summary**: app version, platform, how many times the app was opened, which screens/features were used (counts only), and error messages. It contains **no activity data, no location, no name**. The developer only sees totals across all users (for example "35 users opened Studio this week"), never per-person data. You can turn this off anytime in Profile → *Bantu kembangkan aplikasi*. Announcements and the event calendar are read-only lists published by the developer.
+To find bugs and improve the app, Active Coach sends a small **daily usage summary**: app version, platform, how many times the app was opened, which screens/features were used (counts only), and error messages. It contains **no activity data, no location, no name**. Feature and error statistics are shown to the developer only as totals across all users (for example "35 users opened Studio this week"). You can turn this off anytime in Profile → *Bantu kembangkan aplikasi*.
+
+## What the app owner can see
+To run the service (support, update reminders, maintenance notices), the app owner has an admin list of registered accounts showing only: Strava display name and profile photo, Strava athlete ID, join date, last sign-in, the last day the app was opened and its version, how many times it was opened in the last 30 days, whether phone notifications are enabled, and the **number** of stored activities. The owner does **not** see your email, tokens, routes, or the content of your activities through this list, and it is never shown to other users. The owner can send a notification to a specific account (for example a reminder to update). Announcements and the event calendar are read-only lists published by the developer.
 
 ## Where it is stored
 - Your data is stored in a private workspace in our Supabase database (cloud Postgres). Row-Level Security ensures each account can only read its own data. A cached copy is kept on your phone so the app works offline.
@@ -50,7 +53,9 @@ Active Coach adalah aplikasi analisis latihan pribadi untuk Android. Proyek inde
 
 **Penggunaan:** hanya untuk menampilkan analisis latihanmu sendiri. Data **tidak pernah ditampilkan ke pengguna lain**, tidak dijual, tidak untuk iklan, dan **tidak dipakai melatih AI**. Aplikasi tidak pernah memposting atau mengubah apa pun di Strava. Kartu story dibuat di HP dan hanya keluar dari HP saat kamu menekan *Bagikan*.
 
-**Statistik pemakaian anonim:** untuk menemukan bug dan memperbaiki aplikasi, dikirim ringkasan harian kecil: versi aplikasi, platform, berapa kali aplikasi dibuka, fitur yang dipakai (hanya jumlah), dan pesan error. **Tanpa data aktivitas, tanpa lokasi, tanpa nama.** Pengembang hanya melihat angka gabungan semua pengguna, bukan data per orang. Bisa dimatikan kapan saja di Profil → *Bantu kembangkan aplikasi*.
+**Statistik pemakaian anonim:** untuk menemukan bug dan memperbaiki aplikasi, dikirim ringkasan harian kecil: versi aplikasi, platform, berapa kali aplikasi dibuka, fitur yang dipakai (hanya jumlah), dan pesan error. **Tanpa data aktivitas, tanpa lokasi, tanpa nama.** Statistik fitur & error hanya dilihat pengembang sebagai angka gabungan semua pengguna. Bisa dimatikan kapan saja di Profil → *Bantu kembangkan aplikasi*.
+
+**Yang bisa dilihat pemilik aplikasi:** untuk menjalankan layanan (bantuan, pengingat update, kabar maintenance), pemilik aplikasi punya daftar akun terdaftar yang hanya berisi: nama & foto profil Strava, ID atlet Strava, tanggal bergabung, login terakhir, hari terakhir membuka aplikasi beserta versinya, berapa kali dibuka 30 hari terakhir, status notifikasi HP, dan **jumlah** aktivitas tersimpan. Pemilik **tidak** melihat email, token, rute, atau isi aktivitasmu lewat daftar ini, dan daftar ini tidak pernah ditampilkan ke pengguna lain. Pemilik bisa mengirim notifikasi ke akun tertentu (mis. pengingat update).
 
 **Penyimpanan:** di workspace pribadi pada database Supabase dengan Row-Level Security (tiap akun hanya bisa membaca datanya sendiri), plus salinan cache di HP. Client secret Strava hanya ada di server.
 

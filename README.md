@@ -81,15 +81,30 @@ Pesan commit menjadi catatan rilis. Pisahkan dengan baris `Untuk pengguna:` dan 
 
 Setiap build baru di GitHub terbit di **Releases** dengan catatan dari pesan commit. Saat dibuka atau kembali aktif, aplikasi (mulai v1.1.15) memeriksa rilis terbaru. Kalau ada versi lebih baru, aplikasi **terkunci** di layar *Pembaruan wajib* sampai versi terbaru dipasang: APK diunduh di dalam aplikasi (dengan progres), lalu penginstal Android terbuka — pasang menimpa, data tetap ada. Pertama kali, Android meminta izin *Instal aplikasi tidak dikenal* untuk Active Coach. Jika offline, kunci tetap berlaku bila versi baru sudah pernah terdeteksi.
 
-## Panel admin (khusus pemilik aplikasi)
+## Panel Admin & Developer (khusus pemilik aplikasi)
 
-Jalankan SQL `supabase/migrations/20261001180000_admin_suite.sql` sekali di Supabase › SQL Editor. Setelah itu di **Profil › Panel admin** (hanya muncul untuk akun admin):
-- **Dasbor** — jumlah pengguna, aktif harian/mingguan/bulanan, versi aplikasi yang dipakai, fitur paling sering dibuka, error terbanyak, dan jumlah masukan. Semua angka anonim & gabungan.
-- **Pengumuman** — kirim pesan ke semua pengguna (Info, Pembaruan, Event, atau Penting = pop-up), dengan masa tampil. Ada **template cepat**: Maintenance terjadwal (isi tanggal & jam, otomatis hilang 1 jam setelah selesai), Gangguan sementara, Maintenance selesai, Update APK baru (judul & isi diambil otomatis dari rilis GitHub + tombol *Perbarui sekarang*, tersembunyi bagi yang sudah update), Fitur baru, dan Event baru — lengkap dengan pratinjau tampilan di HP pengguna.
-- **Event** — kelola Kalender event (lari, sepeda, trail, triathlon, renang). Pengguna melihatnya di Profil › Kalender event dan bisa menjadikannya target latihan (hitung mundur di Hari Ini + pengingat H-7 & H-1).
-- **Masukan** — kotak masuk kritik & saran.
+Jalankan SQL ini sekali (berurutan) di Supabase › SQL Editor: `20261001180000_admin_suite.sql`, `20261001200000_push.sql`, lalu `20261001220000_admin_users.sql`. Pemilik = akun Strava pertama yang masuk (tabel `ac_admins`). Akun lain tidak melihat ubinnya, tidak bisa membuka halamannya, dan server menolak semua permintaan admin dari mereka.
 
-**Menu developer** (Profil › Menu developer, khusus admin): info sistem & perangkat, cek kesehatan server (Supabase, fungsi, tabel, token Strava, webhook), status sinkron & antrean, log 200 baris terakhir (salin/bagikan/kirim ke kotak masuk), uji notifikasi & layar, saklar lokal (jeda sinkron, overlay FPS, banner error), hapus cache, dan info rilis + sidik jari APK.
+Di **Profil › Khusus pemilik** ada dua ubin yang membuka halaman penuh:
+
+**🛡️ Panel Admin**
+- **Ringkasan** — total pengguna, aktif 7 hari, HP dengan notifikasi aktif, pengguna versi lama, masukan baru, aksi cepat, pengguna & masukan terbaru.
+- **Pengguna** — *siapa saja yang memakai aplikasi*: nama & foto Strava, ID Strava, tanggal bergabung, terakhir login/membuka aplikasi, versi APK, jumlah aktivitas, status notifikasi. Bisa dicari, difilter (aktif, versi lama, notif aktif/mati), diurutkan, dan dikirimi notifikasi pribadi. Tidak menampilkan email, token, atau data latihan.
+- **Pengumuman** — kirim info/pembaruan/event/penting (pop-up) dengan template (maintenance, gangguan, selesai, update APK, fitur baru, event) + pratinjau.
+- **Notifikasi** — kirim notifikasi HP tanpa pengumuman ke semua, hanya yang belum update, atau satu pengguna; tombol **Ingatkan pengguna versi lama**.
+- **Event**, **Masukan** (kotak masuk kritik & saran), **Statistik** (pemakaian, versi, fitur, error).
+
+**⚙️ Developer**
+- **Ringkasan** — lampu status Supabase, fungsi server, proxy, database, Strava, Firebase, webhook, antrean + daftar masalah yang perlu dibereskan.
+- **Maintenance** — tombol *Mulai maintenance* (pop-up + kartu + notifikasi ke semua) dan *Selesai maintenance* (menutup pengumuman lama dan mengabari pengguna), jadwal maintenance, jeda sinkron HP ini.
+- **Server, Notifikasi (diagnostik Firebase), Sinkron & data, Log, Uji, Saklar, Cache, Rilis** (riwayat rilis + jumlah unduhan APK), **Tautan** (dashboard Supabase, SQL, secrets, GitHub Actions, Firebase, Strava API), **Perangkat**.
+
+### Notifikasi pintar
+- **Versi baru otomatis:** setiap rilis GitHub, langkah terakhir workflow memanggil `strava-callback?release=1`. Server membuat pengumuman "🚀 Versi X sudah tersedia" (sekali per versi) dan mengirim notifikasi **hanya ke HP yang masih memakai versi lama**. Ketukannya langsung membuka layar pembaruan.
+- **Preferensi pengguna:** di Profil › Notifikasi pengguna bisa mematikan notifikasi pengumuman, versi baru, atau event. Maintenance & gangguan selalu terkirim (kanal prioritas tinggi).
+- Notifikasi sejenis saling menggantikan (tidak menumpuk), token HP yang sudah tidak aktif dihapus otomatis.
+
+Setelah memperbarui ke versi ini: jalankan `20261001220000_admin_users.sql` dan **deploy ulang** `strava-callback` (versi fungsi harus v5 — cek di Developer › Ringkasan).
 
 **Karya tahunan** (Rekap › Tahunan): Poster A3 semua rute (PNG/PDF), video "setahun dalam 30 detik", dan kalender dinding PDF 13 halaman. Ada juga kartu **Kenangan** ("setahun lalu hari ini") dan **template musiman** otomatis (17 Agustus, Ramadan, Lebaran, Natal, Tahun Baru).
 
@@ -103,11 +118,11 @@ Supaya pengumuman (maintenance, versi baru, dll.) masuk ke bilah notifikasi HP p
 2. **Aplikasi Android:** di proyek itu → ikon Android → *Package name* `com.activecoach.app` → *Register app* → unduh **google-services.json**.
 3. **GitHub:** repo → *Settings › Secrets and variables › Actions › New repository secret* → nama `GOOGLE_SERVICES_JSON`, isi = seluruh isi file google-services.json.
 4. **Kunci server:** Firebase → ⚙️ *Project settings › Service accounts › Generate new private key* → file JSON terunduh. Di Supabase → *Edge Functions › Secrets* → tambah `FCM_SERVICE_ACCOUNT`, isi = seluruh isi file JSON itu. (Jangan pernah taruh file ini di repo.)
-5. **SQL:** jalankan `supabase/migrations/20261001200000_push.sql` di SQL Editor.
+5. **SQL:** jalankan `supabase/migrations/20261001200000_push.sql` lalu `20261001220000_admin_users.sql` di SQL Editor.
 6. **Fungsi:** perbarui kode `strava-callback` (Edge Functions › strava-callback › Code) dengan versi terbaru, lalu *Deploy*.
 7. **Build ulang:** GitHub → *Actions › Build APK Android › Run workflow* (atau commit apa saja). APK baru otomatis memakai Firebase.
 
-Cek semuanya di aplikasi: **Profil › Menu developer › Server** (bagian *Notifikasi HP*) dan **Uji › Kirim ke HP ini**. Setelah itu, setiap pengumuman dari Panel admin punya pilihan **Kirim juga ke notifikasi HP** (aktif bawaan), dan riwayat pengumuman punya tombol **🔔 Kirim notif** untuk mengirim ulang.
+Cek semuanya di aplikasi: **Profil › Developer › Notifikasi** dan **Kirim uji ke HP ini**. Setelah itu, setiap pengumuman dari Panel admin punya pilihan **Kirim juga ke notifikasi HP** (aktif bawaan), dan riwayat pengumuman punya tombol **🔔 Kirim notif** untuk mengirim ulang.
 
 ## Tanda tangan APK
 

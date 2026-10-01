@@ -230,7 +230,7 @@ function weeklyBuckets(logs,weeks){let monday=startOfWeek(new Date()),out=[];for
 function statDelta(cur,prev){if(!prev)return '<span class="stat-delta flat">baru</span>';let pct=Math.round((cur-prev)/prev*100);if(Math.abs(pct)<1)return '<span class="stat-delta flat">= mgg lalu</span>';return pct>0?`<span class="stat-delta up">▲ ${pct}%</span>`:`<span class="stat-delta down">▼ ${Math.abs(pct)}%</span>`}
 
 const TAB_PAGES=['dashboard','training','performance','garage','sharing'];
-const TAB_LABEL={dashboard:'Hari Ini',training:'Latihan',performance:'Performa',garage:'Gear',sharing:'Berbagi',profile:'Profil','overlay-editor':'Studio'};
+const TAB_LABEL={dashboard:'Hari Ini',training:'Latihan',performance:'Performa',garage:'Gear',sharing:'Berbagi',profile:'Profil','overlay-editor':'Studio',admin:'Admin',dev:'Developer'};
 const TAB_SUBS={training:['plan','calendar','activities','routes'],performance:['fitness','intensity','speed','records'],garage:['bikes','shoes','commute']};
 const PAGE_ALIAS={plan:['training','plan'],calendar:['training','calendar'],activities:['training','activities'],routes:['training','routes'],progress:['performance','fitness'],browse:['dashboard',''],fitness:['performance','fitness'],speed:['performance','speed'],bikes:['garage','bikes']};
 let SUB_STATE={training:'plan',performance:'fitness',garage:'bikes'},ACTIVE_TAB='dashboard';

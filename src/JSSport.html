@@ -47,7 +47,7 @@ function sportAdaptDefaults(){
   try{
     if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)return;
     document.documentElement.classList.add('has-pgx');
-    const PUSH=['detail','profile','overlay-editor'],orig=switchPage,CLS=['pg-fwd','pg-back','pg-fade'];
+    const PUSH=['detail','profile','overlay-editor','admin','dev'],orig=switchPage,CLS=['pg-fwd','pg-back','pg-fade'];
     window.switchPage=function(page,opts){
       let from=currentPageView(),res=orig(page,opts),to=currentPageView();
       if(to&&to!==from){

@@ -76,13 +76,18 @@ function nfOpenSettings(){
     <div class="st-label" style="margin-top:6px">Jam pengingat</div><div class="st-seg" data-seg="nftime">${times.map(t=>`<button type="button" class="${t===p.time?'on':''}" data-v="${t}">${t}</button>`).join('')}</div>
     ${stToggle('nfWeekly','Rekap mingguan','Minggu 19:00 — siap dibagikan dari Studio',p.weekly)}
     ${stToggle('nfService','Pengingat servis sepeda','Saat komponen melewati batas pemakaian',p.service)}
+    <div class="st-label" style="margin-top:12px">Dari pengembang</div>
+    ${stToggle('nfPushAnn','Pengumuman & info','Fitur baru, tips, dan info penting',p.pushAnn!==false)}
+    ${stToggle('nfPushUpdate','Versi baru aplikasi','Kabar saat ada pembaruan APK',p.pushUpdate!==false)}
+    ${stToggle('nfPushEvent','Event baru','Lomba & event di Kalender event',p.pushEvent!==false)}
+    <p class="st-note" style="margin:6px 2px 0">Info maintenance & gangguan server selalu dikirim agar kamu tidak kaget saat sinkron tertunda.</p>
     <div class="st-row" style="margin-top:10px"><button type="button" class="acx-btn" id="nfSave" style="width:100%;justify-content:center">Simpan</button></div></div>`;
   document.body.appendChild(box);
   let close=()=>{box.classList.add('out');setTimeout(()=>box.remove(),220)};
   box.onclick=e=>{if(e.target===box||e.target.closest('[data-x]'))close()};
   box.querySelectorAll('[data-seg="nftime"] button').forEach(b=>b.onclick=()=>{p.time=b.dataset.v;box.querySelectorAll('[data-seg="nftime"] button').forEach(x=>x.classList.toggle('on',x===b))});
   nfPermission(false).then(s=>{let el=box.querySelector('#nfPerm');if(s==='unsupported'){el.hidden=false;el.textContent='Notifikasi hanya tersedia di aplikasi Android.'}else if(s!=='granted'){el.hidden=false;el.innerHTML='Izin notifikasi belum diberikan. Ketuk <b>Simpan</b> lalu pilih <b>Izinkan</b>.'}});
-  box.querySelector('#nfSave').onclick=async()=>{p.daily=box.querySelector('#nfDaily').checked;p.weekly=box.querySelector('#nfWeekly').checked;p.service=box.querySelector('#nfService').checked;p.asked=true;nfSavePrefs(p);
+  box.querySelector('#nfSave').onclick=async()=>{p.daily=box.querySelector('#nfDaily').checked;p.weekly=box.querySelector('#nfWeekly').checked;p.service=box.querySelector('#nfService').checked;p.pushAnn=box.querySelector('#nfPushAnn').checked;p.pushUpdate=box.querySelector('#nfPushUpdate').checked;p.pushEvent=box.querySelector('#nfPushEvent').checked;p.asked=true;nfSavePrefs(p);if(window.ACX&&ACX.pushSyncPrefs)ACX.pushSyncPrefs();
     let s=(p.daily||p.weekly||p.service)?await nfPermission(true):'granted';
     if(s==='granted'||s==='unsupported'){await nfSchedule({skipGarage:true});toast('Notifikasi disimpan');close()}else toast('Izin notifikasi ditolak. Aktifkan di Pengaturan HP › Aplikasi › Active Coach › Notifikasi.')};
 }

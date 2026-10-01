@@ -859,6 +859,7 @@
       var ls = $('#loginScreen'); if (ls && !ls.hidden) { if (ls.getAttribute('data-state') === 'waiting') { cancelStravaLogin(); return; } P.App.exitApp(); return; }
       var v = currentPageView();
       if (v === 'detail') { closeDetailPage(); return; }
+      if (v === 'admin' || v === 'dev') { switchPage('profile', { restoreScroll: true }); return; }
       if (v === 'profile') { closeProfile(); return; }
       if (v === 'overlay-editor') { switchPage('sharing', { restoreScroll: true }); return; }
       if (v === 'garage' && typeof GARAGE_UI !== 'undefined' && GARAGE_UI.bikeId) { garageBackToPicker(); return; }
@@ -892,6 +893,7 @@
     data = data || {};
     try {
       if (data.go === 'update') { checkForUpdate(true); return; }
+      if (data.go === 'event' && typeof evOpen === 'function') { if (typeof switchPage === 'function') switchPage('dashboard'); setTimeout(evOpen, 300); return; }
       if (typeof switchPage === 'function') switchPage('dashboard');
       if (typeof annFetch === 'function') annFetch(true).then(function () { if (data.go === 'ann' && typeof annOpenList === 'function') annOpenList(); });
     } catch (e) {}
@@ -901,10 +903,11 @@
     var PN = P.PushNotifications;
     if (!pushBound) {
       pushBound = true;
-      try { await PN.createChannel({ id: 'announcements', name: 'Pengumuman', description: 'Info, maintenance & versi baru Active Coach', importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#FC4C02' }); } catch (e) {}
+      try { await PN.createChannel({ id: 'alerts', name: 'Maintenance & gangguan', description: 'Info penting tentang server Active Coach', importance: 5, visibility: 1, vibration: true, lights: true, lightColor: '#FC4C02' }); } catch (e) {}
+      try { await PN.createChannel({ id: 'announcements', name: 'Pengumuman & versi baru', description: 'Fitur baru, event, dan pembaruan aplikasi', importance: 4, visibility: 1, vibration: true, lights: true, lightColor: '#FC4C02' }); } catch (e) {}
       PN.addListener('registration', async function (t) {
         var tok = t && t.value; if (!tok) return;
-        try { await acxRest('POST', 'rpc/ac_register_push', { p_token: tok, p_platform: 'android', p_version: String(window.AC_BUILD || '') }); LS.set('acx_push_token', tok); LS.set('acx_push_at', Date.now()); dlog('sync', 'Notifikasi HP terdaftar'); }
+        try { await pushRegister(tok); dlog('sync', 'Notifikasi HP terdaftar'); }
         catch (e) { dlog('error', 'Gagal mendaftarkan notifikasi HP: ' + e.message); }
       });
       PN.addListener('registrationError', function (e) { dlog('error', 'Firebase: ' + ((e && e.error) || JSON.stringify(e))); });
@@ -912,7 +915,7 @@
         n = n || {};
         dlog('sync', 'Notifikasi masuk (aplikasi terbuka): ' + (n.title || ''));
         // Android tidak menampilkan notifikasi Firebase saat aplikasi terbuka → tampilkan sendiri di bilah notifikasi
-        try { if (P.LocalNotifications) P.LocalNotifications.schedule({ notifications: [{ id: 1400 + Math.floor(Math.random() * 500), title: n.title || 'Active Coach', body: n.body || '', channelId: 'announcements', smallIcon: 'ic_stat_ac', iconColor: '#FC4C02', extra: Object.assign({ push: '1' }, n.data || {}), schedule: { at: new Date(Date.now() + 500), allowWhileIdle: true } }] }); } catch (e) { dlog('error', 'Notifikasi lokal: ' + e.message); }
+        try { if (P.LocalNotifications) P.LocalNotifications.schedule({ notifications: [{ id: 1400 + Math.floor(Math.random() * 500), title: n.title || 'Active Coach', body: n.body || '', channelId: (n.data && n.data.cat === 'maint') ? 'alerts' : 'announcements', smallIcon: 'ic_stat_ac', iconColor: '#FC4C02', extra: Object.assign({ push: '1' }, n.data || {}), schedule: { at: new Date(Date.now() + 500), allowWhileIdle: true } }] }); } catch (e) { dlog('error', 'Notifikasi lokal: ' + e.message); }
         note(n.title || 'Pengumuman baru');
         if (typeof annFetch === 'function') annFetch(true);
       });
@@ -925,6 +928,14 @@
     if (perm !== 'granted') { dlog('dev', 'Izin notifikasi HP: ' + perm); return; }
     try { await PN.register(); } catch (e) { dlog('error', 'Firebase register: ' + e.message); }
   }
+  function pushPrefs() { var p = {}; try { p = JSON.parse(localStorage.getItem('acx_notif') || '{}'); } catch (e) {} return { ann: p.pushAnn !== false, update: p.pushUpdate !== false, event: p.pushEvent !== false }; }
+  async function pushRegister(tok) {
+    var base = { p_token: tok, p_platform: 'android', p_version: String(window.AC_BUILD || '') };
+    try { await acxRest('POST', 'rpc/ac_register_push', Object.assign({ p_prefs: pushPrefs() }, base)); }
+    catch (e) { if (e.status === 404 || /function|schema cache|PGRST20/i.test(e.message + (e.code || ''))) await acxRest('POST', 'rpc/ac_register_push', base); else throw e; }
+    LS.set('acx_push_token', tok); LS.set('acx_push_at', Date.now());
+  }
+  async function pushSyncPrefs() { var tok = LS.get('acx_push_token'); if (!tok) return; try { await pushRegister(tok); dlog('sync', 'Preferensi notifikasi disimpan ke server'); } catch (e) { dlog('error', 'Preferensi notifikasi: ' + e.message); } }
   async function pushUnregister() {
     var tok = LS.get('acx_push_token'); if (!tok) return;
     try { await Promise.race([acxRest('POST', 'rpc/ac_unregister_push', { p_token: tok }), new Promise(function (ok) { setTimeout(ok, 4000); })]); } catch (e) {}
@@ -960,5 +971,5 @@
     var card = document.querySelector('#updSheet .upd-card') || document.querySelector('#updSheet');
     if (card && !document.getElementById('updSimClose')) { card.insertAdjacentHTML('beforeend', '<button type="button" class="acx-btn st-btn-ghost" id="updSimClose" style="margin-top:10px;width:100%">Tutup simulasi</button>'); document.getElementById('updSimClose').onclick = function () { var g = $('#updSheet'); if (g) g.remove(); }; }
   }
-  window.ACX = { pushHandle: pushHandle, pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { pushSyncPrefs: pushSyncPrefs, pushHandle: pushHandle, pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

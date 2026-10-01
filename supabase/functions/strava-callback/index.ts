@@ -7,8 +7,12 @@
 //   POST ?redeem=1 {code, nonce}      → aplikasi mengambil sesi + token Strava (sekali pakai, 10 menit)
 //   GET  ?code=...&state=<lainnya>    → (hubungkan ulang Strava dari dalam aplikasi) diteruskan ke
 //                                       activecoach://strava?... seperti sebelumnya
-//   POST ?push=1 {title, body, data, target}  → kirim notifikasi HP lewat Firebase (admin: semua
-//                                       pengguna; siapa pun: target "self" = HP sendiri untuk uji)
+//   POST ?push=1 {title, body, data, target, category, user_id, version, tag}
+//                                     → kirim notifikasi HP lewat Firebase. Admin: target "all" / "outdated"
+//                                       (versi lebih lama dari `version`) / "user" (user_id). Siapa pun: "self".
+//   POST ?release=1                   → (dipanggil GitHub Actions setelah rilis) cek rilis terbaru di GitHub;
+//                                       kalau versinya belum diumumkan: buat pengumuman + notifikasi ke HP
+//                                       yang versinya lebih lama. Aman dipanggil berulang (sekali per versi).
 //
 // Secret yang dipakai: STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (wajib), FCM_SERVICE_ACCOUNT (opsional, JSON
 // kunci akun layanan Firebase untuk notifikasi HP),
@@ -143,6 +147,19 @@ async function userFromToken(req: Request) {
 }
 
 /* ---------------- Firebase Cloud Messaging (HTTP v1) ---------------- */
+const GITHUB_REPO = env('GITHUB_REPO') || 'Malik190603/active-coach-app';
+const GITHUB_API = env('GITHUB_API') || 'https://api.github.com';
+function verNewer(a: string, b: string) { const x = String(a).split('.').map(Number), y = String(b).split('.').map(Number); for (let i = 0; i < 3; i++) { if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); } return false; }
+type TokRow = { token: string; user_id?: string; app_version?: string; prefs?: Record<string, unknown> };
+async function pushTokens(filter = ''): Promise<TokRow[] | null> {
+  let r = await fetch(BASE + '/rest/v1/ac_push_tokens?select=token,user_id,app_version,prefs' + filter, { headers: adminHeaders(false) });
+  if (!r.ok) r = await fetch(BASE + '/rest/v1/ac_push_tokens?select=token,user_id,app_version' + filter, { headers: adminHeaders(false) });
+  if (r.status === 404) return null;
+  const j = await readJson(r); return Array.isArray(j) ? j : [];
+}
+function wants(row: TokRow, category: string) { if (!category || category === 'maint') return true; const p = row.prefs || {}; return p[category] !== false; }
+function channelFor(category: string) { return category === 'maint' ? 'alerts' : 'announcements'; }
+
 let FCM_TOKEN: { token: string; exp: number } | null = null;
 function fcmAccount(): { client_email: string; private_key: string; project_id: string } | null {
   try { const a = JSON.parse(env('FCM_SERVICE_ACCOUNT') || 'null'); return a && a.client_email && a.private_key && a.project_id ? a : null; } catch { return null; }
@@ -167,7 +184,7 @@ async function fcmAccessToken() {
   FCM_TOKEN = { token: j.access_token, exp: Date.now() + (Number(j.expires_in) || 3600) * 1000 };
   return FCM_TOKEN.token;
 }
-async function fcmSend(tokens: string[], title: string, body: string, data: Record<string, string>) {
+async function fcmSend(tokens: string[], title: string, body: string, data: Record<string, string>, opt: { channel?: string; tag?: string } = {}) {
   const sa = fcmAccount(); if (!sa) throw new Error('FCM_SERVICE_ACCOUNT belum diisi');
   const access = await fcmAccessToken(), url = FCM_BASE + '/v1/projects/' + sa.project_id + '/messages:send';
   let sent = 0, failed = 0; const dead: string[] = [], errors: string[] = [];
@@ -176,7 +193,7 @@ async function fcmSend(tokens: string[], title: string, body: string, data: Reco
     while (queue.length) {
       const token = queue.shift() as string;
       try {
-        const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + access, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { token, notification: { title, body }, data, android: { priority: 'HIGH', notification: { channel_id: 'announcements', icon: 'ic_stat_ac', color: '#FC4C02', default_sound: true } } } }) });
+        const r = await fetch(url, { method: 'POST', headers: { Authorization: 'Bearer ' + access, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { token, notification: { title, body }, data, android: { priority: 'HIGH', notification: Object.assign({ channel_id: opt.channel || 'announcements', icon: 'ic_stat_ac', color: '#FC4C02', default_sound: true }, opt.tag ? { tag: opt.tag } : {}) } } }) });
         if (r.ok) { sent++; continue; }
         failed++; const j = await readJson(r), code = JSON.stringify(j);
         if (r.status === 404 || /UNREGISTERED|registration-token-not-registered|INVALID_ARGUMENT/.test(code)) dead.push(token);
@@ -228,33 +245,67 @@ Deno.serve(async (req) => {
   if (req.method === 'POST' && q.has('push')) {
     const user = await userFromToken(req);
     if (!user || !SERVICE) return json({ error: 'Belum login' }, 401);
-    let b: { title?: string; body?: string; data?: Record<string, unknown>; target?: string } = {};
+    let b: { title?: string; body?: string; data?: Record<string, unknown>; target?: string; category?: string; user_id?: string; version?: string; tag?: string } = {};
     try { b = await req.json(); } catch { /* kosong */ }
-    const self = b.target === 'self';
+    const target = b.target || 'all', self = target === 'self';
     if (!self) {
       const ad = await fetch(BASE + '/rest/v1/ac_admins?select=user_id&user_id=eq.' + user.id, { headers: adminHeaders(false) });
       const rows = await readJson(ad);
-      if (!ad.ok || !Array.isArray(rows) || !rows.length) return json({ error: 'Hanya admin yang bisa mengirim ke semua pengguna' }, 403);
+      if (!ad.ok || !Array.isArray(rows) || !rows.length) return json({ error: 'Hanya admin yang bisa mengirim ke pengguna lain' }, 403);
     }
     if (!fcmAccount()) return json({ error: 'Secret FCM_SERVICE_ACCOUNT belum diisi di Supabase › Edge Functions › Secrets' }, 400);
-    const tr = await fetch(BASE + '/rest/v1/ac_push_tokens?select=token' + (self ? '&user_id=eq.' + user.id : ''), { headers: adminHeaders(false) });
-    if (tr.status === 404) return json({ error: 'Tabel ac_push_tokens belum ada — jalankan SQL 20261001200000_push.sql' }, 400);
-    const list = (await readJson(tr)) as { token: string }[];
-    const tokens = Array.isArray(list) ? [...new Set(list.map((r) => r.token))] : [];
-    if (!tokens.length) return json({ ok: true, total: 0, sent: 0, failed: 0, removed: 0 });
+    const filter = self ? '&user_id=eq.' + user.id : target === 'user' && b.user_id ? '&user_id=eq.' + encodeURIComponent(b.user_id) : '';
+    const list = await pushTokens(filter);
+    if (list === null) return json({ error: 'Tabel ac_push_tokens belum ada — jalankan SQL 20261001200000_push.sql' }, 400);
+    const category = String(b.category || ''), seen = new Set<string>();
+    const picked = list.filter((r) => {
+      if (seen.has(r.token)) return false; seen.add(r.token);
+      if (target === 'outdated' && b.version && r.app_version && !verNewer(String(b.version), r.app_version)) return false;
+      return self || target === 'user' || wants(r, category);
+    }).map((r) => r.token);
+    if (!picked.length) return json({ ok: true, total: 0, sent: 0, failed: 0, removed: 0, skipped: list.length });
     const data: Record<string, string> = {};
     Object.entries(b.data || {}).forEach(([k, v]) => { data[k] = String(v ?? '').slice(0, 300); });
     try {
-      const r = await fcmSend(tokens, String(b.title || 'Active Coach').slice(0, 120), String(b.body || '').slice(0, 300), data);
-      return json({ ok: true, total: tokens.length, ...r });
+      const r = await fcmSend(picked, String(b.title || 'Active Coach').slice(0, 120), String(b.body || '').slice(0, 300), data, { channel: channelFor(category), tag: b.tag ? String(b.tag).slice(0, 40) : undefined });
+      return json({ ok: true, total: picked.length, skipped: list.length - picked.length, ...r });
     } catch (e) { return json({ error: String((e as Error).message || e) }, 500); }
+  }
+
+  // Rilis baru di GitHub → pengumuman + notifikasi otomatis (sekali per versi)
+  if (q.has('release')) {
+    if (!SERVICE) return json({ error: 'Service key tidak tersedia' }, 500);
+    const gr = await fetch(GITHUB_API + '/repos/' + GITHUB_REPO + '/releases/latest', { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'active-coach' } });
+    if (!gr.ok) return json({ error: 'GitHub ' + gr.status }, 502);
+    const rel = await readJson(gr), version = String(rel.tag_name || '').replace(/^v/i, '');
+    if (!/^\d+\.\d+\.\d+$/.test(version)) return json({ error: 'Versi rilis tidak dikenali' }, 400);
+    const title = '🚀 Versi ' + version + ' sudah tersedia';
+    const ex = await fetch(BASE + '/rest/v1/ac_announcements?select=id&title=eq.' + encodeURIComponent(title), { headers: adminHeaders(false) });
+    if (ex.status === 404) return json({ error: 'Tabel ac_announcements belum ada' }, 400);
+    const exRows = await readJson(ex);
+    if (Array.isArray(exRows) && exRows.length) return json({ ok: true, version, already: true });
+    const notes = String(rel.body || '').replace(/\r/g, ''), cut = notes.search(/^## Catatan developer/m), user = cut >= 0 ? notes.slice(0, cut) : notes;
+    const bullets = user.split('\n').map((l) => l.trim()).filter((l) => /^[-*•] /.test(l)).slice(0, 4).map((l) => '• ' + l.replace(/^[-*•] /, ''));
+    const body = (bullets.length ? 'Yang baru:\n' + bullets.join('\n') + '\n\n' : '') + 'Perbarui langsung dari aplikasi — tanpa uninstall, data tetap aman.';
+    const ins = await fetch(BASE + '/rest/v1/ac_announcements', { method: 'POST', headers: { ...adminHeaders(true), Prefer: 'return=representation' }, body: JSON.stringify([{ title, body, level: 'update', link: String(rel.html_url || ''), active: true, starts_at: new Date().toISOString(), ends_at: new Date(Date.now() + 14 * 864e5).toISOString(), created_by: null }]) });
+    const insRows = await readJson(ins), annId = Array.isArray(insRows) && insRows[0] ? String(insRows[0].id) : '';
+    let push: Record<string, unknown> = { skipped: 'FCM belum diatur' };
+    if (fcmAccount()) {
+      const list = (await pushTokens('')) || [], seen = new Set<string>();
+      const picked = list.filter((r) => { if (seen.has(r.token)) return false; seen.add(r.token); return (!r.app_version || verNewer(version, r.app_version)) && wants(r, 'update'); }).map((r) => r.token);
+      if (picked.length) {
+        const short = bullets.length ? bullets.slice(0, 2).map((b) => b.replace(/^• /, '')).join(' · ') : 'Ketuk untuk memperbarui — tanpa uninstall.';
+        try { push = await fcmSend(picked, title, short.slice(0, 230), { go: 'update', id: annId, version }, { channel: 'announcements', tag: 'update' }); push.total = picked.length; } catch (e) { push = { error: String((e as Error).message || e) }; }
+      } else push = { total: 0 };
+    }
+    return json({ ok: true, version, announced: ins.ok, push });
   }
 
   // Cek dari aplikasi: fungsi ada & versi terbaru
   if (q.has('ping')) {
     let table = false;
     if (SERVICE) { try { const t = await fetch(BASE + '/rest/v1/ac_handoff?select=code&limit=1', { headers: adminHeaders(false) }); table = t.ok; } catch { /* abaikan */ } }
-    return json({ ok: true, v: 4, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table, push: !!fcmAccount() });
+    return json({ ok: true, v: 5, strava: !!env('STRAVA_CLIENT_ID') && !!env('STRAVA_CLIENT_SECRET'), service: !!SERVICE, table, push: !!fcmAccount() });
   }
 
   // Cabut izin Strava (Putuskan Strava) & hapus akun beserta semua data

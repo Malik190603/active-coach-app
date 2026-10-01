@@ -597,6 +597,14 @@
             </div>
           </div>
         </section>
+        <section class="page acx-page acx-push own-page" data-page-view="admin" hidden>
+          <header class="ios-nav acx-navbar"><button type="button" class="ios-back" data-own-back><span class="icon"><svg><use href="#i-back"/></svg></span>Profil</button><b class="ios-nav-title">Panel Admin</b><span class="ios-nav-spacer"></span></header>
+          <div id="ownAdmin" class="own-wrap"></div>
+        </section>
+        <section class="page acx-page acx-push own-page" data-page-view="dev" hidden>
+          <header class="ios-nav acx-navbar"><button type="button" class="ios-back" data-own-back><span class="icon"><svg><use href="#i-back"/></svg></span>Profil</button><b class="ios-nav-title">Developer</b><span class="ios-nav-spacer"></span></header>
+          <div id="ownDev" class="own-wrap"></div>
+        </section>
 
         <!-- ===================== DETAIL (push) ===================== -->
         <section class="page acx-page acx-push" data-page-view="detail" hidden>
@@ -749,6 +757,8 @@
   <?!= include('JSYear') ?>
   <?!= include('JSTour') ?>
   <?!= include('JSDev') ?>
+  <?!= include('JSOwner') ?>
+  <?!= include('JSProfile') ?>
   <?!= include('JSApp') ?>
   <script>
   (function(){

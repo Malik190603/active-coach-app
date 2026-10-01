@@ -1,0 +1,187 @@
+<script>
+'use strict';
+/* =====================================================================
+   Halaman khusus pemilik aplikasi: Panel Admin & Developer.
+   Hanya terbuka untuk akun di tabel ac_admins (dicek server lewat RLS/RPC).
+   ===================================================================== */
+const OWN={adminTab:'home',devTab:'home',users:null,latest:null,pushLog:[]};
+function ownIsAdmin(){return typeof FB_ADMIN!=='undefined'&&FB_ADMIN}
+function ownAgo(d){if(!d)return 'belum pernah';if(/^\d{4}-\d\d-\d\d$/.test(String(d))){let t0=new Date();t0.setHours(0,0,0,0);let n=Math.round((t0-new Date(d+'T00:00:00'))/864e5);if(n<=0)return 'hari ini';if(n===1)return 'kemarin';if(n<30)return n+' hari lalu';return new Date(d).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}let t=new Date(d).getTime(),s=Math.round((Date.now()-t)/1000);if(s<3600)return 'baru saja';if(s<86400)return Math.round(s/3600)+' jam lalu';let dd=Math.round(s/86400);return dd===1?'kemarin':dd<30?dd+' hari lalu':new Date(d).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'numeric'})}
+function ownIni(n){return String(n||'A').split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase()}
+async function ownLatest(){if(OWN.latest)return OWN.latest;try{OWN.latest=await ACX.latestRelease()}catch(e){OWN.latest=null}return OWN.latest}
+function ownTabs(id,tabs,cur){return `<div class="own-tabs" id="${id}">${tabs.map(t=>`<button type="button" data-t="${t[0]}" class="${t[0]===cur?'on':''}"><span>${t[2]||''}</span>${t[1]}</button>`).join('')}</div>`}
+function ownKpis(list){return '<div class="adm-kpis own-kpis">'+list.map(k=>`<div class="adm-kpi${k[3]?' '+k[3]:''}"><small>${k[0]}</small><b>${k[1]}</b><span>${k[2]||''}</span></div>`).join('')+'</div>'}
+function ownKv(k,v){return `<div class="own-kv"><b>${esc(k)}</b><small>${esc(v)}</small></div>`}
+function ownAct(k,ic,lb,sub){return `<button type="button" class="own-act" data-act="${k}"><span>${ic}</span><b>${lb}</b>${sub?`<small>${sub}</small>`:''}</button>`}
+
+/* ------------------------------ routing & penjaga akses ------------------------------ */
+(function(){try{let o=window.renderPageContent;if(typeof o!=='function')return;window.renderPageContent=function(page){if(page==='admin'||page==='dev'){if(!ownIsAdmin()){toast('Halaman ini khusus pemilik aplikasi');setTimeout(()=>switchPage('profile'),10);return}return page==='admin'?ownAdmin():ownDev()}return o.apply(this,arguments)}}catch(e){}})();
+document.addEventListener('click',e=>{if(e.target.closest('[data-own-back]')){e.preventDefault();switchPage('profile',{restoreScroll:true})}});
+window.admOpen=function(t){ownOpen('admin',{dash:'home'}[t]||t)};window.devOpen=function(t){ownOpen('dev',{health:'server'}[t]||t)};
+function ownOpen(page,tab){if(!ownIsAdmin()){toast('Halaman ini khusus pemilik aplikasi');return}if(page==='admin'&&tab)OWN.adminTab=tab;if(page==='dev'&&tab)OWN.devTab=tab;switchPage(page)}
+
+/* ================================ PANEL ADMIN ================================ */
+const OWN_ADMIN_TABS=[['home','Ringkasan','🏠'],['users','Pengguna','👥'],['ann','Pengumuman','📣'],['push','Notifikasi','🔔'],['ev','Event','📅'],['fb','Masukan','💬'],['stats','Statistik','📊']];
+function ownAdmin(){
+  let host=document.getElementById('ownAdmin');if(!host)return;
+  host.innerHTML=`<div class="own-hero adm"><div><span>Khusus pemilik aplikasi</span><b>Panel Admin</b><small>Pengguna, pengumuman, notifikasi, event, masukan & statistik</small></div><span class="own-hero-ic">🛡️</span></div>${ownTabs('ownAdmTabs',OWN_ADMIN_TABS,OWN.adminTab)}<div class="own-body" id="ownAdmBody"></div>`;
+  host.querySelectorAll('#ownAdmTabs button').forEach(b=>b.onclick=()=>{OWN.adminTab=b.dataset.t;host.querySelectorAll('#ownAdmTabs button').forEach(x=>x.classList.toggle('on',x===b));b.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});ownAdminPane()});
+  ownAdminPane();
+}
+async function ownAdminPane(){
+  let b=document.getElementById('ownAdmBody');if(!b)return;b.innerHTML=inlineSpinner('Memuat…');usgTrack('admin:'+OWN.adminTab);
+  try{({home:ownAdmHome,users:ownUsers,ann:admAnn,push:ownPush,ev:admEv,fb:ownFeedback,stats:admDash}[OWN.adminTab]||ownAdmHome)(b)}catch(e){b.innerHTML='<p class="adm-note">Gagal: '+esc(e.message||e)+'</p>'}
+}
+async function ownAdmHome(host){
+  let s=null,users=null,fb=[];try{s=await ACX.rest('POST','rpc/ac_admin_stats',{p_days:30})}catch(e){}
+  try{users=await ownLoadUsers()}catch(e){}
+  try{fb=await ACX.rest('GET','ac_feedback?select=id,name,kind,message,status,created_at&order=created_at.desc&limit=3')||[]}catch(e){}
+  let rel=await ownLatest(),latest=rel&&rel.version,outdated=users?users.filter(u=>u.app_version&&latest&&annVerNewer(latest,u.app_version)).length:null,notif=users?users.filter(u=>+u.push_devices>0).length:null;
+  host.innerHTML=ownKpis([['Pengguna',users?users.length:(s?s.users_total:'–'),s?'+'+s.users_new_7d+' minggu ini':''],['Aktif 7 hari',s?s.wau:'–',s?'hari ini '+s.dau:''],['Notif aktif',notif==null?'–':notif,'HP terdaftar'],['Versi lama',outdated==null?'–':outdated,latest?'terbaru v'+latest:'',outdated?'warn':''],['Masukan baru',s?(s.feedback||{}).baru||0:'–','',s&&(s.feedback||{}).baru?'warn':''],['Pengumuman',s?s.announcements_live:'–','aktif sekarang']])+
+    `<div class="adm-h own-h">Aksi cepat</div><div class="own-acts">${ownAct('maint','🛠','Maintenance','umumkan jadwal')}${ownAct('ann','📣','Pengumuman','ke semua pengguna')}${ownAct('push','🔔','Notifikasi','kirim ke HP')}${ownAct('remind','🚀','Ingatkan update',outdated?outdated+' pengguna':'versi lama')}${ownAct('ev','📅','Tambah event','kalender')}${ownAct('dev','🛠️','Developer','server & teknis')}</div>
+    <div class="adm-card"><div class="adm-h">Pengguna terbaru <button type="button" class="own-link" data-go="users">Semua ›</button></div>${users&&users.length?users.slice(0,5).map(ownUserRow).join(''):'<p class="adm-note">'+(users?'Belum ada pengguna.':'Jalankan SQL 20261001220000_admin_users.sql untuk melihat daftar pengguna.')+'</p>'}</div>
+    <div class="adm-card"><div class="adm-h">Masukan terbaru <button type="button" class="own-link" data-go="fb">Kotak masuk ›</button></div>${fb.length?fb.map(f=>`<div class="own-fb"><span class="fb-kind tone-${fbKindTone(f.kind)}">${esc(f.kind)}</span><b>${esc(f.name||'Pengguna')}</b><p>${esc(f.message)}</p><small>${esc(fbTime(f.created_at))} · ${f.status==='baru'?'<em>baru</em>':esc(f.status)}</small></div>`).join(''):'<p class="adm-note">Belum ada masukan.</p>'}</div>`;
+  ownBindUsers(host);
+  host.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>ownAdminGo(b.dataset.go));
+  host.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>{let k=b.dataset.act;if(k==='maint'){OWN.adminTab='ann';ownAdmin();setTimeout(()=>{let t=document.querySelector('#annTpls [data-tpl="maint"]');if(t)t.click()},400)}else if(k==='dev')ownOpen('dev');else if(k==='remind'){OWN.adminTab='push';OWN.pushPreset='remind';ownAdmin()}else ownAdminGo(k)});
+}
+function ownAdminGo(t){OWN.adminTab=t;ownAdmin()}
+/* ------------------------------ pengguna ------------------------------ */
+async function ownLoadUsers(force){if(OWN.users&&!force)return OWN.users;OWN.users=await ACX.rest('POST','rpc/ac_admin_users',{})||[];return OWN.users}
+function ownUserRow(u){
+  let latest=OWN.latest&&OWN.latest.version,old=u.app_version&&latest&&annVerNewer(latest,u.app_version),act=u.last_active?ownAgo(u.last_active):'belum membuka versi terbaru';
+  let av=u.avatar&&/^https:/.test(u.avatar)?`<span class="own-av" style="background-image:url('${esc(u.avatar)}')"></span>`:`<span class="own-av ini">${esc(ownIni(u.name))}</span>`;
+  return `<button type="button" class="own-user" data-uid="${esc(u.user_id)}">${av}<span class="own-user-txt"><b>${esc(u.name||'Atlet')}${u.is_admin?' <em class="own-badge adm">Admin</em>':''}</b><small>${esc(act)} · ${(+u.activities||0).toLocaleString('id-ID')} aktivitas</small><span class="own-tags">${u.app_version?`<i class="${old?'old':'ok'}">v${esc(u.app_version)}</i>`:''}${+u.push_devices>0?'<i class="ok">🔔 notif</i>':'<i>notif mati</i>'}<i>bergabung ${esc(new Date(u.joined).toLocaleDateString('id-ID',{day:'numeric',month:'short',year:'2-digit'}))}</i></span></span><span class="acx-row-chev icon"><svg><use href="#i-chevron"/></svg></span></button>`;
+}
+function ownBindUsers(host){host.querySelectorAll('[data-uid]').forEach(b=>b.onclick=()=>ownUserSheet(b.dataset.uid))}
+async function ownUsers(host){
+  let users;try{users=await ownLoadUsers(true)}catch(e){host.innerHTML=admSqlHint(e).replace('20261001180000_admin_suite.sql','20261001220000_admin_users.sql');return}
+  await ownLatest();let latest=OWN.latest&&OWN.latest.version,f=OWN.userFilter||'all',sort=OWN.userSort||'new',q=OWN.userQ||'';
+  let wk=Date.now()-7*864e5,act=users.filter(u=>u.last_active&&new Date(u.last_active).getTime()>wk).length,old=users.filter(u=>u.app_version&&latest&&annVerNewer(latest,u.app_version)).length,notif=users.filter(u=>+u.push_devices>0).length;
+  let list=users.filter(u=>{if(q&&!(String(u.name).toLowerCase().includes(q.toLowerCase())||String(u.strava_id).includes(q)))return false;if(f==='active')return u.last_active&&new Date(u.last_active).getTime()>wk;if(f==='old')return u.app_version&&latest&&annVerNewer(latest,u.app_version);if(f==='notif')return +u.push_devices>0;if(f==='nonotif')return !(+u.push_devices>0);return true});
+  list.sort((a,b)=>sort==='name'?String(a.name).localeCompare(String(b.name)):sort==='active'?String(b.last_active||'').localeCompare(String(a.last_active||'')):sort==='acts'?(+b.activities||0)-(+a.activities||0):String(b.joined).localeCompare(String(a.joined)));
+  host.innerHTML=ownKpis([['Total',users.length,'akun Strava'],['Aktif 7 hari',act,''],['Notif aktif',notif,'HP terdaftar'],['Versi lama',old,latest?'< v'+latest:'',old?'warn':'']])+
+    `<div class="own-search"><span class="icon"><svg><use href="#i-search"/></svg></span><input id="ownUserQ" type="search" placeholder="Cari nama atau ID Strava…" value="${esc(q)}"></div>
+    <div class="own-chips">${[['all','Semua'],['active','Aktif 7 hari'],['old','Versi lama'],['notif','Notif aktif'],['nonotif','Notif mati']].map(o=>`<button type="button" data-f="${o[0]}" class="${o[0]===f?'on':''}">${o[1]}</button>`).join('')}</div>
+    <div class="own-sort">Urutkan: ${[['new','Terbaru'],['active','Terakhir aktif'],['acts','Aktivitas'],['name','Nama']].map(o=>`<button type="button" data-s="${o[0]}" class="${o[0]===sort?'on':''}">${o[1]}</button>`).join('')}</div>
+    <div class="adm-card own-users">${list.length?list.map(ownUserRow).join(''):'<p class="adm-note">Tidak ada pengguna yang cocok.</p>'}</div>
+    <p class="adm-note">Daftar ini hanya menampilkan profil Strava publik & angka pemakaian — tanpa email, token, atau data latihan pengguna.</p>`;
+  ownBindUsers(host);
+  let qi=host.querySelector('#ownUserQ');qi.oninput=()=>{OWN.userQ=qi.value;clearTimeout(qi.__t);qi.__t=setTimeout(()=>{ownUsers(host).then(()=>{let n=host.querySelector('#ownUserQ');if(n){n.focus();n.setSelectionRange(n.value.length,n.value.length)}})},300)};
+  host.querySelectorAll('[data-f]').forEach(b=>b.onclick=()=>{OWN.userFilter=b.dataset.f;ownUsers(host)});
+  host.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{OWN.userSort=b.dataset.s;ownUsers(host)});
+}
+function ownUserSheet(uid){
+  let u=(OWN.users||[]).find(x=>x.user_id===uid);if(!u)return;let latest=OWN.latest&&OWN.latest.version;
+  let rows=[['ID Strava',u.strava_id||'–'],['Bergabung',new Date(u.joined).toLocaleString('id-ID')],['Login terakhir',u.last_sign_in?ownAgo(u.last_sign_in):'–'],['Terakhir membuka aplikasi',u.last_active?ownAgo(u.last_active):'belum tercatat'],['Versi aplikasi',u.app_version?'v'+u.app_version+(latest&&annVerNewer(latest,u.app_version)?' (belum update)':' ✓'):'–'],['Perangkat',u.platform||'–'],['Dibuka 30 hari',(+u.opens_30d||0)+'×'],['Aktivitas tersimpan',(+u.activities||0).toLocaleString('id-ID')],['Notifikasi HP',+u.push_devices>0?u.push_devices+' HP terdaftar':'belum aktif'],['Peran',u.is_admin?'Admin (pemilik)':'Pengguna']];
+  let av=u.avatar&&/^https:/.test(u.avatar)?`<span class="own-av lg" style="background-image:url('${esc(u.avatar)}')"></span>`:`<span class="own-av lg ini">${esc(ownIni(u.name))}</span>`;
+  let b=admSheet('ownUserSheet',esc(u.name||'Pengguna'),`<div class="own-uhead">${av}<div><b>${esc(u.name||'Atlet')}</b><small>${u.is_admin?'Admin · ':''}Strava ${esc(u.strava_id||'')}</small></div></div><div class="adm-card">${rows.map(r=>devRow(r[0],r[1])).join('')}</div>
+    <div class="dev-acts">${+u.push_devices>0?'<button type="button" class="dev-btn" data-u="push">🔔 Kirim notifikasi</button>':''}${u.strava_id?`<a class="dev-btn" href="https://www.strava.com/athletes/${esc(u.strava_id)}" target="_blank" rel="noopener">Profil Strava ›</a>`:''}</div>`);
+  let p=b.querySelector('[data-u="push"]');if(p)p.onclick=async()=>{let t=prompt('Judul notifikasi untuk '+(u.name||'pengguna')+':','Halo dari Active Coach 👋');if(!t)return;let m=prompt('Isi pesan:','')||'';try{let r=await ACX.pushSend({target:'user',user_id:u.user_id,title:t,body:m,data:{go:'ann'}});toast(r.sent?'Terkirim ke '+r.sent+' HP ✓':'Tidak terkirim (HP belum terdaftar)')}catch(e){toast('Gagal: '+e.message)}};
+}
+/* ------------------------------ notifikasi (push saja) ------------------------------ */
+async function ownPush(host){
+  let rel=await ownLatest(),latest=rel&&rel.version,users=null;try{users=await ownLoadUsers()}catch(e){}
+  let preset=OWN.pushPreset;OWN.pushPreset='';
+  host.innerHTML=`<div class="adm-card"><div class="adm-h">Kirim notifikasi HP <small>tanpa membuat pengumuman</small></div><form class="adm-form" id="ownPushForm" style="padding:0;background:none">
+    <label>Judul<input name="title" maxlength="120" required placeholder="cth. Jangan lupa sinkron Strava hari ini 🚴"></label>
+    <label>Isi<textarea name="body" rows="3" maxlength="300" placeholder="Pesan singkat (maks. ±230 karakter terlihat)"></textarea></label>
+    <div class="adm-row2"><label>Kepada<select name="target"><option value="all">Semua pengguna</option><option value="outdated">Yang belum update${latest?' (< v'+latest+')':''}</option>${users&&users.length?'<option value="user">Pengguna tertentu…</option>':''}</select></label><label>Jenis<select name="category"><option value="ann">Pengumuman</option><option value="update">Versi baru</option><option value="event">Event</option><option value="maint">Maintenance (selalu terkirim)</option></select></label></div>
+    <label id="ownPushUserL" hidden>Pengguna<select name="user">${(users||[]).filter(u=>+u.push_devices>0).map(u=>`<option value="${esc(u.user_id)}">${esc(u.name)} · ${u.push_devices} HP</option>`).join('')}</select></label>
+    <div class="adm-h" style="margin:4px 0 0">Pratinjau</div><div class="own-notif-prev"><span class="own-np-ic">AC</span><div><small>Active Coach · sekarang</small><b id="ownNpT">Judul notifikasi</b><p id="ownNpB">Isi pesan</p></div></div>
+    <button type="submit" class="acx-btn adm-wide">Kirim notifikasi</button></form></div>
+    <div class="adm-card"><div class="adm-h">Pengingat update</div><p class="adm-note" style="margin-top:0">Kirim notifikasi khusus ke pengguna yang masih memakai versi lama${latest?' (sebelum v'+latest+')':''}. Ketukan langsung membuka layar pembaruan.</p><button type="button" class="dev-btn" id="ownRemind">🚀 Ingatkan pengguna versi lama</button></div>
+    <div class="adm-card"><div class="adm-h">Riwayat kirim (sesi ini)</div>${OWN.pushLog.length?OWN.pushLog.map(l=>`<div class="dev-kv"><span>${esc(l.t)}</span><b>${esc(l.r)}</b></div>`).join(''):'<p class="adm-note">Belum ada.</p>'}</div>
+    <p class="adm-note">Notifikasi otomatis lain: versi baru (setiap rilis GitHub, hanya ke yang belum update), pengumuman dengan sakelar notifikasi, pengingat latihan & rekap dari HP masing-masing.</p>`;
+  let f=host.querySelector('#ownPushForm'),pv=()=>{host.querySelector('#ownNpT').textContent=f.title.value||'Judul notifikasi';host.querySelector('#ownNpB').textContent=f.body.value||'Isi pesan';host.querySelector('#ownPushUserL').hidden=f.target.value!=='user'};
+  f.addEventListener('input',pv);f.addEventListener('change',pv);
+  let remind=()=>{if(!latest){toast('Tidak bisa membaca versi terbaru dari GitHub');return}f.title.value='🚀 Versi '+latest+' sudah tersedia';f.body.value='Kamu masih memakai versi lama. Ketuk untuk memperbarui — tanpa uninstall, data tetap aman.';f.target.value='outdated';f.category.value='update';pv();f.title.focus()};
+  host.querySelector('#ownRemind').onclick=remind;if(preset==='remind')remind();
+  f.onsubmit=async e=>{e.preventDefault();let btn=f.querySelector('button[type=submit]'),msg={title:f.title.value.trim(),body:f.body.value.trim(),target:f.target.value,category:f.category.value,data:{go:f.category.value==='update'?'update':f.category.value==='event'?'event':'ann',cat:f.category.value}};
+    if(msg.target==='outdated')msg.version=latest;if(msg.target==='user')msg.user_id=f.user.value;if(msg.category==='update')msg.tag='update';
+    if(!msg.title)return;if(msg.target!=='user'&&!confirm('Kirim notifikasi ke '+(msg.target==='outdated'?'pengguna versi lama':'semua pengguna')+'?'))return;
+    btn.disabled=true;btn.classList.add('is-busy');
+    try{let r=await ACX.pushSend(msg),res=(r.sent||0)+' / '+(r.total||0)+' HP'+(r.skipped?' · '+r.skipped+' dilewati (preferensi/versi)':'');OWN.pushLog.unshift({t:new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})+' · '+msg.title.slice(0,30),r:res});toast('🔔 Terkirim: '+res);ownPush(host)}catch(x){toast('Gagal: '+x.message);btn.disabled=false;btn.classList.remove('is-busy')}};
+  pv();
+}
+/* ------------------------------ masukan (kotak masuk di halaman) ------------------------------ */
+async function ownFeedback(host){
+  host.innerHTML=`<div class="st-seg" id="fbSeg">${[['baru','Baru'],['dibaca','Dibaca'],['selesai','Selesai'],['semua','Semua']].map(o=>`<button type="button" data-v="${o[0]}" class="${o[0]===FB_FILTER?'on':''}">${o[1]}</button>`).join('')}</div><div id="fbList" class="own-fblist">${inlineSpinner('Memuat masukan…')}</div>`;
+  host.querySelectorAll('#fbSeg button').forEach(b=>b.onclick=()=>{FB_FILTER=b.dataset.v;host.querySelectorAll('#fbSeg button').forEach(x=>x.classList.toggle('on',x===b));fbPaintList()});
+  await fbFetch();fbPaintList();
+}
+
+/* ================================ DEVELOPER ================================ */
+const OWN_DEV_TABS=[['home','Ringkasan','🧭'],['server','Server','🖥️'],['maint','Maintenance','🛠'],['push','Notifikasi','🔔'],['sync','Sinkron & data','🔄'],['log','Log','📜'],['test','Uji','🧪'],['flags','Saklar','🎛️'],['cache','Cache','🧹'],['rel','Rilis','🚀'],['links','Tautan','🔗'],['info','Perangkat','📱']];
+function ownDev(){
+  let host=document.getElementById('ownDev');if(!host)return;
+  host.innerHTML=`<div class="own-hero dev"><div><span>Khusus pemilik aplikasi</span><b>Developer</b><small>Server, maintenance, notifikasi, log, rilis & kontrol teknis</small></div><span class="own-hero-ic">⚙️</span></div>${ownTabs('ownDevTabs',OWN_DEV_TABS,OWN.devTab)}<div class="own-body" id="ownDevBody"></div>`;
+  host.querySelectorAll('#ownDevTabs button').forEach(b=>b.onclick=()=>{OWN.devTab=b.dataset.t;host.querySelectorAll('#ownDevTabs button').forEach(x=>x.classList.toggle('on',x===b));b.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});ownDevPane()});
+  ownDevPane();
+}
+async function ownDevPane(){
+  let b=document.getElementById('ownDevBody');if(!b)return;b.innerHTML=inlineSpinner('Memuat…');usgTrack('dev:'+OWN.devTab);
+  try{await ({home:ownDevHome,server:devHealthPane,maint:ownMaint,push:ownDevPush,sync:devSync,log:devLog,test:devTest,flags:devFlags,cache:devCache,rel:ownReleases,links:ownLinks,info:devInfo}[OWN.devTab]||ownDevHome)(b)}catch(e){b.innerHTML='<p class="adm-note">Gagal: '+esc(e.message||e)+'</p>'}
+}
+async function ownDevHome(host){
+  host.innerHTML='<p class="adm-note">Mengecek server, database, Strava & Firebase…</p>'+inlineSpinner('Mengecek…');
+  let h=await ACX.devHealth(),ps=await ACX.pushStatus(),st=null;try{st=await ACX.devStatus()}catch(e){}
+  let cb=h.callback.v||{},tb=h.tables,tOk=Object.values(tb).filter(x=>x.ok).length,tN=Object.keys(tb).length,sv=h.strava.v||{},pend=st?st.dirty.length+(st.propsDirty?1:0)+st.filesDirty:0,rel=await ownLatest(),cur=ACX.currentVersion();
+  let tile=(ok,lb,sub)=>`<div class="own-tile ${ok===true?'ok':ok===false?'bad':'warn'}"><span></span><b>${lb}</b><small>${esc(sub)}</small></div>`;
+  let issues=[];if(!h.auth.ok)issues.push('Supabase tidak terjangkau');if(!h.callback.ok)issues.push('Fungsi strava-callback: '+h.callback.error);else if((cb.v||0)<5)issues.push('strava-callback versi lama (v'+(cb.v||'?')+') — deploy ulang kode terbaru');if(tOk<tN)issues.push((tN-tOk)+' tabel belum dibuat — jalankan SQL migrasi');if(h.callback.ok&&!cb.push)issues.push('FCM_SERVICE_ACCOUNT belum diisi');if(!ps.configured)issues.push('APK belum dibangun dengan Firebase');if(rel&&rel.version!==cur)issues.push('Ada versi lebih baru: v'+rel.version);
+  host.innerHTML=`<div class="own-grid">${tile(h.auth.ok,'Supabase',h.auth.ok?h.auth.ms+' ms':'offline')}${tile(h.callback.ok&&(cb.v||0)>=5?true:h.callback.ok?null:false,'Fungsi',h.callback.ok?'v'+(cb.v||'?'):'error')}${tile(h.proxy.ok,'Proxy',h.proxy.ok?h.proxy.ms+' ms':'error')}${tile(tOk===tN?true:tOk?null:false,'Database',tOk+'/'+tN+' tabel')}${tile(h.strava.ok&&sv.connected,'Strava',sv.connected?'aktif':'putus')}${tile(ps.configured&&cb.push?(ps.token?true:null):false,'Firebase',ps.token?'token aktif':cb.push?'tanpa token':'belum diatur')}${tile(h.webhookOk?true:null,'Webhook',h.webhookOk?'tertaut':'belum')}${tile(pend?null:true,'Antrean',pend?pend+' menunggu':'kosong')}</div>
+    <div class="adm-card"><div class="adm-h">${issues.length?'Perlu perhatian ('+issues.length+')':'Semua sistem normal ✓'}</div>${issues.length?issues.map(i=>`<div class="own-issue">⚠️ ${esc(i)}</div>`).join(''):'<p class="adm-note" style="margin:0">Server, database, Strava dan notifikasi berjalan normal.</p>'}</div>
+    <div class="adm-h own-h">Aksi cepat</div><div class="own-acts">${ownAct('maint','🛠','Maintenance','mulai / selesai')}${ownAct('push','🔔','Uji notifikasi','ke HP ini')}${ownAct('sync','🔄','Sinkron','Strava + server')}${ownAct('log','📜','Lihat log',ACX.devlog().filter(x=>x.k==='error').length+' error')}${ownAct('rel','🚀','Rilis','v'+cur)}${ownAct('admin','🛡️','Admin','pengguna & info')}</div>
+    <div class="adm-card"><div class="adm-h">Aplikasi</div>${devRow('Versi terpasang','v'+cur)}${devRow('Versi terbaru',rel?'v'+rel.version:'–')}${devRow('Server',String((ACX.cfg&&ACX.cfg().url)||'').replace(/^https?:\/\//,''))}${devRow('Mode tampilan',document.documentElement.getAttribute('data-view'))}</div>`;
+  host.querySelectorAll('[data-act]').forEach(b=>b.onclick=async()=>{let k=b.dataset.act;if(k==='admin')return ownOpen('admin');if(k==='sync'){b.classList.add('is-busy');try{await syncStrava();await ACX.flush()}catch(e){}b.classList.remove('is-busy');return ownDevHome(host)}OWN.devTab=k;ownDev()});
+}
+/* ------------------------------ maintenance ------------------------------ */
+async function ownMaint(host){
+  let rows=[];try{rows=await ACX.rest('GET','ac_announcements?select=*&order=created_at.desc&limit=40')||[]}catch(e){host.innerHTML=admSqlHint(e);return}
+  let live=rows.filter(a=>annLive(a)&&/^🛠/.test(a.title||'')),on=live.some(a=>/Sedang maintenance/.test(a.title));
+  host.innerHTML=`<div class="adm-card own-maint ${on?'on':''}"><div class="adm-h">Mode maintenance <span class="own-pill ${on?'on':''}">${on?'SEDANG BERLANGSUNG':'Tidak aktif'}</span></div>
+      <p class="adm-note" style="margin-top:0">${on?'Pengguna melihat pop-up & kartu "Sedang maintenance". Akhiri setelah server normal — pengguna otomatis diberi kabar.':'Mulai saat server sedang diperbaiki: semua pengguna mendapat pop-up, kartu di Hari Ini, dan notifikasi HP.'}</p>
+      ${on?'<button type="button" class="acx-btn adm-wide own-ok" id="mtStop">✅ Selesai maintenance</button>':`<div class="adm-row2"><label class="own-lb">Perkiraan selesai<select id="mtDur"><option value="30">30 menit</option><option value="60" selected>1 jam</option><option value="120">2 jam</option><option value="240">4 jam</option></select></label><label class="own-lb">Alasan<select id="mtWhy"><option value="Pembaruan server">Pembaruan server</option><option value="Perbaikan sinkronisasi Strava">Perbaikan sinkronisasi Strava</option><option value="Pemeliharaan database">Pemeliharaan database</option></select></label></div><button type="button" class="acx-btn adm-wide own-warn" id="mtStart">🛠 Mulai maintenance sekarang</button>`}</div>
+    <div class="adm-card"><div class="adm-h">Maintenance terjadwal</div><p class="adm-note" style="margin-top:0">Umumkan jauh hari dengan tanggal & jam (template lengkap di Panel Admin › Pengumuman).</p><button type="button" class="dev-btn" id="mtSched">📅 Jadwalkan maintenance</button></div>
+    <div class="adm-card"><div class="adm-h">Pengumuman maintenance aktif</div>${live.length?live.map(a=>`<div class="adm-item"><div><b>${esc(a.title)}</b><small>${a.ends_at?'sampai '+esc(new Date(a.ends_at).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):'tanpa batas'}</small></div></div>`).join(''):'<p class="adm-note">Tidak ada.</p>'}</div>
+    <div class="adm-card"><div class="adm-h">Kontrol HP ini</div><label class="dev-flag"><span><b>Jeda sinkron otomatis</b><small>Hentikan sinkron Strava & webhook di HP ini selama perbaikan</small></span><span class="st-toggle mini"><input type="checkbox" id="mtPause"${devFlag('acx_dev_pause')?' checked':''}><i></i></span></label><div class="dev-acts">${devBtn('wh','Daftarkan ulang webhook')}${devBtn('flush','Kirim antrean data')}</div></div>`;
+  let post=async(row,cat)=>{let ins=await ACX.rest('POST','ac_announcements',[row],'return=representation');let a=(Array.isArray(ins)&&ins[0])||row;if(a.id!=null)try{let sh=admLS('acx_ann_pop',[]);sh.push(a.id);admSet('acx_ann_pop',sh)}catch(e){}try{await annPushSend(Object.assign({},a,{level:row.level}))}catch(e){}annFetch(true)};
+  let st=host.querySelector('#mtStart');if(st)st.onclick=async()=>{let dur=+host.querySelector('#mtDur').value,why=host.querySelector('#mtWhy').value,end=new Date(Date.now()+dur*60000),hm=end.toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});if(!confirm('Mulai maintenance sekarang? Semua pengguna akan mendapat pop-up & notifikasi.'))return;st.classList.add('is-busy');
+    try{await post({title:'🛠 Sedang maintenance',body:why+'. Perkiraan selesai pukul '+hm+'. Sinkron Strava & penyimpanan bisa tertunda — data di HP-mu tetap aman dan otomatis tersinkron setelah selesai.',level:'penting',link:'',active:true,starts_at:new Date().toISOString(),ends_at:new Date(end.getTime()+3*3600e3).toISOString()});toast('🛠 Mode maintenance aktif');ownMaint(host)}catch(e){toast('Gagal: '+e.message);st.classList.remove('is-busy')}};
+  let sp=host.querySelector('#mtStop');if(sp)sp.onclick=async()=>{if(!confirm('Akhiri maintenance & kabari pengguna?'))return;sp.classList.add('is-busy');
+    try{for(const a of live)await ACX.rest('PATCH','ac_announcements?id=eq.'+a.id,{active:false},'return=minimal');await post({title:'✅ Server sudah normal kembali',body:'Maintenance selesai. Tarik layar ke bawah di Hari Ini untuk menyinkronkan aktivitas terbaru. Terima kasih sudah menunggu!',level:'info',link:'',active:true,starts_at:new Date().toISOString(),ends_at:new Date(Date.now()+2*864e5).toISOString()});toast('✅ Maintenance selesai, pengguna sudah dikabari');ownMaint(host)}catch(e){toast('Gagal: '+e.message);sp.classList.remove('is-busy')}};
+  host.querySelector('#mtSched').onclick=()=>{OWN.adminTab='ann';ownOpen('admin');setTimeout(()=>{let t=document.querySelector('#annTpls [data-tpl="maint"]');if(t)t.click()},600)};
+  host.querySelector('#mtPause').onchange=e=>{localStorage.setItem('acx_dev_pause',JSON.stringify(e.target.checked));toast(e.target.checked?'Sinkron otomatis dijeda':'Sinkron otomatis aktif lagi')};
+  devBind(host,{wh:async()=>{let j=await ACX.ensureWebhook(true);toast(j&&j.linked?'Webhook tertaut ✓':'Webhook gagal — lihat Log')},flush:async()=>{await ACX.flush();toast('Antrean terkirim')}});
+}
+/* ------------------------------ notifikasi (diagnostik) ------------------------------ */
+async function ownDevPush(host){
+  let ps=await ACX.pushStatus(),h=null;try{h=await ACX.devHealth()}catch(e){}let cb=(h&&h.callback.v)||{};
+  let pushLog=ACX.devlog().filter(x=>/Push|Notifikasi|Firebase|push/i.test(x.m)).slice(-12).reverse();
+  host.innerHTML=`<div class="adm-card"><div class="adm-h">Status Firebase</div>${devStat(ps.configured,'APK dengan Firebase',ps.configured?'google-services.json terpasang':'isi GitHub Secret GOOGLE_SERVICES_JSON lalu build ulang')}${devStat(h&&h.callback.ok?!!cb.push:null,'Kunci server (FCM_SERVICE_ACCOUNT)',cb.push?'terisi':'belum diisi di Supabase › Edge Functions › Secrets')}${devStat(h&&h.callback.ok?(cb.v||0)>=5:null,'Fungsi strava-callback',h&&h.callback.ok?'v'+(cb.v||'?')+((cb.v||0)>=5?' · notifikasi pintar aktif':' · deploy ulang untuk notifikasi pintar'):'tidak terjangkau')}${devStat(ps.permission==='granted'?true:ps.native?false:null,'Izin notifikasi HP',ps.permission)}${devStat(ps.token?true:ps.enabled?false:null,'Token HP ini',ps.token?ps.token.slice(0,16)+'… · '+devAgo(ps.at):'belum terdaftar')}</div>
+    <div class="dev-acts">${devBtn('push','Kirim uji ke HP ini (10 dtk)')}${devBtn('pushreg','Daftar ulang token')}${devBtn('prefs','Sinkron preferensi')}</div>
+    <div class="adm-card"><div class="adm-h">Kanal notifikasi Android</div>${ownKv('alerts','Maintenance & gangguan · prioritas tinggi')}${ownKv('announcements','Pengumuman, event & versi baru')}${ownKv('lokal (dari HP)','Pengingat latihan, rekap, kenangan, servis')}</div>
+    <div class="adm-card"><div class="adm-h">Notifikasi otomatis</div>${ownKv('🚀 Versi baru','Setiap rilis GitHub → hanya HP yang masih versi lama; pengguna bisa mematikannya')}${ownKv('🛠 Maintenance','Selalu terkirim (tidak bisa dimatikan pengguna)')}${ownKv('📣 Event & pengumuman','Sesuai preferensi masing-masing pengguna')}${ownKv('📱 Saat aplikasi terbuka','Tetap tampil di bilah notifikasi')}</div>
+    <div class="adm-card"><div class="adm-h">Log notifikasi</div>${pushLog.length?'<div class="dev-log">'+pushLog.map(x=>`<div class="dev-line k-${esc(x.k)}"><time>${new Date(x.t).toLocaleTimeString('id-ID')}</time><span>${esc(x.k)}</span><p>${esc(x.m)}</p></div>`).join('')+'</div>':'<p class="adm-note">Belum ada.</p>'}</div>`;
+  let tmp=document.createElement('div');devTest(tmp);
+  devBind(host,{push:()=>{let b=tmp.querySelector('[data-dev="push"]');if(b)b.click()},pushreg:()=>{let b=tmp.querySelector('[data-dev="pushreg"]');if(b)b.click()},prefs:async()=>{await ACX.pushSyncPrefs();toast('Preferensi dikirim ke server')}});
+}
+/* ------------------------------ rilis ------------------------------ */
+async function ownReleases(host){
+  await devRel(host);let repo=(window.ACX_CONFIG||{}).updateRepo||'Malik190603/active-coach-app',list=[];
+  try{let r=await fetch('https://api.github.com/repos/'+repo+'/releases?per_page=12',{cache:'no-store'});if(r.ok)list=await r.json()}catch(e){}
+  if(!list.length)return;let total=0;
+  let rows=list.map(r=>{let apk=(r.assets||[]).find(a=>/\.apk$/i.test(a.name||'')),dl=apk?apk.download_count:0;total+=dl;return `<div class="own-rel"><b>${esc(r.tag_name)}</b><small>${esc(new Date(r.published_at).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}</small><span>${esc(String(r.name||'').replace(/^Active Coach /,''))}</span><em>⬇ ${dl}</em></div>`}).join('');
+  host.insertAdjacentHTML('beforeend',`<div class="adm-card"><div class="adm-h">Riwayat rilis <small>${total} unduhan APK (12 terakhir)</small></div>${rows}</div><div class="dev-acts"><a class="dev-btn" href="https://github.com/${esc(repo)}/actions" target="_blank" rel="noopener">GitHub Actions ›</a><a class="dev-btn" href="https://github.com/${esc(repo)}/releases" target="_blank" rel="noopener">Semua rilis ›</a></div>`);
+}
+/* ------------------------------ tautan penting ------------------------------ */
+function ownLinks(host){
+  let url=String((ACX.cfg&&ACX.cfg().url)||''),ref=(url.match(/https:\/\/([a-z0-9]+)\.supabase\.co/)||[])[1]||'',repo=(window.ACX_CONFIG||{}).updateRepo||'Malik190603/active-coach-app',sb='https://supabase.com/dashboard/project/'+ref,raw='https://raw.githubusercontent.com/'+repo+'/main/supabase/migrations/';
+  let grp=(t,items)=>`<div class="adm-card"><div class="adm-h">${t}</div>${items.map(i=>`<a class="own-linkrow" href="${esc(i[1])}" target="_blank" rel="noopener"><span>${i[2]||'🔗'}</span><div><b>${esc(i[0])}</b>${i[3]?`<small>${esc(i[3])}</small>`:''}</div><em>›</em></a>`).join('')}</div>`;
+  host.innerHTML=(ref?grp('Supabase',[['Dashboard proyek',sb,'🟢',ref],['SQL Editor',sb+'/sql/new','🧾','jalankan migrasi'],['Edge Functions',sb+'/functions','⚡','strava-callback, proxy'],['Secrets fungsi',sb+'/functions/secrets','🔐','STRAVA_*, FCM_SERVICE_ACCOUNT'],['Table Editor',sb+'/editor','🗂️'],['Pengguna (Auth)',sb+'/auth/users','👥'],['Log fungsi',sb+'/logs/edge-functions','📜']]):'')+
+    grp('GitHub',[['Repositori','https://github.com/'+repo,'📦'],['Actions (build APK)','https://github.com/'+repo+'/actions','🏗️','Run workflow untuk build ulang'],['Releases','https://github.com/'+repo+'/releases','🚀'],['Secrets Actions','https://github.com/'+repo+'/settings/secrets/actions','🔐','GOOGLE_SERVICES_JSON'],['Variables Actions','https://github.com/'+repo+'/settings/variables/actions','🧩','SUPABASE_URL, SUPABASE_ANON_KEY']])+
+    grp('Layanan lain',[['Firebase Console','https://console.firebase.google.com','🔥','Cloud Messaging & kunci server'],['Strava API settings','https://www.strava.com/settings/api','🟠','Client ID, callback domain, kuota atlet'],['Formulir kuota Strava','https://share.hsforms.com/1VXSwPUYqSH6IxK0y51FjHwcnkd8','📝']])+
+    grp('File SQL migrasi (salin ke SQL Editor)',[['Database inti',raw+'20260930000000_active_coach.sql','0️⃣'],['Login Strava',raw+'20261001000000_strava_login.sql','1️⃣'],['Kotak masuk masukan',raw+'20261001120000_feedback.sql','2️⃣'],['Panel admin',raw+'20261001180000_admin_suite.sql','3️⃣'],['Notifikasi HP',raw+'20261001200000_push.sql','4️⃣'],['Daftar pengguna & preferensi notif',raw+'20261001220000_admin_users.sql','5️⃣']])+
+    grp('Kode fungsi (salin ke Edge Functions)',[['strava-callback','https://raw.githubusercontent.com/'+repo+'/main/supabase/functions/strava-callback/index.ts','⚡'],['proxy','https://raw.githubusercontent.com/'+repo+'/main/supabase/functions/proxy/index.ts','⚡']]);
+}
+</script>

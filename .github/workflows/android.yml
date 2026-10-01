@@ -90,3 +90,12 @@ jobs:
           body_path: release-notes.md
           make_latest: true
           files: ActiveCoach-*.apk
+
+      - name: Kabari pengguna (pengumuman + notifikasi versi baru)
+        # Server mengecek rilis terbaru di GitHub sendiri, jadi aman dipanggil berulang (sekali per versi).
+        if: ${{ vars.SUPABASE_URL != '' }}
+        continue-on-error: true
+        run: |
+          sleep 15
+          curl -sS -m 90 -X POST "${{ vars.SUPABASE_URL }}/functions/v1/strava-callback?release=1" \
+            -H "apikey: ${{ vars.SUPABASE_ANON_KEY }}" -H "Content-Type: application/json" -d '{}' || true

@@ -1,0 +1,87 @@
+<script>
+'use strict';
+/* =====================================================================
+   Profil ringkas: kartu atlet → pintasan → (ubin pemilik) → kategori
+   yang bisa dibuka-tutup (satu terbuka sekaligus, diingat di HP).
+   Baris lama tidak dibuat ulang, hanya dipindahkan, jadi semua fungsi
+   (klik, form, sakelar) tetap sama.
+   ===================================================================== */
+const PF_CATS=[
+  {k:'akun',t:'Akun & Strava',ic:'i-link',tone:'strava',sub:'Koneksi, sinkronisasi, foto, impor aktivitas'},
+  {k:'latihan',t:'Latihan & target',ic:'i-target',tone:'green',sub:'FTP & zona HR, jadwal coach, target, rekap, event'},
+  {k:'notif',t:'Notifikasi & pengumuman',ic:'i-bell',tone:'amber',sub:'Pengingat, notifikasi HP, info pengembang'},
+  {k:'tampilan',t:'Tampilan',ic:'i-palette',tone:'indigo',sub:'Tema & tata letak',pad:true},
+  {k:'privasi',t:'Privasi & data',ic:'i-shield',tone:'gray',sub:'Peta rute, statistik anonim, hapus akun'},
+  {k:'bantuan',t:'Bantuan & tentang',ic:'i-info',tone:'blue',sub:'Saran & kritik, tutorial, pembaruan, versi'}
+];
+/* [kategori, pemilih] — urutan = urutan tampil di dalam kategori */
+const PF_MAP=[
+  ['akun','@#acxAccountName'],['akun','@#profileSyncState'],['akun','[data-open-sync]'],['akun','$#qualityList'],['akun','$#settingsPhotoPreview'],['akun','#acxImportActRow'],['akun','#acxActFile'],['akun','#logoutBtn'],
+  ['latihan','#metricsCard'],['latihan','$#scheduleForm'],['latihan','$#goalsForm'],['latihan','#rcRow'],['latihan','#evRow'],
+  ['notif','#acxNotifRow'],['notif','#annRow'],
+  ['tampilan','@#themeToggleLabel'],['tampilan','#themeSeg'],['tampilan','@#viewModeLabel'],['tampilan','#viewSeg'],
+  ['privasi','#hideRoutesRow'],['privasi','#usgRow'],['privasi','#acxPrivacyRow'],['privasi','#acxDeleteRow'],
+  ['bantuan','#openFeedback'],['bantuan','#tourRow'],['bantuan','#acxUpdateRow'],['bantuan','[data-detail="about"]']
+];
+const PF_CHIPS=[['rc','Rekap','i-chart','pink','#rcRow'],['ev','Event','i-calendar','amber','#evRow'],['ann','Info','i-bell','blue','#annRow'],['nf','Notifikasi','i-pulse','orange','#acxNotifRow'],['fb','Saran','i-chat','green','#openFeedback']];
+function pfRoot(){return document.querySelector('[data-page-view="profile"] .acx-profile')}
+function pfFind(root,sel){
+  let mode=sel[0],q=sel;
+  if(mode==='@'||mode==='$')q=sel.slice(1);
+  let el=root.querySelector(q);if(!el)return null;
+  if(mode==='@')return el.closest('.acx-row');
+  if(mode==='$')return el.closest('details.acx-row-details');
+  return el;
+}
+function pfOpenKey(){try{return localStorage.getItem('acx_pf_open')||''}catch(e){return ''}}
+function pfSetOpen(k){try{localStorage.setItem('acx_pf_open',k||'')}catch(e){}}
+function pfCompact(){
+  let root=pfRoot();if(!root)return;
+  let main=root.querySelector('.acx-col-main'),side=root.querySelector('.acx-col-side');if(!main||!side)return;
+  let id=root.querySelector('.acx-idcard');if(!id)return;
+  if(!root.classList.contains('pf-compact')){
+    root.classList.add('pf-compact');
+    let open=pfOpenKey();
+    id.insertAdjacentHTML('afterend',`<div class="pf-chips" id="pfChips">${PF_CHIPS.map(c=>`<button type="button" class="pf-chip" data-pf-chip="${c[4]}"><span class="pf-chip-ic tone-${c[3]} icon"><svg><use href="#${c[2]}"/></svg></span><b>${c[1]}</b>${c[0]==='ann'?'<i class="pf-dot" id="pfAnnDot" hidden></i>':''}</button>`).join('')}</div>
+      <div class="pf-owner" id="pfOwner" hidden><div class="pf-owner-h"><span>Khusus pemilik</span></div><div class="pf-owner-grid">
+        <button type="button" class="pf-own adm" data-own="admin"><span class="pf-own-ic">🛡️</span><b>Panel Admin</b><small>Pengguna · pengumuman · notifikasi · event</small><i class="pf-own-badge" id="pfFbBadge" hidden></i></button>
+        <button type="button" class="pf-own dev" data-own="dev"><span class="pf-own-ic">⚙️</span><b>Developer</b><small>Server · maintenance · log · rilis</small></button></div></div>`);
+    side.insertAdjacentHTML('afterbegin','<div class="pf-cats" id="pfCats">'+PF_CATS.map(c=>`<details class="pf-cat" data-pf="${c.k}"${c.k===open?' open':''}><summary><span class="acx-row-ic tone-${c.tone} icon"><svg><use href="#${c.ic}"/></svg></span><span class="pf-cat-txt"><b>${c.t}</b><small data-pf-sub>${c.sub}</small></span><i class="pf-dot" data-pf-dot hidden></i><span class="pf-cat-chev icon"><svg><use href="#i-chevron"/></svg></span></summary><div class="acx-list pf-list${c.pad?' acx-pad-list':''}" data-pf-list></div></details>`).join('')+'</div><div class="pf-foot" id="pfFoot"></div>');
+    root.querySelectorAll('[data-pf-chip]').forEach(b=>b.onclick=()=>{let r=document.querySelector('[data-page-view="profile"] '+b.dataset.pfChip);if(r)r.click();else toast('Belum tersedia')});
+    root.querySelectorAll('[data-own]').forEach(b=>b.onclick=()=>ownOpen(b.dataset.own));
+    root.querySelectorAll('.pf-cat').forEach(d=>d.addEventListener('toggle',()=>{
+      if(d.open){root.querySelectorAll('.pf-cat[open]').forEach(o=>{if(o!==d)o.open=false});pfSetOpen(d.dataset.pf);
+        setTimeout(()=>{let r=d.getBoundingClientRect();if(r.top<70||r.top>innerHeight*.6)window.scrollBy({top:r.top-80,behavior:'instant'})},10)}
+      else if(pfOpenKey()===d.dataset.pf&&!root.querySelector('.pf-cat[open]'))pfSetOpen('');
+    }));
+  }
+  let lists={};root.querySelectorAll('.pf-cat').forEach(d=>lists[d.dataset.pf]=d.querySelector('[data-pf-list]'));
+  PF_MAP.forEach(m=>{let el=pfFind(root,m[1]);if(el&&el.parentElement!==lists[m[0]])lists[m[0]].appendChild(el)});
+  /* sisa baris yang tidak dikenal (fitur baru) masuk ke Bantuan & tentang */
+  root.querySelectorAll('.acx-list:not(.pf-list)').forEach(l=>{[...l.children].forEach(ch=>{if(ch.matches('.acx-row,details,label,.seg,input[type=file]'))lists.bantuan.appendChild(ch)})});
+  let foot=root.querySelector('#pfFoot');root.querySelectorAll('.acx-powered,.acx-foot').forEach(p=>{if(p.parentElement!==foot)foot.appendChild(p)});
+  root.querySelectorAll('.acx-list:not(.pf-list)').forEach(l=>{if(!l.children.length)l.remove()});
+  root.querySelectorAll('.acx-group-title').forEach(t=>t.remove());
+  pfRefresh();
+}
+function pfRefresh(){
+  let root=pfRoot();if(!root||!root.classList.contains('pf-compact'))return;
+  let acc=document.getElementById('acxAccountName'),sync=document.getElementById('profileSyncState');
+  let set=(k,txt)=>{let s=root.querySelector('.pf-cat[data-pf="'+k+'"] [data-pf-sub]');if(s&&txt)s.textContent=txt};
+  let a=acc&&acc.textContent.trim(),y=sync&&sync.textContent.trim();
+  if(a&&!/^Masuk dengan/.test(a))set('akun',a+(y&&!/Memeriksa/.test(y)?' · '+y:''));
+  let ab=document.getElementById('annRowBadge'),annN=ab&&!ab.hidden?ab.textContent:'';
+  let dot=document.getElementById('pfAnnDot');if(dot){dot.hidden=!annN;dot.textContent=annN}
+  let nd=root.querySelector('.pf-cat[data-pf="notif"] [data-pf-dot]');if(nd){nd.hidden=!annN;nd.textContent=annN}
+  let ver=window.AC_BUILD||(window.ACX&&ACX.currentVersion&&ACX.currentVersion())||'';if(ver)set('bantuan','Saran & kritik, tutorial, pembaruan · v'+String(ver).replace(/^v/,''));
+  ownPaintTiles();
+}
+function ownPaintTiles(){
+  let box=document.getElementById('pfOwner');if(!box)return;
+  let on=typeof FB_ADMIN!=='undefined'&&FB_ADMIN;box.hidden=!on;if(!on)return;
+  let n=+window.FB_NEW||0,b=document.getElementById('pfFbBadge');if(b){b.hidden=!n;b.textContent=n>99?'99+':n+' baru'}
+}
+/* jalankan setelah semua modul menyuntikkan barisnya, lalu rapikan lagi tiap kali Profil dibuka */
+document.addEventListener('DOMContentLoaded',()=>{[300,1500,6000].forEach(t=>setTimeout(()=>{try{pfCompact()}catch(e){console.error('pfCompact',e)}},t))});
+(function(){try{let o=window.renderPageContent;if(typeof o!=='function')return;window.renderPageContent=function(page){let r=o.apply(this,arguments);if(page==='profile')try{pfCompact()}catch(e){}return r}}catch(e){}})();
+</script>
