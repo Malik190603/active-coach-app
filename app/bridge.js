@@ -1222,7 +1222,21 @@
     var c = cfg(), h = { apikey: c.anonKey }, out = {};
     out.auth = await timed(async function () { var r = await fetch(c.url + '/auth/v1/health', { headers: h, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.status; });
     out.callback = await timed(async function () { var r = await fetch(c.url + '/functions/v1/strava-callback?ping=1', { headers: h, redirect: 'manual', cache: 'no-store' }); if (r.status === 404) throw new Error('Fungsi tidak ditemukan'); if (r.status === 401) throw new Error('Verify JWT masih aktif'); if (r.type === 'opaqueredirect') throw new Error('Versi lama'); var j = await r.json(); if (!j.ok) throw new Error('Respons tidak valid'); return j; });
-    out.proxy = await timed(async function () { var r = await fetch(c.url + '/functions/v1/proxy?config=1', { headers: h, cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.status; });
+    // Proxy sengaja menolak yang belum login → cek memakai sesi pengguna & baca alasan penolakan sebenarnya.
+    out.proxy = await timed(async function () {
+      var s = null; try { s = await freshSession(); } catch (e) {}
+      var ph = { apikey: c.anonKey }; if (s && s.access_token) ph.Authorization = 'Bearer ' + s.access_token;
+      var r = await fetch(c.url + '/functions/v1/proxy?config=1', { headers: ph, cache: 'no-store' });
+      var t = await r.text(), j = {}; try { j = t ? JSON.parse(t) : {}; } catch (e) {}
+      if (r.status === 404) throw new Error('Fungsi "proxy" tidak ditemukan — deploy dari supabase/functions/proxy');
+      if (r.status === 401) {
+        if (j.error === 'Belum login') { if (!ph.Authorization) return { note: 'aktif (butuh login)' }; throw new Error('Login ditolak proxy — keluar lalu masuk lagi'); }
+        throw new Error('Ditolak gateway Supabase — matikan "Verify JWT" di pengaturan fungsi proxy');
+      }
+      if (!r.ok) throw new Error('HTTP ' + r.status + (j.error ? ' · ' + j.error : ''));
+      if (!j.stravaClientId) throw new Error('Aktif, tapi STRAVA_CLIENT_ID belum terbaca di Secrets');
+      return { note: 'aktif · Client ID Strava terbaca' };
+    });
     out.tables = {};
     for (var t of ['ac_chunks', 'ac_feedback', 'ac_admins', 'ac_announcements', 'ac_events', 'ac_usage', 'ac_push_tokens', 'ac_meta']) { out.tables[t] = await timed(function () { return acxRest('GET', t + '?select=*&limit=1'); }); }
     out.strava = await timed(async function () { var st = await callEngine('getStravaStatus', [SESSION.athleteId]); var cur = await callEngine('appCurrentStrava', []); return { connected: !!(st && st.connected), athlete: st && st.athlete, expiresAt: cur && cur.expires_at || 0 }; });
