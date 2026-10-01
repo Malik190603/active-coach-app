@@ -60,7 +60,7 @@ copy(path.join(APP, 'bridge.js'), path.join(OUT, 'bridge.js'));
 
 // ---------- konfigurasi server (opsional, bisa juga diisi dari layar login aplikasi) ----------
 const FCM = !!(process.env.GOOGLE_SERVICES_JSON || '').trim() || fs.existsSync(path.join(ROOT, 'firebase', 'google-services.json'));
-const conf = { supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '', updateRepo: process.env.GITHUB_REPOSITORY || 'Malik190603/active-coach-app', version: VERSION, build: Number(RUN) || 0, fcm: FCM };
+const conf = { supabaseUrl: process.env.SUPABASE_URL || '', supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '', updateRepo: process.env.GITHUB_REPOSITORY || 'Malik190603/active-coach-app', version: VERSION, build: Number(RUN) || 0, nativeBase: process.env.NATIVE_BASE || VERSION, fcm: FCM };
 const confFile = path.join(ROOT, 'app', 'config.local.json');
 if (fs.existsSync(confFile)) Object.assign(conf, JSON.parse(read(confFile)));
 write(path.join(OUT, 'config.js'), 'window.ACX_CONFIG = ' + JSON.stringify(conf, null, 2) + ';\n');

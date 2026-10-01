@@ -132,6 +132,16 @@ Supaya pengumuman (maintenance, versi baru, dll.) masuk ke bilah notifikasi HP p
 
 Cek semuanya di aplikasi: **Profil › Developer › Notifikasi** dan **Kirim uji ke HP ini**. Setelah itu, setiap pengumuman dari Panel admin punya pilihan **Kirim juga ke notifikasi HP** (aktif bawaan), dan riwayat pengumuman punya tombol **🔔 Kirim notif** untuk mengirim ulang.
 
+## Update kilat (tanpa pasang APK)
+
+Mulai **v1.3.0**, setiap rilis membawa dua file: APK (untuk pemasangan baru) dan paket web `ActiveCoach-web-X.zip`.
+- **Rilis biasa** (tampilan, fitur, perbaikan): HP pengguna mengunduh paket web (±2 MB) saat aplikasi dibuka atau saat notifikasi versi baru diketuk, memasangnya, lalu memuat ulang — tanpa layar "Instal". Data tetap aman.
+- **Rilis native** (plugin baru, izin, ikon, konfigurasi Capacitor, Firebase, kunci): otomatis terdeteksi oleh `scripts/live.mjs` (sidik native). Pengguna memasang APK seperti biasa; APK itu menjadi *basis native* baru.
+- **Pengaman:** paket diverifikasi SHA-256; bila versi baru tidak berhasil menampilkan layar utama dalam 20 detik, aplikasi otomatis kembali ke versi sebelumnya, versi itu ditandai gagal (lalu ditawarkan lewat APK) dan kamu menerima laporan "Bug otomatis". Pemasangan APK baru selalu menghapus paket web lama.
+- **Privasi:** memakai plugin `@capgo/capacitor-updater` dalam mode manual — tanpa server/statistik pihak ketiga (`statsUrl`, `updateUrl`, `channelUrl` kosong; dijaga `npm run check`). Paket diunduh langsung dari GitHub Releases repo ini.
+- **Developer › Rilis › Update kilat:** status, basis native, versi gagal, *Cek update sekarang*, dan *Kembali ke versi APK*.
+- Pengguna yang masih memakai versi sebelum 1.3.0 perlu memasang APK 1.3.0 sekali; setelah itu update berikutnya kilat.
+
 ## Standar rilis
 
 - **Build rilis** (bukan debug): APK tidak bisa di-debug lewat USB dan isi WebView tidak bisa diintip. Tetap ditandatangani kunci yang sama (`signing/debug.keystore`), jadi pengguna update menimpa tanpa uninstall. GitHub Actions membatalkan rilis bila kuncinya berbeda atau APK masih bisa di-debug.

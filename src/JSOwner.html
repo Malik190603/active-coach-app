@@ -180,7 +180,15 @@ async function ownDevPush(host){
 }
 /* ------------------------------ rilis ------------------------------ */
 async function ownReleases(host){
-  await devRel(host);let repo=(window.ACX_CONFIG||{}).updateRepo||'Malik190603/active-coach-app',list=[];
+  await devRel(host);
+  try{let ls=await ACX.liveState(),rel=await ownLatest();
+    host.insertAdjacentHTML('beforeend',`<div class="adm-card"><div class="adm-h">Update kilat <small>tanpa pasang APK</small></div>${devRow('Tersedia di HP ini',ls.available?'Ya':'Tidak (versi APK lama / browser)')}${devRow('Versi berjalan','v'+ls.version)}${devRow('Sumber tampilan',ls.bundle||'–')}${devRow('Basis native',ls.nativeBase?'v'+ls.nativeBase:'–')}${devRow('Rilis terbaru',rel?('v'+rel.version+(rel.live?' · kilat (basis v'+rel.live.native+')':' · perlu APK')):'–')}${ls.failed.length?devRow('Gagal dipasang',ls.failed.map(v=>'v'+v).join(', ')):''}
+      <p class="adm-note">Rilis tanpa perubahan native (plugin, izin, ikon) dipasang otomatis dalam hitungan detik. Rilis native tetap lewat APK.</p>
+      <div class="dev-acts">${devBtn('livecheck','Cek update sekarang')}${ls.available?devBtn('livereset','Kembali ke versi APK','ghost'):''}</div></div>`);
+    let lc=host.querySelector('[data-dev="livecheck"]'),lr=host.querySelector('[data-dev="livereset"]');
+    if(lc)lc.onclick=()=>ACX.checkForUpdate(true);
+    if(lr)lr.onclick=async()=>{if(!confirm('Hapus update kilat & kembali ke tampilan bawaan APK? Aplikasi akan dimuat ulang.'))return;try{await ACX.liveReset()}catch(e){toast(e.message)}};
+  }catch(e){}let repo=(window.ACX_CONFIG||{}).updateRepo||'Malik190603/active-coach-app',list=[];
   try{let r=await fetch('https://api.github.com/repos/'+repo+'/releases?per_page=12',{cache:'no-store'});if(r.ok)list=await r.json()}catch(e){}
   if(!list.length)return;let total=0;
   let rows=list.map(r=>{let apk=(r.assets||[]).find(a=>/\.apk$/i.test(a.name||'')),dl=apk?apk.download_count:0;total+=dl;return `<div class="own-rel"><b>${esc(r.tag_name)}</b><small>${esc(new Date(r.published_at).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}))}</small><span>${esc(String(r.name||'').replace(/^Active Coach /,''))}</span><em>⬇ ${dl}</em></div>`}).join('');

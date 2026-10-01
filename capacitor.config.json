@@ -17,6 +17,19 @@
     "LocalNotifications": {
       "smallIcon": "ic_stat_ac",
       "iconColor": "#FC4C02"
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "appReadyTimeout": 20000,
+      "resetWhenUpdate": true,
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": true,
+      "statsUrl": "",
+      "updateUrl": "",
+      "channelUrl": "",
+      "allowModifyUrl": false,
+      "shakeMenu": false,
+      "keepUrlPathAfterReload": false
     }
   }
 }

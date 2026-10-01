@@ -559,10 +559,10 @@
       j = await r.json();
     }
     var apk = (j.assets || []).find(function (a) { return /\.apk$/i.test(a.name || ''); });
-    return { beta: !!j.prerelease, publishedAt: j.published_at || '', version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /^\s*(##\s*Yang baru\s*)?\[WAJIB\]/m.test(j.body || '') };
+    return { live: liveParse(j), beta: !!j.prerelease, publishedAt: j.published_at || '', version: String(j.tag_name || '').replace(/^v/i, ''), notes: String(j.body || ''), url: apk ? apk.browser_download_url : j.html_url, page: j.html_url, size: apk ? apk.size : 0, mandatory: /^\s*(##\s*Yang baru\s*)?\[WAJIB\]/m.test(j.body || '') };
   }
   function splitNotes(md) {
-    var s = String(md || '').replace(/\r/g, ''), i = s.search(/^## Catatan developer/m);
+    var s = String(md || '').replace(/\r/g, '').replace(/<!--[\s\S]*?-->/g, '').replace(/\n{3,}/g, '\n\n'), i = s.search(/^## Catatan developer/m);
     return { user: i >= 0 ? s.slice(0, i) : s, dev: i >= 0 ? s.slice(i).replace(/^## Catatan developer\s*/m, '') : '' };
   }
   function mdLines(md, max) {
@@ -659,7 +659,7 @@
     var cached = LS.get('acx_upd_latest');
     try {
       var rel = await fetchLatestRelease(); LS.set('acx_upd_checked', Date.now()); LS.set('acx_upd_latest', rel);
-      if (rel.version && verNewer(rel.version, currentVersion())) showUpdateSheet(rel);
+      if (rel.version && verNewer(rel.version, currentVersion())) { if (liveCompatible(rel)) liveUpdate(rel, manual); else showUpdateSheet(rel); }
       else { var ex = $('#updSheet'); if (ex) ex.remove(); if (manual) note('Kamu sudah memakai versi terbaru (' + currentVersion() + ')'); }
     } catch (e) {
       // offline / batas API: tetap kunci bila sebelumnya sudah diketahui ada versi lebih baru
@@ -1024,6 +1024,85 @@
     LS.del('acx_push_token');
   }
 
+  /* ---------- update kilat: tampilan & fitur baru tanpa memasang APK ----------
+     Rilis tanpa perubahan native membawa paket web (zip) + info di catatan rilis. Aplikasi mengunduhnya,
+     memasang, lalu memuat ulang. Bila versi baru gagal terbuka, plugin otomatis kembali ke versi sebelumnya
+     dan versi itu ditandai gagal (lalu ditawarkan lewat APK). Tanpa server pihak ketiga. */
+  function livePlugin() { try { return NATIVE && CAP.isPluginAvailable && CAP.isPluginAvailable('CapacitorUpdater') ? P.CapacitorUpdater : null; } catch (e) { return null; } }
+  function nativeBase() { return (window.ACX_CONFIG && window.ACX_CONFIG.nativeBase) || ''; }
+  function liveParse(rel) {
+    try {
+      var m = String(rel.body || '').match(/<!--\s*ac-live\s+(\{[\s\S]*?\})\s*-->/); if (!m) return null;
+      var info = JSON.parse(m[1]), asset = (rel.assets || []).find(function (a) { return a.name === info.asset; });
+      if (!asset || !info.native || !/^[0-9a-f]{64}$/.test(info.sha256 || '')) return null;
+      return { native: String(info.native), sha256: info.sha256, size: Number(info.size) || asset.size || 0, url: asset.browser_download_url };
+    } catch (e) { return null; }
+  }
+  function liveCompatible(rel) {
+    var l = rel && rel.live;
+    if (!l || !livePlugin() || !nativeBase() || l.native !== nativeBase()) return false;
+    return (LS.get('acx_live_failed') || []).indexOf(rel.version) < 0;
+  }
+  var liveBusy = false;
+  async function liveUpdate(rel, manual) {
+    if (liveBusy) return; liveBusy = true;
+    var L = livePlugin(), box = $('#liveSheet'), h = null;
+    if (!box) {
+      box = document.createElement('div'); box.className = 'upd-gate live-gate'; box.id = 'liveSheet';
+      box.innerHTML = '<div class="upd-card"><span class="upd-ic live"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></span><h3>Memperbarui ke versi ' + esc(rel.version) + '</h3>' +
+        '<p class="upd-ver">Update kilat ' + (rel.live.size ? '(' + (rel.live.size / 1048576).toFixed(1) + ' MB) ' : '') + '— tanpa instal ulang, data tetap aman.</p>' +
+        '<div class="upd-notes">' + (notesHtml(rel.notes) || 'Perbaikan & peningkatan terbaru.') + '</div>' +
+        '<div class="upd-prog"><i id="liveBar"></i></div><p class="upd-status" id="liveStatus">Mengunduh…</p></div>';
+      document.body.appendChild(box);
+    }
+    var bar = $('#liveBar'), st = $('#liveStatus'), set = function (p, t) { if (bar) bar.style.width = Math.max(4, Math.min(100, p)) + '%'; if (st && t) st.textContent = t; };
+    try {
+      h = await L.addListener('download', function (e) { var p = Number(e && e.percent) || 0; set(p, p < 70 ? 'Mengunduh… ' + p + '%' : 'Memasang…'); });
+      dlog('sync', 'Update kilat: mengunduh v' + rel.version);
+      var b = await L.download({ url: rel.live.url, version: rel.version, checksum: rel.live.sha256 });
+      set(100, 'Memuat ulang aplikasi…'); haptic('success');
+      try { if (engineReady) await Promise.race([send({ type: 'flush' }), new Promise(function (ok) { setTimeout(ok, 4000); })]); } catch (e) {}
+      LS.set('acx_live_pending', { v: rel.version, from: currentVersion(), at: Date.now() });
+      await L.set({ id: b.id }); // memuat ulang WebView ke versi baru
+    } catch (e) {
+      dlog('error', 'Update kilat gagal: ' + ((e && e.message) || e) + ' → pakai APK');
+      LS.del('acx_live_pending');
+      box.remove(); showUpdateSheet(rel);
+    } finally { liveBusy = false; try { if (h) h.remove(); } catch (x) {} }
+  }
+  var BOOT_ERR = 0;
+  window.addEventListener('error', function () { BOOT_ERR++; });
+  /* Dijalankan SEGERA saat skrip dimuat (sebelum cek update pertama), supaya versi yang baru saja gagal
+     tidak diunduh ulang berulang-ulang. */
+  (function livePendingCheck() {
+    var pend = rawGet('acx_live_pending'); if (!pend || !pend.v) return;
+    rawDel('acx_live_pending');
+    if (pend.v === currentVersion()) { setTimeout(function () { dlog('sync', 'Update kilat terpasang: v' + pend.v); }, 0); return; }
+    var f = rawGet('acx_live_failed') || []; if (f.indexOf(pend.v) < 0) f.push(pend.v); rawSet('acx_live_failed', f.slice(-10));
+    setTimeout(function () {
+      dlog('error', 'Update kilat v' + pend.v + ' gagal dibuka — kembali ke v' + currentVersion());
+      setTimeout(function () { crashReport('Update kilat v' + pend.v + ' gagal dibuka, kembali ke v' + currentVersion(), 'perangkat kembali otomatis ke versi sebelumnya'); }, 8000);
+    }, 0);
+  })();
+  async function liveBoot() {
+    var L = livePlugin(); if (!L) return;
+    // Tandai versi ini sehat begitu tampilan utama (layar masuk atau aplikasi) benar-benar tampil.
+    var t0 = Date.now();
+    (function wait() {
+      var ls = $('#loginScreen'), app = $('#app'), shown = (ls && !ls.hidden) || (app && !app.hidden);
+      if (shown) { L.notifyAppReady().then(function () { dlog('dev', 'Versi web dinyatakan sehat (' + currentVersion() + ')'); }).catch(function () {}); return; }
+      if (Date.now() - t0 > 18000) { dlog('error', 'Tampilan utama tidak muncul (' + BOOT_ERR + ' error) — versi ini akan dibatalkan otomatis'); return; }
+      setTimeout(wait, 400);
+    })();
+  }
+  async function liveState() {
+    var L = livePlugin(), out = { available: !!L, nativeBase: nativeBase(), version: currentVersion(), failed: LS.get('acx_live_failed') || [] };
+    if (L) { try { var c = await L.current(); out.bundle = c && c.bundle ? (c.bundle.id === 'builtin' ? 'bawaan APK' : 'update kilat ' + (c.bundle.version || '')) : '?'; out.native = c && c.native; } catch (e) { out.bundle = '?'; } }
+    return out;
+  }
+  async function liveReset() { var L = livePlugin(); if (!L) throw new Error('Update kilat tidak tersedia di perangkat ini'); LS.set('acx_live_failed', []); await L.reset({ toLastSuccessful: false }); }
+  domReady.then(function () { setTimeout(liveBoot, 300); });
+
   /* ---------- aksesibilitas: label pembaca layar untuk tombol ikon ---------- */
   var A11Y_ICON = { 'i-search': 'Cari', 'i-close': 'Tutup', 'i-back': 'Kembali', 'i-sync': 'Sinkronkan', 'i-share': 'Bagikan', 'i-bell': 'Notifikasi', 'i-plus': 'Tambah', 'i-minus': 'Kurangi', 'i-edit': 'Ubah', 'i-trash': 'Hapus', 'i-download': 'Unduh', 'i-gear': 'Pengaturan', 'i-user': 'Profil', 'i-info': 'Info', 'i-camera': 'Foto', 'i-filter': 'Filter', 'i-sliders': 'Atur', 'i-calendar': 'Kalender', 'i-map': 'Peta', 'i-play': 'Putar', 'i-undo': 'Urungkan', 'i-chevron': 'Buka', 'i-moon': 'Tema', 'i-list': 'Daftar', 'i-grid': 'Kisi', 'i-heart': 'Detak jantung', 'i-chat': 'Masukan', 'i-logout': 'Keluar' };
   var a11yT = 0;
@@ -1156,5 +1235,5 @@
     var card = document.querySelector('#updSheet .upd-card') || document.querySelector('#updSheet');
     if (card && !document.getElementById('updSimClose')) { card.insertAdjacentHTML('beforeend', '<button type="button" class="acx-btn st-btn-ghost" id="updSimClose" style="margin-top:10px;width:100%">Tutup simulasi</button>'); document.getElementById('updSimClose').onclick = function () { var g = $('#updSheet'); if (g) g.remove(); }; }
   }
-  window.ACX = { secureSession: function () { return SEC.on; }, crashReport: crashReport, maintCheck: maintCheck, maintSet: maintSet, maintState: function () { return { v: MAINT.v, active: maintActive(MAINT.v), owner: !!MAINT.owner }; }, pushSyncPrefs: pushSyncPrefs, pushHandle: pushHandle, pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { liveState: liveState, liveReset: liveReset, liveCompatible: liveCompatible, liveUpdate: liveUpdate, secureSession: function () { return SEC.on; }, crashReport: crashReport, maintCheck: maintCheck, maintSet: maintSet, maintState: function () { return { v: MAINT.v, active: maintActive(MAINT.v), owner: !!MAINT.owner }; }, pushSyncPrefs: pushSyncPrefs, pushHandle: pushHandle, pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

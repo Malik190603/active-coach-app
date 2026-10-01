@@ -37,6 +37,14 @@ const remote = (html.match(/<(?:script|link)[^>]+(?:src|href)="https?:\/\/[^"]+"
 if (remote.length) fail('masih memuat file dari internet: ' + remote.join(', ')); else ok('semua skrip & gaya dimuat lokal');
 for (const f of ['package.json', 'capacitor.config.json']) { try { JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8')); ok(f); } catch (e) { fail(f + ': ' + e.message); } }
 
+// 2b) update kilat: tanpa server & statistik pihak ketiga
+try {
+  const cu = (JSON.parse(fs.readFileSync(path.join(ROOT, 'capacitor.config.json'), 'utf8')).plugins || {}).CapacitorUpdater;
+  if (!cu) fail('konfigurasi CapacitorUpdater tidak ada');
+  else if (cu.autoUpdate !== false || cu.statsUrl !== '' || cu.updateUrl !== '' || cu.channelUrl !== '') fail('CapacitorUpdater harus mode manual tanpa statistik/server pihak ketiga (autoUpdate:false, statsUrl/updateUrl/channelUrl kosong)');
+  else ok('update kilat: mode manual, tanpa statistik pihak ketiga');
+} catch (e) { fail('capacitor.config.json: ' + e.message); }
+
 // 3) kunci rahasia tidak boleh ikut ke aplikasi
 const PATTERNS = [
   [/sb_secret_[A-Za-z0-9_-]{10,}/, 'Supabase secret key'],

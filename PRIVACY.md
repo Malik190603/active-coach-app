@@ -27,6 +27,9 @@ When the app hits a code error, it may send a short report to the developer's in
 ## On your phone
 Your login session is stored encrypted with the Android Keystore. App data is excluded from Android cloud backup and device-to-device transfer; on a new phone you simply sign in with Strava again and your data is restored from the server.
 
+## App updates
+Updates are downloaded directly from this project's GitHub Releases (the APK or a small web package installed inside the app). No third-party update service or analytics is used.
+
 ## What the app owner can see
 To run the service (support, update reminders, maintenance notices), the app owner has an admin list of registered accounts showing only: Strava display name and profile photo, Strava athlete ID, join date, last sign-in, the last day the app was opened and its version, how many times it was opened in the last 30 days, whether phone notifications are enabled, and the **number** of stored activities. The owner does **not** see your email, tokens, routes, or the content of your activities through this list, and it is never shown to other users. The owner can send a notification to a specific account (for example a reminder to update). Announcements and the event calendar are read-only lists published by the developer.
 
@@ -64,6 +67,8 @@ Active Coach adalah aplikasi analisis latihan pribadi untuk Android. Proyek inde
 **Laporan error otomatis:** bila terjadi error pada kode aplikasi, laporan singkat bisa dikirim ke kotak masuk pengembang: pesan error, versi aplikasi, model HP & versi Android, halaman yang sedang dibuka, dan beberapa baris jejak teknis. **Tanpa data aktivitas, rute, atau lokasi**, terkait akunmu agar bisa ditindaklanjuti, maks. 3 laporan per hari, dan ikut mati bila *Bantu kembangkan aplikasi* dimatikan.
 
 **Di HP-mu:** sesi login disimpan terenkripsi dengan Android Keystore. Data aplikasi tidak ikut cadangan cloud Android maupun pemindahan ke HP lain — di HP baru cukup masuk lagi dengan Strava dan datamu dipulihkan dari server.
+
+**Pembaruan aplikasi:** diunduh langsung dari GitHub Releases proyek ini (APK atau paket web kecil yang dipasang di dalam aplikasi), tanpa layanan update atau analitik pihak ketiga.
 
 **Yang bisa dilihat pemilik aplikasi:** untuk menjalankan layanan (bantuan, pengingat update, kabar maintenance), pemilik aplikasi punya daftar akun terdaftar yang hanya berisi: nama & foto profil Strava, ID atlet Strava, tanggal bergabung, login terakhir, hari terakhir membuka aplikasi beserta versinya, berapa kali dibuka 30 hari terakhir, status notifikasi HP, dan **jumlah** aktivitas tersimpan. Pemilik **tidak** melihat email, token, rute, atau isi aktivitasmu lewat daftar ini, dan daftar ini tidak pernah ditampilkan ke pengguna lain. Pemilik bisa mengirim notifikasi ke akun tertentu (mis. pengingat update).
 

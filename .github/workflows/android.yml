@@ -33,6 +33,15 @@ jobs:
           beta=false; case "$MSG" in *"[beta]"*) beta=true;; esac
           echo "beta=$beta" >> "$GITHUB_OUTPUT"; echo "Saluran: $([ $beta = true ] && echo beta || echo stabil)"
 
+      - name: Basis native (update kilat)
+        id: live
+        # Rilis tanpa perubahan native (plugin, izin, ikon, konfigurasi Capacitor, Firebase) dipasang langsung
+        # di HP pengguna tanpa APK; selain itu APK ini menjadi basis native baru.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: node scripts/live.mjs base
+
       - name: Mode maintenance — mulai (hanya bila update mengubah server)
         id: maint
         # Menyala bila commit mengubah folder supabase/ atau pesannya berisi [maintenance];
@@ -164,6 +173,11 @@ jobs:
       - name: Catatan rilis (dari pesan commit)
         run: node scripts/release-notes.mjs
 
+      - name: Paket update kilat (web) + info di catatan rilis
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: node scripts/live.mjs pack
+
       - name: Terbitkan di Releases
         uses: softprops/action-gh-release@v2
         with:
@@ -172,7 +186,9 @@ jobs:
           body_path: release-notes.md
           prerelease: ${{ steps.ver.outputs.beta == 'true' }}
           make_latest: ${{ steps.ver.outputs.beta == 'true' && 'false' || 'true' }}
-          files: ActiveCoach-*.apk
+          files: |
+            ActiveCoach-*.apk
+            ActiveCoach-web-*.zip
 
       - name: Kabari pengguna (pengumuman + notifikasi versi baru)
         # Server mengecek rilis terbaru di GitHub sendiri, jadi aman dipanggil berulang (sekali per versi).
