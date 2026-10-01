@@ -909,8 +909,11 @@
       });
       PN.addListener('registrationError', function (e) { dlog('error', 'Firebase: ' + ((e && e.error) || JSON.stringify(e))); });
       PN.addListener('pushNotificationReceived', function (n) {
-        dlog('sync', 'Notifikasi masuk: ' + (n && n.title));
-        note((n && n.title) || 'Pengumuman baru');
+        n = n || {};
+        dlog('sync', 'Notifikasi masuk (aplikasi terbuka): ' + (n.title || ''));
+        // Android tidak menampilkan notifikasi Firebase saat aplikasi terbuka → tampilkan sendiri di bilah notifikasi
+        try { if (P.LocalNotifications) P.LocalNotifications.schedule({ notifications: [{ id: 1400 + Math.floor(Math.random() * 500), title: n.title || 'Active Coach', body: n.body || '', channelId: 'announcements', smallIcon: 'ic_stat_ac', iconColor: '#FC4C02', extra: Object.assign({ push: '1' }, n.data || {}), schedule: { at: new Date(Date.now() + 500), allowWhileIdle: true } }] }); } catch (e) { dlog('error', 'Notifikasi lokal: ' + e.message); }
+        note(n.title || 'Pengumuman baru');
         if (typeof annFetch === 'function') annFetch(true);
       });
       PN.addListener('pushNotificationActionPerformed', function (a) {
@@ -957,5 +960,5 @@
     var card = document.querySelector('#updSheet .upd-card') || document.querySelector('#updSheet');
     if (card && !document.getElementById('updSimClose')) { card.insertAdjacentHTML('beforeend', '<button type="button" class="acx-btn st-btn-ghost" id="updSimClose" style="margin-top:10px;width:100%">Tutup simulasi</button>'); document.getElementById('updSimClose').onclick = function () { var g = $('#updSheet'); if (g) g.remove(); }; }
   }
-  window.ACX = { pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
+  window.ACX = { pushHandle: pushHandle, pushSend: pushSend, pushStatus: pushStatus, pushInit: pushInit, devlog: function () { return DEVLOG.slice(); }, dlog: dlog, devHealth: devHealth, devStatus: function () { return send({ type: 'devstatus' }); }, devUpdateGate: devUpdateGate, showWhatsNew: showWhatsNew, latestRelease: fetchLatestRelease, splitNotes: splitNotes, currentVersion: currentVersion, flush: function () { return send({ type: 'flush' }); }, remote: function () { return send({ type: 'remote' }); }, isDevPaused: devPaused, saveAndShare: saveAndShare, saveMedia: saveMedia, syncStravaPhoto: syncStravaPhoto, rest: acxRest, checkForUpdate: checkForUpdate, checkInbox: checkInbox, ensureWebhook: ensureWebhook, autoSync: autoSync, callEngine: callEngine, send: send, handleDeepLink: handleDeepLink, cfg: cfg, finishReport: finishReport, shareImage: shareImage, haptic: haptic, startStravaLogin: startStravaLogin, native: NATIVE, get ready() { return engineReady; }, get session() { return currentSession; } };
 })();

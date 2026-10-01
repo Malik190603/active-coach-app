@@ -108,7 +108,11 @@ async function devTest(host){
     n2:()=>devNotif('Rekap bulan ini siap ✨','Uji notifikasi rekap bulanan.',{go:'recap'}),
     n3:()=>devNotif('Seminggu lagi: Event uji 🎯','Uji notifikasi event H-7.'),
     n4:()=>devNotif('Setahun lalu hari ini 📸','Uji notifikasi kenangan.',{go:'memory'}),
-    push:async()=>{let r=await ACX.pushSend({target:'self',title:'Uji notifikasi server 🔔',body:'Kalau ini muncul di bilah notifikasi, Firebase sudah bekerja ✓',data:{go:'ann'}});toast(r.total?'Terkirim ke '+r.sent+' dari '+r.total+' HP milikmu':'HP ini belum punya token — ketuk "Daftar ulang token"')},
+    push:async()=>{let st=await ACX.pushStatus();if(!st.token){toast(st.configured?'HP ini belum punya token — ketuk "Daftar ulang token" lalu cek tab Server':'Aplikasi belum dibangun dengan Firebase');return}
+      toast('Notifikasi dikirim dalam 10 detik — boleh tutup aplikasi sekarang');ACX.dlog('dev','Uji push dijadwalkan 10 dtk');
+      setTimeout(async()=>{try{let r=await ACX.pushSend({target:'self',title:'Uji notifikasi server 🔔',body:'Kalau ini muncul di bilah notifikasi, Firebase sudah bekerja ✓',data:{go:'ann'}});
+        let msg=r.total?(r.sent?'Terkirim ke '+r.sent+' dari '+r.total+' HP ✓':'Gagal ke semua HP'+(r.removed?' (token usang dihapus — ketuk Daftar ulang token)':'')+(r.errors&&r.errors[0]?': '+r.errors[0]:'')):'Server tidak menemukan token HP ini — ketuk "Daftar ulang token"';
+        toast(msg);ACX.dlog(r.sent?'sync':'error','Uji push: '+msg)}catch(e){toast('Gagal: '+e.message);ACX.dlog('error','Uji push gagal: '+e.message)}},10000)},
     pushreg:async()=>{let st=await ACX.pushStatus();if(!st.enabled){toast(st.configured?'Hanya di aplikasi Android':'Aplikasi belum dibangun dengan Firebase');return}await ACX.pushInit();setTimeout(async()=>{let s2=await ACX.pushStatus();toast(s2.token?'Token terdaftar ✓':'Belum ada token — cek tab Log')},2500)},
     ob:()=>{close();setTimeout(()=>obOpen({}),300)},
     tour:()=>{close();admSet('acx_tour_done',{});admSet('acx_tour_force',Date.now());setTimeout(()=>{switchPage('dashboard');tourMaybe(300)},300)},

@@ -53,6 +53,7 @@ async function nfSchedule(opts){
 }
 function nfHandleTap(extra){
   extra=extra||{};try{
+    if(extra.push&&window.ACX&&ACX.pushHandle){ACX.pushHandle(extra);return}
     if(extra.go==='studio'){if(typeof studioOpen==='function'){studioOpen();setTimeout(()=>{if(extra.tpl&&typeof stSetTpl==='function')stSetTpl(extra.tpl)},400)}}
     else if(extra.go==='garage')switchPage('garage');
     else if(extra.go==='memory'){switchPage('dashboard');if(typeof memOpen==='function')setTimeout(()=>memOpen(extra.id),400)}
